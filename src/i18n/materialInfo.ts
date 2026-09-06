@@ -143,7 +143,7 @@ const EN: InfoMap = {
   [MaterialId.Glass]: {
     description: "A fragile solid, but completely immune to Acid.",
     interactions: [
-      "Explosion shrapnel and Electricity shatter it into Sand on contact.",
+      "Explosion shrapnel and Electricity crack it, one hit at a time — a few impacts on the same spot break it into Sand there, rather than the whole pane shattering at once.",
       "Immune to Acid — the acid doesn't even spend a charge trying to corrode it.",
     ],
   },
@@ -307,7 +307,7 @@ const PT: InfoMap = {
   [MaterialId.Glass]: {
     description: "Sólido frágil, mas totalmente imune a Ácido.",
     interactions: [
-      "Estilhaços de explosão e Eletricidade o quebram em Areia ao tocar.",
+      "Estilhaços de explosão e Eletricidade o trincam, um impacto de cada vez — alguns golpes no mesmo ponto o quebram em Areia ali, em vez de toda a placa se estilhaçar de uma vez.",
       "Imune a Ácido — o ácido nem gasta carga tentando corroê-lo.",
     ],
   },
@@ -471,7 +471,7 @@ const JA: InfoMap = {
   [MaterialId.Glass]: {
     description: "もろい固体だが、酸には完全に耐性がある。",
     interactions: [
-      "爆発の破片や電気に触れると砕けて砂になる。",
+      "爆発の破片や電気は一撃ずつヒビを入れる — 同じ場所に数回当たるとそこが砕けて砂になり、板全体が一度に割れることはない。",
       "酸に耐性 — 酸は腐食しようとして電荷を消費すらしない。",
     ],
   },

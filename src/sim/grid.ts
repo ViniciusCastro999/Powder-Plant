@@ -88,7 +88,10 @@ const ICE_MELT_CHANCE = 0.18;
  * with the old design, where Shrapnel itself was also responsible for
  * pushing material.
  */
-const SHRAPNEL_COUNT = 40;
+/** Per-tick chance a Gás cell that hasn't been ignited disperses into the air and vanishes — emitted as a puff like Fogo, and gone within about a second if nothing sets it off. */
+const GAS_DISSIPATE_CHANCE = 0.015;
+/** Impacts (Shrapnel, Eletricidade) a Vidro cell absorbs as cracks before the next one finally shatters it into Areia — so a blast pits the surface it faces instead of shattering the whole pane in a single frame. */
+const GLASS_SHATTER_HITS = 3;
 /** Each particle's starting speed is randomized in this range — a spread of fast and slow debris reads as a real blast instead of a uniform ring all moving in lockstep. */
 const SHRAPNEL_SPEED_MIN = 0.35;
 const SHRAPNEL_SPEED_MAX = 0.95;
@@ -160,10 +163,14 @@ const ENERGY_EPSILON = 0.015;
  * low-energy touch far from the epicenter still only has a small chance.
  */
 const BLAST_IGNITE_FACTOR = 25;
-/** How much extra blast scale (decorative Shrapnel count, starting energy) each additional cell in a detonating connected cluster of explosive adds — see `detonate`/`collectExplosiveCluster`. Deliberately uncapped: a big enough pile is genuinely supposed to produce a correspondingly massive explosion. */
+/** How much extra blast scale (decorative Shrapnel count, starting energy) each extra cell in the small local *pocket* a single detonation consumes adds — see `detonate`/`collectExplosivePocket`. The pocket is only ~1-9 cells, so this stays modest; a big pile's force comes from a long chain of these small pops, not one huge blast. */
 const CLUSTER_BONUS_PER_CHARGE = 0.12;
-/** Ticks a chain-reacted Gunpowder/C4 cell (a *separate* pile the wave reached, not part of the same connected mass) waits before detonating itself — a minefield of disconnected piles ripples outward over several frames instead of the whole map flashing to nothing in one instant. */
-const CHAIN_DELAY_TICKS = 5;
+/** Ticks an explosive cell touching a fresh detonation waits before going off itself. This is what turns a solid painted block of Pólvora/C4 into a chain reaction that eats across it ring by ring over many frames, instead of the whole connected mass detonating in one instant. */
+const CHAIN_DELAY_CONNECTED = 2;
+/** Ticks a *separate* Pólvora/C4 pile (one the blast wave reached across a gap, not touching the charge that went off) waits before detonating — a scattered minefield ripples outward over several frames instead of flashing to nothing at once. */
+const CHAIN_DELAY_SEPARATE = 5;
+/** Decorative Shrapnel sparks spawned per individual detonation, scaled by its small pocket size. Low on purpose: a big pile now produces a long chain of these small pops rather than one massive burst. */
+const SHRAPNEL_PER_POP = 7;
 /** Fraction of a Vida brush stroke that actually gets painted — see the comment on VIDA in paintCell. */
 const VIDA_PAINT_DENSITY = 0.4;
 /** Chance a spreading Planta blooms into a Flor cell instead of plain leaf, checked only in the prosperous band. */
@@ -763,6 +770,15 @@ export class SimGrid {
             }
             break;
           case MaterialCategory.Gas:
+            // Gás (unlike Vapor / Vapor de Ácido, which condense back by
+            // temperature) has no lasting form — every tick, moving or not,
+            // an un-ignited cell has a chance to disperse into the air, so a
+            // puff fades on its own instead of piling up under the ceiling
+            // forever.
+            if (id === MaterialId.CombustibleGas && Math.random() < GAS_DISSIPATE_CHANCE) {
+              this.set(x, y, MaterialId.Empty);
+              break;
+            }
             if (this.stillTicks[i] < SLEEP_THRESHOLD) {
               if (this.stepGas(x, y, def.density)) this.stillTicks[i] = 0;
               else if (this.stillTicks[i] < 255) this.stillTicks[i]++;
@@ -1052,27 +1068,26 @@ export class SimGrid {
   }
 
   /**
-   * Any explosive material (Pólvora, C4) detonates instead of just
-   * smouldering. A solid connected mass of explosive goes off together as
-   * ONE unified blast rather than a staggered ripple of individually-timed
-   * pops — `collectExplosiveCluster` flood-fills the whole touching blob
-   * from wherever it was lit, and the blast's force scales with that
-   * blob's total size, with no artificial ceiling: a big enough pile
-   * genuinely produces a correspondingly massive explosion. Only the
-   * explosive cells that actually detonated disappear (they're consumed by
-   * their own blast) — everything else nearby is only ever pushed by the
-   * BlastWave (see its struct comment), never deleted. A burst of purely
-   * decorative Shrapnel rides along on top for visual flair (its count is
-   * capped for performance — that's a rendering budget, not a nerf to the
-   * blast's actual force).
+   * Any explosive material (Pólvora, C4, Gás) detonates instead of just
+   * smouldering. A detonation is deliberately *local*: it consumes only a
+   * small pocket around the cell that went off (that cell plus its touching
+   * explosive neighbours — see `collectExplosivePocket`, ~1-9 cells), and
+   * every explosive cell touching that pocket gets a short lit fuse
+   * (`meta`, a tick countdown — see `stepFuse`) so it detonates a few ticks
+   * later in turn. That's what makes a big solid block of Pólvora/C4 rip
+   * itself apart as a visible chain reaction eating outward ring by ring
+   * over roughly a second, instead of the whole connected mass vanishing in
+   * a single frame. Only explosive cells are ever deleted (consumed by
+   * their own blast) — everything else nearby is just pushed by the
+   * BlastWave (see its struct comment). A small burst of purely decorative
+   * Shrapnel rides along on each pop.
    *
    * Other, *separate* explosive piles the wave reaches with enough energy
-   * left (see BLAST_IGNITE_FACTOR) don't go off in the same instant: each
-   * gets a lit fuse instead (`meta`, a tick countdown — see `stepFuse`) and
-   * detonates itself (as its own unified blast) once that runs out, so a
-   * minefield of disconnected piles still ripples outward over several
-   * frames instead of the whole map flashing to nothing in one frame. The
-   * fuse lives in `meta` rather than a separate queue keyed by position
+   * left (see BLAST_IGNITE_FACTOR) also don't go off in the same instant:
+   * each gets a lit fuse too, on a slightly longer delay
+   * (CHAIN_DELAY_SEPARATE), so a minefield of disconnected piles ripples
+   * outward over several frames. The fuse lives in `meta` rather than a
+   * separate queue keyed by position
    * specifically because Pólvora is Powder — it can fall. A queue holding
    * onto the (x, y) it was lit at would lose track of the charge the
    * moment gravity (or another blast) moved it, and silently never go off.
@@ -1081,29 +1096,43 @@ export class SimGrid {
    * falls, but shares the same mechanism for consistency).
    */
   private detonate(cx: number, cy: number): void {
-    const cluster = this.collectExplosiveCluster(cx, cy);
+    const pocket = this.collectExplosivePocket(cx, cy);
 
-    // Consumed by their own blast — not a "clear everything nearby" crater.
-    for (const [x, y] of cluster) {
+    // Only this small pocket is consumed by the blast — the rest of a
+    // connected pile keeps its shape and detonates in turn via the fuses lit
+    // just below, so a big block visibly chain-reacts instead of vanishing.
+    for (const [x, y] of pocket) {
       this.set(x, y, MaterialId.Empty);
       this.flashes.push({ x, y, life: FLASH_LIFE, maxLife: FLASH_LIFE });
     }
 
-    const scale = 1 + (cluster.length - 1) * CLUSTER_BONUS_PER_CHARGE;
-    // A bigger blast doesn't just start with more energy (reaching
-    // further before fizzling below ENERGY_EPSILON), it spreads that
-    // energy out faster too — see the BlastWave comment for why 1
-    // ring/tick (right for a lone charge) would make a genuinely huge
-    // cluster take many real seconds to visibly resolve.
-    const layersPerTick = Math.max(1, Math.round(Math.sqrt(scale)));
+    // Light a short fuse on every still-inert explosive cell touching the
+    // pocket — this is the chain reaction. Gás is never fused (it flashes
+    // over instantly), only ever ignited directly.
+    for (const [x, y] of pocket) {
+      for (const [dx, dy] of NEIGHBORS_8) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!this.inBounds(nx, ny)) continue;
+        const ni = this.index(nx, ny);
+        if (this.meta[ni] === 0 && this.isFusableExplosive(this.get(nx, ny))) {
+          this.meta[ni] = CHAIN_DELAY_CONNECTED + Math.floor(Math.random() * 3);
+        }
+      }
+    }
+
+    const scale = 1 + (pocket.length - 1) * CLUSTER_BONUS_PER_CHARGE;
     const visited = new Set<number>();
     const frontier: { x: number; y: number; dx: number; dy: number; energy: number }[] = [];
-    for (const [x, y] of cluster) {
+    for (const [x, y] of pocket) {
       visited.add(this.index(x, y));
       frontier.push({ x, y, dx: 0, dy: 0, energy: scale });
     }
-    const wave: BlastWave = { frontier, visited, layersPerTick };
-    // Expand the first ring(s) right now, synchronously, instead of only
+    // Always one ring per tick — the force of a big pile comes from the long
+    // chain of these small pops rippling across it, not from a single wave
+    // sweeping the whole radius in a frame or two.
+    const wave: BlastWave = { frontier, visited, layersPerTick: 1 };
+    // Expand exactly one ring right now, synchronously, instead of only
     // waiting for advanceBlastWaves() at the end of this tick's step().
     // detonate() runs mid-sweep through the main per-cell loop (row by row,
     // bottom to top) — if a cell sitting directly above this shape hasn't
@@ -1112,39 +1141,36 @@ export class SimGrid {
     // fall into it before the blast ever got a chance to push it away, so
     // the crater always looked like it swallowed whatever was resting on
     // top instead of launching it outward.
-    for (let i = 0; i < layersPerTick && wave.frontier.length > 0; i++) {
-      this.expandBlastWaveLayer(wave);
-    }
+    if (wave.frontier.length > 0) this.expandBlastWaveLayer(wave);
     if (wave.frontier.length > 0) this.blastWaves.push(wave);
     // Reuses the wave's own just-computed frontier as the sparks' launch
     // points and directions — see spawnShrapnelBurst for why that's what
     // makes the decorative debris follow the shape too, instead of always
     // radiating from one center in a perfect circle regardless of what
     // actually exploded.
-    this.spawnShrapnelBurst(wave.frontier, Math.min(SHRAPNEL_VISUAL_CAP, Math.round(SHRAPNEL_COUNT * scale)));
+    this.spawnShrapnelBurst(wave.frontier, Math.min(SHRAPNEL_VISUAL_CAP, Math.max(3, Math.round(SHRAPNEL_PER_POP * scale))));
+  }
+
+  /** Pólvora and C4 detonate on a lit fuse; Gás doesn't (it flashes over the instant it catches). */
+  private isFusableExplosive(id: MaterialId): boolean {
+    const def = MATERIALS[id];
+    return def.explosive && def.category !== MaterialCategory.Gas;
   }
 
   /**
-   * Flood-fills the whole connected (8-directionally touching) blob of
-   * explosive material starting at (x, y) — a solid painted mass of
-   * Pólvora/C4 detonates as a single unit, however big it is.
+   * The small local group a single detonation consumes: the cell that went
+   * off, plus any explosive cells directly touching it (8-directional). A
+   * big connected mass is *not* collected whole here — it comes apart as a
+   * chain reaction, one pocket per pop, via the fuses `detonate` lights.
    */
-  private collectExplosiveCluster(x: number, y: number): [number, number][] {
-    const visited = new Set<number>([this.index(x, y)]);
-    const stack: [number, number][] = [[x, y]];
-    const cells: [number, number][] = [];
-    while (stack.length > 0) {
-      const [cx, cy] = stack.pop()!;
-      cells.push([cx, cy]);
-      for (const [dx, dy] of NEIGHBORS_8) {
-        const nx = cx + dx;
-        const ny = cy + dy;
-        if (!this.inBounds(nx, ny)) continue;
-        const ni = this.index(nx, ny);
-        if (visited.has(ni) || !MATERIALS[this.get(nx, ny)].explosive) continue;
-        visited.add(ni);
-        stack.push([nx, ny]);
-      }
+  private collectExplosivePocket(cx: number, cy: number): [number, number][] {
+    const cells: [number, number][] = [[cx, cy]];
+    for (const [dx, dy] of NEIGHBORS_8) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      // Gás isn't pulled into the pocket — it catches from the blast wave
+      // and detonates in its own right instead of being quietly consumed.
+      if (this.inBounds(nx, ny) && this.isFusableExplosive(this.get(nx, ny))) cells.push([nx, ny]);
     }
     return cells;
   }
@@ -1230,9 +1256,23 @@ export class SimGrid {
     this.shrapnel = next;
   }
 
-  /** Vidro is fragile: anything violent enough to reach it (Shrapnel, Eletricidade) shatters it into Areia instead of just being blocked or absorbed. */
+  /**
+   * Vidro is fragile, but not *instantly* fragile: each violent impact
+   * (Shrapnel, Eletricidade) only cracks the cell it actually reaches —
+   * tracked in `meta` — and it takes GLASS_SHATTER_HITS of them before that
+   * one cell finally gives way into Areia. A blast therefore pits the face
+   * of a pane pointed at it over a moment, instead of the whole sheet
+   * flashing to sand the instant the first spark lands. Cracks never spread
+   * to neighbouring glass on their own.
+   */
   private shatterGlass(x: number, y: number): void {
-    this.set(x, y, MaterialId.Sand);
+    const i = this.index(x, y);
+    if (this.meta[i] + 1 >= GLASS_SHATTER_HITS) {
+      this.set(x, y, MaterialId.Sand);
+    } else {
+      this.meta[i]++;
+      this.wake(x, y);
+    }
   }
 
   /**
@@ -1334,7 +1374,11 @@ export class SimGrid {
         if (def.flammable && id !== MaterialId.Fire && this.meta[ni] === 0) {
           const igniteChance = energy * def.ignitionChance * BLAST_IGNITE_FACTOR;
           if (Math.random() < igniteChance) {
-            if (def.explosive) this.meta[ni] = CHAIN_DELAY_TICKS + Math.floor(Math.random() * 4);
+            // A separate Pólvora/C4 pile the wave reaches gets a slightly
+            // longer fuse than the connected chain, so a scattered minefield
+            // ripples rather than all going at once; Gás and ordinary
+            // flammables just catch immediately.
+            if (this.isFusableExplosive(id)) this.meta[ni] = CHAIN_DELAY_SEPARATE + Math.floor(Math.random() * 4);
             else this.igniteAt(c.x, c.y);
           }
         }

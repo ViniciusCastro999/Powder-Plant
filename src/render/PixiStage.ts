@@ -8,6 +8,8 @@ import { EXTREME_COLD, EXTREME_HOT, COLD_1, COLD_3, PROSPEROUS_LOW, PROSPEROUS_T
 const SALT_LIGHTEN = 0.45;
 /** Fire's remaining-fuel window (in ticks) over which it dims toward black instead of popping straight to Empty. */
 const FIRE_FADE_TICKS = 20;
+/** Impacts a Vidro cell takes before it shatters — kept in sync with GLASS_SHATTER_HITS in grid.ts, used here only to tint cracked glass. */
+const GLASS_SHATTER_HITS = 3;
 /** Petal color variants for Flor, picked per-cell by its meta value. */
 const FLOWER_COLORS: readonly (readonly [number, number, number])[] = [
   [235, 120, 170],
@@ -275,6 +277,13 @@ export class PixiStage {
         r *= t;
         g *= t;
         b *= t;
+      } else if (id === MaterialId.Glass && meta[i] > 0) {
+        // Cracked glass frosts toward opaque white, a step per impact, so
+        // the damage from a blast is visible before the cell gives way.
+        const t = Math.min(1, meta[i] / GLASS_SHATTER_HITS) * 0.55;
+        r = r + (250 - r) * t;
+        g = g + (250 - g) * t;
+        b = b + (250 - b) * t;
       }
       // Liquids constantly swap cells while finding their level, so grain
       // keyed on grid position (not particle identity) would flicker as
