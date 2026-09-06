@@ -4,7 +4,11 @@
 
 **ブラウザで動く「落下砂（falling-sand）」パーティクル・サンドボックス。**
 
-![Powder & Plant スクリーンショット](docs/screenshot.png)
+[![Powder & Plant スクリーンショット](docs/screenshot.png)](https://viniciuscastro999.github.io/Powder-Plant/)
+
+[![ブラウザでプレイ](https://img.shields.io/badge/%E2%96%B6%20%E3%83%96%E3%83%A9%E3%82%A6%E3%82%B6%E3%81%A7%E3%83%97%E3%83%AC%E3%82%A4-2ea44f?style=for-the-badge)](https://viniciuscastro999.github.io/Powder-Plant/)
+
+<br>
 
 ![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)

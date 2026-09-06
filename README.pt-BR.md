@@ -4,7 +4,11 @@
 
 **Um simulador de partículas do tipo falling-sand que roda no navegador.**
 
-![Powder & Plant screenshot](docs/screenshot.png)
+[![Powder & Plant screenshot](docs/screenshot.png)](https://viniciuscastro999.github.io/Powder-Plant/)
+
+[![Jogar no navegador](https://img.shields.io/badge/%E2%96%B6%20Jogar%20no%20navegador-2ea44f?style=for-the-badge)](https://viniciuscastro999.github.io/Powder-Plant/)
+
+<br>
 
 ![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
