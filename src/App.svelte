@@ -5,6 +5,13 @@
   import MapsModal from "./components/MapsModal.svelte";
   import { BrushShape, MaterialId } from "./sim/types";
   import { NEUTRAL_TEMP } from "./sim/temperature";
+  import { intlLocale } from "./i18n";
+
+  // Keep the document language in sync with the picked locale (also sets it
+  // on first load, since the initial detection doesn't touch the DOM).
+  $effect(() => {
+    document.documentElement.lang = intlLocale();
+  });
 
   let selected = $state<MaterialId>(MaterialId.Sand);
   let brushSize = $state(6);

@@ -15,6 +15,7 @@
 
 [![English](https://img.shields.io/badge/lang-English-6e7781?style=for-the-badge)](README.md)
 [![Português](https://img.shields.io/badge/lang-Portugu%C3%AAs-2ea44f?style=for-the-badge)](README.pt-BR.md)
+[![日本語](https://img.shields.io/badge/lang-%E6%97%A5%E6%9C%AC%E8%AA%9E-6e7781?style=for-the-badge)](README.ja.md)
 
 </div>
 
@@ -27,7 +28,7 @@ e uma **temperatura ambiente** global muda conforme o que você coloca no cenár
 — comandando combustão espontânea, congelamento, fervura e o crescimento das
 plantas.
 
-> Toda a interface e os nomes dos materiais estão em português.
+> A interface está disponível em inglês, português e japonês (seletor no canto inferior esquerdo).
 
 ## Recursos
 
@@ -83,6 +84,9 @@ npm run check     # type-check do Svelte + TypeScript
   sobe com Fogo/Lava/Calor e desce com Gelo/Frio, afetando combustão espontânea,
   congelamento, fervura e o crescimento das plantas.
 - O botão **Dicas** abre uma janela com a descrição e as interações de cada material.
+- O **seletor de idioma** (canto inferior esquerdo, ao lado da temperatura) troca a
+  interface entre inglês, português e japonês — a escolha fica salva no navegador e,
+  na primeira visita, usa o idioma do navegador.
 
 ## Materiais
 
@@ -108,7 +112,7 @@ src/
   App.svelte           layout: canvas + painel inferior + modais
   components/
     Canvas.svelte      cria a grade, roda o loop de simulação, trata o pincel
-    BottomPanel.svelte seletor de material, pincel, stats, botões
+    BottomPanel.svelte seletor de material, pincel, stats, troca de idioma
     HintsModal.svelte  janela de ajuda com descrições dos materiais
     MapsModal.svelte   janela de salvar / carregar / exportar / importar mapas
     Icon.svelte        ícones SVG
@@ -117,10 +121,14 @@ src/
   sim/
     grid.ts            o coração: autômato celular, física, reações, temperatura
     materials.ts       definição de cada material e agrupamento da paleta
-    materialInfo.ts    textos de descrição/interação para o modal de dicas
     temperature.ts     faixas de temperatura compartilhadas entre sim e UI
     storage.ts         serialização (RLE) e persistência de mapas no localStorage
     types.ts           MaterialId, categorias, buffers da simulação
+  i18n/                traduções da interface (inglês / português / japonês)
+    locale.svelte.ts   o idioma ativo, salvo no localStorage
+    ui.ts              textos fixos da interface
+    materials.ts       nomes dos materiais + rótulos das categorias por idioma
+    materialInfo.ts    descrições e interações das dicas por idioma
 ```
 
 ## Como a simulação funciona

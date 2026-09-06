@@ -3,6 +3,8 @@
   import { BrushShape, MaterialId } from "../sim/types";
   import { MATERIALS, PALETTE_CATEGORIES } from "../sim/materials";
   import { COLD_1, COLD_2, COLD_3, PROSPEROUS_LOW, HOT_2, HOT_3, isProsperous } from "../sim/temperature";
+  import { t, materialName, categoryLabel, intlLocale, locale, setLocale, LOCALES } from "../i18n";
+  import type { UIStrings } from "../i18n/ui";
 
   const ICON_BY_MATERIAL: Record<MaterialId, string> = {
     [MaterialId.Empty]: "eraser",
@@ -41,11 +43,11 @@
     [MaterialId.Flor]: "plant",
   };
 
-  const SHAPES: { id: BrushShape; icon: string; label: string }[] = [
-    { id: BrushShape.Point, icon: "point", label: "Ponto" },
-    { id: BrushShape.Line, icon: "line", label: "Linha" },
-    { id: BrushShape.Square, icon: "square", label: "Área (quadrado)" },
-    { id: BrushShape.Circle, icon: "circle", label: "Área (círculo)" },
+  const SHAPES: { id: BrushShape; icon: string; labelKey: keyof UIStrings }[] = [
+    { id: BrushShape.Point, icon: "point", labelKey: "shapePoint" },
+    { id: BrushShape.Line, icon: "line", labelKey: "shapeLine" },
+    { id: BrushShape.Square, icon: "square", labelKey: "shapeSquare" },
+    { id: BrushShape.Circle, icon: "circle", labelKey: "shapeCircle" },
   ];
 
   interface Props {
@@ -113,11 +115,25 @@
 <footer class="panel">
   <div class="brand-col">
     <span class="brand">Powder &amp; Plant</span>
-    <span class="counter">{pixelCount.toLocaleString("pt-BR")} px</span>
+    <span class="counter">{pixelCount.toLocaleString(intlLocale())} px</span>
     <span class="counter temp" style="color: {temperatureColor(temperature)}">
       <Icon name={temperatureIcon(temperature)} size={12} />
       {Math.round(temperature)}°C
     </span>
+    <div class="lang" role="group" aria-label={t("languageLabel")}>
+      <Icon name="globe" size={12} />
+      {#each LOCALES as l (l.id)}
+        <button
+          class="lang-btn"
+          class:active={locale() === l.id}
+          onclick={() => setLocale(l.id)}
+          aria-pressed={locale() === l.id}
+          title={l.label}
+        >
+          {l.short}
+        </button>
+      {/each}
+    </div>
   </div>
 
   <div class="material-panel">
@@ -125,12 +141,12 @@
       {#each PALETTE_CATEGORIES as cat (cat.id)}
         <button class="category-tab" class:active={expandedCategory === cat.id} onclick={() => (expandedCategory = cat.id)}>
           <Icon name={cat.icon} size={13} />
-          {cat.label}
+          {categoryLabel(cat.id)}
         </button>
       {/each}
       <button class="category-tab eraser-tab" class:active={selected === MaterialId.Empty} onclick={() => pick(MaterialId.Empty)}>
         <Icon name="eraser" size={13} />
-        Apagar
+        {t("erase")}
       </button>
     </div>
     <div class="material-grid">
@@ -139,7 +155,7 @@
           <span class="icon-badge" style={swatchStyle(id)}>
             <Icon name={ICON_BY_MATERIAL[id]} size={16} />
           </span>
-          <span class="name">{MATERIALS[id].name}</span>
+          <span class="name">{materialName(id)}</span>
         </button>
       {/each}
     </div>
@@ -148,7 +164,7 @@
   <div class="controls-col">
     <div class="shape-list">
       {#each SHAPES as shape (shape.id)}
-        <button class="shape" class:active={brushShape === shape.id} onclick={() => (brushShape = shape.id)} title={shape.label} aria-label={shape.label}>
+        <button class="shape" class:active={brushShape === shape.id} onclick={() => (brushShape = shape.id)} title={t(shape.labelKey)} aria-label={t(shape.labelKey)}>
           <Icon name={shape.icon} size={16} />
         </button>
       {/each}
@@ -160,14 +176,14 @@
     <div class="button-row">
       <button class="hints-btn" onclick={onhints}>
         <Icon name="help" size={15} />
-        <span>Dicas</span>
+        <span>{t("hints")}</span>
       </button>
       <button class="maps-btn" onclick={onmaps}>
         <Icon name="save" size={15} />
-        <span>Mapas</span>
+        <span>{t("maps")}</span>
       </button>
     </div>
-    <button class="clear" onclick={onclear}>Limpar tudo</button>
+    <button class="clear" onclick={onclear}>{t("clearAll")}</button>
   </div>
 </footer>
 
@@ -215,6 +231,38 @@
     gap: 4px;
     font-weight: 600;
     transition: color 0.4s ease;
+  }
+
+  .lang {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 2px;
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  .lang-btn {
+    padding: 2px 5px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: none;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  }
+
+  .lang-btn:hover {
+    color: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .lang-btn.active {
+    color: #fff;
+    background: rgba(106, 160, 255, 0.18);
+    border-color: rgba(106, 160, 255, 0.5);
   }
 
   .material-panel {

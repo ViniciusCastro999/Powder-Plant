@@ -15,6 +15,7 @@
 
 [![English](https://img.shields.io/badge/lang-English-2ea44f?style=for-the-badge)](README.md)
 [![Português](https://img.shields.io/badge/lang-Portugu%C3%AAs-6e7781?style=for-the-badge)](README.pt-BR.md)
+[![日本語](https://img.shields.io/badge/lang-%E6%97%A5%E6%9C%AC%E8%AA%9E-6e7781?style=for-the-badge)](README.ja.md)
 
 </div>
 
@@ -26,7 +27,7 @@ powders pile up, fire spreads, explosives chain-detonate, seeds germinate, and a
 global **ambient temperature** shifts with whatever you place — driving
 spontaneous combustion, freezing, boiling and plant growth.
 
-> The in-game UI and all material names are in Portuguese.
+> The UI is available in English, Portuguese and Japanese (switcher in the bottom-left corner).
 
 ## Features
 
@@ -72,30 +73,33 @@ npm run check     # Svelte + TypeScript type-check
 - **Pick a material** from the bottom bar (grouped by category).
 - **Draw on the canvas** with mouse or touch. Brush shapes: Point, Line, Square
   area and Circle area, with adjustable size.
-- **Eraser** removes cells; **Limpar tudo** clears the whole grid.
-- **Mapas** opens the save/load window: name and store the current scene in the
+- **Eraser** removes cells; **Clear all** wipes the whole grid.
+- **Maps** opens the save/load window: name and store the current scene in the
   browser, reload saved maps, export any map as a `.pnp.json` file, and import
   files back to share scenes between browsers.
 - The panel shows the active-cell count and the **ambient temperature**, which
   rises with Fire/Lava/Heat and falls with Ice/Cold, affecting spontaneous
   combustion, freezing, boiling and plant growth.
-- The **Dicas** button opens a window describing every material and its interactions.
+- The **Hints** button opens a window describing every material and its interactions.
+- The **language switch** (bottom-left, next to the temperature) toggles the UI
+  between English, Portuguese and Japanese — the choice is remembered in the
+  browser, and defaults to your browser language on first visit.
 
 ## Materials
 
 | Category | Materials |
 |---|---|
-| Partículas (Particles) | Areia · Pedra · Terra · Barro · Sal |
-| Sólidos (Solids) | Madeira · Metal · Vidro |
-| Líquidos (Liquids) | Água · Óleo · Ácido |
-| Vida (Life) | Planta · Semente · Vida |
-| Calor (Heat) | Fogo · Lava · Calor |
-| Frio (Cold) | Gelo · Frio |
-| Explosivos (Explosives) | Pólvora · C4 · Gás |
-| Especiais (Special) | Eletricidade · Clone |
+| Particles | Sand · Stone · Dirt · Mud · Salt |
+| Solids | Wood · Metal · Glass |
+| Liquids | Water · Oil · Acid |
+| Life | Plant · Seed · Life |
+| Heat | Fire · Lava · Heat |
+| Cold | Ice · Cold |
+| Explosives | Gunpowder · C4 · Gas |
+| Special | Electricity · Clone |
 
-Some materials only appear as reactions: **Broto** and **Flor** (from germinating
-seeds), **Vapor** (boiled water) and **Vapor de Ácido** (boiled acid).
+Some materials only appear as reactions: **Sprout** and **Flower** (from
+germinating seeds), **Steam** (boiled water) and **Acid Vapor** (boiled acid).
 
 ## Project structure
 
@@ -105,7 +109,7 @@ src/
   App.svelte           layout: canvas + bottom panel + modals
   components/
     Canvas.svelte      creates the grid, runs the sim loop, handles the brush
-    BottomPanel.svelte material picker, brush, stats, buttons
+    BottomPanel.svelte material picker, brush, stats, language switch
     HintsModal.svelte  help window with material descriptions
     MapsModal.svelte   save / load / export / import window
     Icon.svelte        SVG icons
@@ -114,10 +118,14 @@ src/
   sim/
     grid.ts            the core: cellular automaton, physics, reactions, temperature
     materials.ts       every material definition and the palette grouping
-    materialInfo.ts    description / interaction copy for the hints modal
     temperature.ts     temperature bands shared between sim and UI
     storage.ts         RLE serialisation and map persistence in localStorage
     types.ts           MaterialId, categories, simulation buffers
+  i18n/                UI translations (English / Portuguese / Japanese)
+    locale.svelte.ts   the active-language state, persisted to localStorage
+    ui.ts              fixed UI strings
+    materials.ts       material names + category labels per language
+    materialInfo.ts    hint descriptions and interactions per language
 ```
 
 ## How the simulation works

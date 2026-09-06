@@ -9,9 +9,18 @@
     toMapFile,
     parseMapFile,
     StorageFullError,
+    MapFileError,
     type MapMeta,
     type MapSnapshot,
   } from "../sim/storage";
+  import { t, format, intlLocale } from "../i18n";
+
+  /** Maps a thrown storage error to a message in the player's language. */
+  function errorMessage(e: unknown, fallbackKey: "couldNotSaveMap" | "couldNotReadFile"): string {
+    if (e instanceof StorageFullError) return t("storageFull");
+    if (e instanceof MapFileError) return t("invalidMapFile");
+    return t(fallbackKey);
+  }
 
   interface Props {
     open: boolean;
@@ -46,8 +55,8 @@
   function suggestName(existing: MapMeta[]): string {
     let n = existing.length + 1;
     const used = new Set(existing.map((m) => m.name.trim().toLowerCase()));
-    while (used.has(`mapa ${n}`)) n++;
-    return `Mapa ${n}`;
+    while (used.has(format(t("mapNumber"), { n }).toLowerCase())) n++;
+    return format(t("mapNumber"), { n });
   }
 
   function close(): void {
@@ -57,25 +66,25 @@
   function save(): void {
     const snap = getSnapshot();
     if (!snap) {
-      error = "A simulação ainda está carregando.";
+      error = t("simStillLoading");
       return;
     }
     try {
-      const meta = saveMap(name, snap);
+      const meta = saveMap(name.trim() || t("untitledMap"), snap);
       maps = listMaps();
       error = null;
-      notice = `"${meta.name}" salvo.`;
+      notice = format(t("mapSaved"), { name: meta.name });
       name = suggestName(maps);
     } catch (e) {
       notice = null;
-      error = e instanceof StorageFullError ? e.message : "Não foi possível salvar o mapa.";
+      error = errorMessage(e, "couldNotSaveMap");
     }
   }
 
   function load(id: string): void {
     const snap = loadMapSnapshot(id);
     if (!snap) {
-      error = "Mapa não encontrado.";
+      error = t("mapNotFound");
       maps = listMaps();
       return;
     }
@@ -94,14 +103,14 @@
   function exportMap(meta: MapMeta): void {
     const snap = loadMapSnapshot(meta.id);
     if (!snap) {
-      error = "Mapa não encontrado.";
+      error = t("mapNotFound");
       return;
     }
     const blob = new Blob([JSON.stringify(toMapFile(meta.name, snap))], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${meta.name.replace(/[^\w\-]+/g, "_") || "mapa"}.pnp.json`;
+    a.download = `${meta.name.replace(/[^\w\-]+/g, "_") || "map"}.pnp.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -116,12 +125,12 @@
       onload(snapshot);
       close();
     } catch (err) {
-      error = err instanceof Error ? err.message : "Não foi possível ler o arquivo.";
+      error = errorMessage(err, "couldNotReadFile");
     }
   }
 
   function formatDate(ms: number): string {
-    return new Date(ms).toLocaleString("pt-BR", {
+    return new Date(ms).toLocaleString(intlLocale(), {
       day: "2-digit",
       month: "2-digit",
       year: "2-digit",
@@ -139,12 +148,12 @@
       onkeydown={(e) => e.stopPropagation()}
       role="dialog"
       aria-modal="true"
-      aria-label="Salvar e carregar mapas"
+      aria-label={t("mapsDialogLabel")}
       tabindex="-1"
     >
       <header>
-        <span class="title">Mapas</span>
-        <button class="close" onclick={close} aria-label="Fechar">✕</button>
+        <span class="title">{t("maps")}</span>
+        <button class="close" onclick={close} aria-label={t("close")}>✕</button>
       </header>
 
       <div class="save-row">
@@ -152,12 +161,12 @@
           type="text"
           bind:value={name}
           maxlength="40"
-          placeholder="Nome do mapa"
+          placeholder={t("mapNamePlaceholder")}
           onkeydown={(e) => e.key === "Enter" && save()}
         />
         <button class="save-btn" onclick={save}>
           <Icon name="save" size={15} />
-          Salvar mapa atual
+          {t("saveCurrentMap")}
         </button>
       </div>
 
@@ -169,7 +178,7 @@
 
       <div class="list">
         {#if maps.length === 0}
-          <p class="empty">Nenhum mapa salvo ainda. Pinte alguma coisa e clique em “Salvar mapa atual”.</p>
+          <p class="empty">{t("noMapsYet")}</p>
         {:else}
           {#each maps as m (m.id)}
             <div class="map-row">
@@ -179,14 +188,14 @@
               </div>
               <div class="map-actions">
                 {#if confirmingId === m.id}
-                  <button class="danger" onclick={() => remove(m.id)}>Confirmar</button>
-                  <button class="ghost" onclick={() => (confirmingId = null)}>Cancelar</button>
+                  <button class="danger" onclick={() => remove(m.id)}>{t("confirm")}</button>
+                  <button class="ghost" onclick={() => (confirmingId = null)}>{t("cancel")}</button>
                 {:else}
-                  <button class="primary" onclick={() => load(m.id)}>Carregar</button>
-                  <button class="ghost" onclick={() => exportMap(m)} title="Baixar como arquivo" aria-label="Exportar">
+                  <button class="primary" onclick={() => load(m.id)}>{t("load")}</button>
+                  <button class="ghost" onclick={() => exportMap(m)} title={t("exportTitle")} aria-label={t("exportLabel")}>
                     <Icon name="export" size={15} />
                   </button>
-                  <button class="ghost" onclick={() => (confirmingId = m.id)} title="Excluir" aria-label="Excluir">
+                  <button class="ghost" onclick={() => (confirmingId = m.id)} title={t("deleteTitle")} aria-label={t("deleteTitle")}>
                     <Icon name="trash" size={15} />
                   </button>
                 {/if}
@@ -199,7 +208,7 @@
       <footer>
         <button class="import" onclick={() => fileInput?.click()}>
           <Icon name="import" size={15} />
-          Importar arquivo
+          {t("importFile")}
         </button>
         <input
           bind:this={fileInput}

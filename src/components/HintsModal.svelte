@@ -2,7 +2,7 @@
   import Icon from "./Icon.svelte";
   import { MaterialId } from "../sim/types";
   import { MATERIALS, PALETTE_CATEGORIES } from "../sim/materials";
-  import { MATERIAL_INFO } from "../sim/materialInfo";
+  import { t, materialName, categoryLabel, materialInfo } from "../i18n";
 
   const ICON_BY_MATERIAL: Record<MaterialId, string> = {
     [MaterialId.Empty]: "eraser",
@@ -43,6 +43,7 @@
   let { open, onclose }: Props = $props();
 
   let selected = $state<MaterialId | null>(null);
+  const info = $derived(selected !== null ? materialInfo(selected) : undefined);
 
   function close(): void {
     selected = null;
@@ -63,29 +64,29 @@
       onkeydown={(e) => e.stopPropagation()}
       role="dialog"
       aria-modal="true"
-      aria-label="Dicas de materiais"
+      aria-label={t("materialHints")}
       tabindex="-1"
     >
       <header>
         {#if selected !== null}
-          <button class="back" onclick={() => (selected = null)} aria-label="Voltar">
+          <button class="back" onclick={() => (selected = null)} aria-label={t("back")}>
             <Icon name="back" size={18} />
-            <span>Voltar</span>
+            <span>{t("back")}</span>
           </button>
         {:else}
-          <span class="title">Dicas de materiais</span>
+          <span class="title">{t("materialHints")}</span>
         {/if}
-        <button class="close" onclick={close} aria-label="Fechar">✕</button>
+        <button class="close" onclick={close} aria-label={t("close")}>✕</button>
       </header>
 
       {#if selected === null}
-        <p class="hint">Toque em um material para ver a descrição e como ele interage com os outros.</p>
+        <p class="hint">{t("hintsIntro")}</p>
         <div class="categories">
           {#each PALETTE_CATEGORIES as cat (cat.id)}
             <section>
               <span class="category-label">
                 <Icon name={cat.icon} size={12} />
-                {cat.label}
+                {categoryLabel(cat.id)}
               </span>
               <div class="grid">
                 {#each cat.materials as id (id)}
@@ -93,7 +94,7 @@
                     <span class="icon-badge" style={swatchStyle(id)}>
                       <Icon name={ICON_BY_MATERIAL[id]} size={18} />
                     </span>
-                    <span class="name">{MATERIALS[id].name}</span>
+                    <span class="name">{materialName(id)}</span>
                   </button>
                 {/each}
               </div>
@@ -106,14 +107,14 @@
             <span class="icon-badge large" style={swatchStyle(selected)}>
               <Icon name={ICON_BY_MATERIAL[selected]} size={26} />
             </span>
-            <span class="detail-name">{MATERIALS[selected].name}</span>
+            <span class="detail-name">{materialName(selected)}</span>
           </div>
-          <p class="description">{MATERIAL_INFO[selected]?.description}</p>
-          {#if MATERIAL_INFO[selected]?.interactions.length}
+          <p class="description">{info?.description}</p>
+          {#if info?.interactions.length}
             <div class="interactions">
-              <span class="section-label">Interações</span>
+              <span class="section-label">{t("interactions")}</span>
               <ul>
-                {#each MATERIAL_INFO[selected]?.interactions ?? [] as line}
+                {#each info?.interactions ?? [] as line}
                   <li>{line}</li>
                 {/each}
               </ul>

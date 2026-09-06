@@ -94,10 +94,25 @@ export function listMaps(): MapMeta[] {
   return readIndex().sort((a, b) => b.savedAt - a.savedAt);
 }
 
+/**
+ * Thrown when localStorage rejects a write. Carries a stable `code` so the
+ * UI layer can show a message in the player's language instead of this
+ * English fallback.
+ */
 export class StorageFullError extends Error {
+  readonly code = "storage-full";
   constructor() {
-    super("Armazenamento cheio — apague algum mapa e tente de novo.");
+    super("Storage is full — delete a map and try again.");
     this.name = "StorageFullError";
+  }
+}
+
+/** Thrown when an imported file isn't a recognizable Powder & Plant map. */
+export class MapFileError extends Error {
+  readonly code = "invalid-map-file";
+  constructor() {
+    super("That file isn't a Powder & Plant map.");
+    this.name = "MapFileError";
   }
 }
 
@@ -107,7 +122,7 @@ export class StorageFullError extends Error {
  * second copy. Throws `StorageFullError` if localStorage rejects the write.
  */
 export function saveMap(name: string, snapshot: MapSnapshot): MapMeta {
-  const trimmed = name.trim() || "Mapa sem nome";
+  const trimmed = name.trim() || "Untitled";
   const index = readIndex();
   const existing = index.find((m) => m.name.trim().toLowerCase() === trimmed.toLowerCase());
   const meta: MapMeta = {
@@ -152,7 +167,7 @@ export function deleteMap(id: string): void {
 
 /** Wraps a snapshot for download as a shareable `.json` file. */
 export function toMapFile(name: string, snapshot: MapSnapshot): MapFile {
-  return { format: "powder-and-plant-map", v: SCHEMA_VERSION, name: name.trim() || "Mapa sem nome", snapshot };
+  return { format: "powder-and-plant-map", v: SCHEMA_VERSION, name: name.trim() || "Untitled", snapshot };
 }
 
 /** Parses an imported file, throwing if it isn't a recognizable map. */
@@ -160,10 +175,10 @@ export function parseMapFile(text: string): { name: string; snapshot: MapSnapsho
   const parsed = JSON.parse(text);
   const knownFormats = ["powder-and-plant-map", "powders-and-plants-map"];
   if (!parsed || !knownFormats.includes(parsed.format) || !parsed.snapshot) {
-    throw new Error("Arquivo não é um mapa de Powder & Plant.");
+    throw new MapFileError();
   }
   return {
-    name: typeof parsed.name === "string" ? parsed.name : "Mapa importado",
+    name: typeof parsed.name === "string" ? parsed.name : "Imported map",
     snapshot: normalizeSnapshot(parsed.snapshot),
   };
 }
@@ -180,7 +195,7 @@ function normalizeSnapshot(raw: unknown): MapSnapshot {
     s.w <= 0 ||
     s.h <= 0
   ) {
-    throw new Error("Mapa corrompido ou em formato desconhecido.");
+    throw new MapFileError();
   }
   return {
     v: typeof s.v === "number" ? s.v : SCHEMA_VERSION,
