@@ -14,10 +14,11 @@
     selectedMaterial: MaterialId;
     brushSize: number;
     brushShape: BrushShape;
+    paused?: boolean;
     onCount?: (count: number) => void;
     onTemperature?: (celsius: number) => void;
   }
-  let { selectedMaterial, brushSize, brushShape, onCount, onTemperature }: Props = $props();
+  let { selectedMaterial, brushSize, brushShape, paused = false, onCount, onTemperature }: Props = $props();
 
   let container: HTMLDivElement;
   let grid: SimGrid | undefined;
@@ -63,7 +64,13 @@
       stage = s;
       let frame = 0;
       s.app.ticker.add(() => {
-        localGrid.step();
+        // When paused the simulation is frozen — no falling, no reactions,
+        // no particles — but painting still works so the player can keep
+        // building and positioning elements. Releasing pause resumes from
+        // exactly the state left on screen.
+        if (!paused) {
+          localGrid.step();
+        }
         // Keeps emitting while the pointer is held still — otherwise a
         // brush parked over a spot that just freed up (e.g. sand falling
         // out from under it) stays dry until the pointer actually moves.

@@ -54,6 +54,7 @@
     selected: MaterialId;
     brushSize: number;
     brushShape: BrushShape;
+    paused: boolean;
     pixelCount: number;
     temperature: number;
     onclear: () => void;
@@ -64,6 +65,7 @@
     selected = $bindable(),
     brushSize = $bindable(),
     brushShape = $bindable(),
+    paused = $bindable(),
     pixelCount,
     temperature,
     onclear,
@@ -174,6 +176,16 @@
       <span class="size-value">{brushSize}px</span>
     </div>
     <div class="button-row">
+      <button
+        class="play-toggle"
+        class:paused
+        onclick={() => (paused = !paused)}
+        title={paused ? t("play") : t("pause")}
+        aria-label={paused ? t("play") : t("pause")}
+        aria-pressed={paused}
+      >
+        <Icon name={paused ? "play" : "pause"} size={16} />
+      </button>
       <button class="hints-btn" onclick={onhints}>
         <Icon name="help" size={15} />
         <span>{t("hints")}</span>
@@ -432,6 +444,31 @@
   .button-row {
     display: flex;
     gap: 8px;
+  }
+
+  .play-toggle {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    padding: 8px;
+    border-radius: 9px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.85);
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  }
+
+  .play-toggle:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .play-toggle.paused {
+    background: rgba(124, 224, 143, 0.18);
+    border-color: rgba(124, 224, 143, 0.5);
+    color: #7ce08f;
   }
 
   .hints-btn,

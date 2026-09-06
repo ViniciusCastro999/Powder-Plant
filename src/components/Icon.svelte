@@ -128,6 +128,11 @@
     <path d="M5 14 V19 A1 1 0 0 0 6 20 H18 A1 1 0 0 0 19 19 V14" />
   {:else if name === "trash"}
     <path d="M5 7 H19 M10 4 H14 M6 7 L7 20 H17 L18 7 M10 11 V16 M14 11 V16" />
+  {:else if name === "pause"}
+    <rect x="7" y="5" width="3.5" height="14" rx="1" fill="currentColor" stroke="none" />
+    <rect x="13.5" y="5" width="3.5" height="14" rx="1" fill="currentColor" stroke="none" />
+  {:else if name === "play"}
+    <path d="M7 4.5 L19 12 L7 19.5 Z" fill="currentColor" stroke="none" />
   {:else if name === "globe"}
     <circle cx="12" cy="12" r="9" />
     <path d="M3 12 H21 M12 3 C14.5 6 15.5 9 15.5 12 C15.5 15 14.5 18 12 21 C9.5 18 8.5 15 8.5 12 C8.5 9 9.5 6 12 3 Z" />

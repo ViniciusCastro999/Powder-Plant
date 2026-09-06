@@ -20,8 +20,21 @@
   let temperature = $state(NEUTRAL_TEMP);
   let hintsOpen = $state(false);
   let mapsOpen = $state(false);
+  let paused = $state(false);
   let canvasRef: ReturnType<typeof Canvas> | undefined;
+
+  // Spacebar toggles pause/play — the usual shortcut for it — but not while
+  // typing in a field (e.g. the map-name input in the Maps dialog).
+  function onKeydown(e: KeyboardEvent): void {
+    if (e.code !== "Space" || e.repeat) return;
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+    e.preventDefault();
+    paused = !paused;
+  }
 </script>
+
+<svelte:window on:keydown={onKeydown} />
 
 <main>
   <div class="stage-frame">
@@ -31,6 +44,7 @@
         selectedMaterial={selected}
         {brushSize}
         {brushShape}
+        {paused}
         onCount={(n) => (pixelCount = n)}
         onTemperature={(c) => (temperature = c)}
       />
@@ -41,6 +55,7 @@
     bind:selected
     bind:brushSize
     bind:brushShape
+    bind:paused
     {pixelCount}
     {temperature}
     onclear={() => canvasRef?.clear()}

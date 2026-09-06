@@ -21,6 +21,8 @@ export type UIStrings = {
   hints: string;
   maps: string;
   clearAll: string;
+  pause: string;
+  play: string;
 
   // HintsModal
   materialHints: string;
@@ -64,6 +66,8 @@ export const UI: Record<Locale, UIStrings> = {
     hints: "Hints",
     maps: "Maps",
     clearAll: "Clear all",
+    pause: "Pause",
+    play: "Play",
 
     materialHints: "Material hints",
     back: "Back",
@@ -104,6 +108,8 @@ export const UI: Record<Locale, UIStrings> = {
     hints: "Dicas",
     maps: "Mapas",
     clearAll: "Limpar tudo",
+    pause: "Pausar",
+    play: "Continuar",
 
     materialHints: "Dicas de materiais",
     back: "Voltar",
@@ -144,6 +150,8 @@ export const UI: Record<Locale, UIStrings> = {
     hints: "ヒント",
     maps: "マップ",
     clearAll: "すべて消去",
+    pause: "一時停止",
+    play: "再開",
 
     materialHints: "素材のヒント",
     back: "戻る",
