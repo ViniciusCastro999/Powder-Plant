@@ -177,7 +177,7 @@
     </div>
     <div class="button-row">
       <button
-        class="play-toggle"
+        class="icon-btn"
         class:paused
         onclick={() => (paused = !paused)}
         title={paused ? t("play") : t("pause")}
@@ -186,16 +186,16 @@
       >
         <Icon name={paused ? "play" : "pause"} size={16} />
       </button>
-      <button class="hints-btn" onclick={onhints}>
-        <Icon name="help" size={15} />
-        <span>{t("hints")}</span>
+      <button class="icon-btn" onclick={onhints} title={t("hints")} aria-label={t("hints")}>
+        <Icon name="help" size={16} />
       </button>
-      <button class="maps-btn" onclick={onmaps}>
-        <Icon name="save" size={15} />
-        <span>{t("maps")}</span>
+      <button class="icon-btn" onclick={onmaps} title={t("maps")} aria-label={t("maps")}>
+        <Icon name="save" size={16} />
+      </button>
+      <button class="icon-btn danger" onclick={onclear} title={t("clearAll")} aria-label={t("clearAll")}>
+        <Icon name="trash" size={16} />
       </button>
     </div>
-    <button class="clear" onclick={onclear}>{t("clearAll")}</button>
   </div>
 </footer>
 
@@ -443,65 +443,39 @@
 
   .button-row {
     display: flex;
-    gap: 8px;
+    gap: 6px;
   }
 
-  .play-toggle {
-    flex: none;
+  .icon-btn {
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 38px;
-    padding: 8px;
+    height: 34px;
     border-radius: 9px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     background: rgba(255, 255, 255, 0.05);
-    color: rgba(255, 255, 255, 0.85);
+    color: rgba(255, 255, 255, 0.82);
     cursor: pointer;
     transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
   }
 
-  .play-toggle:hover {
-    background: rgba(255, 255, 255, 0.1);
+  .icon-btn:hover {
+    background: rgba(106, 160, 255, 0.2);
+    border-color: rgba(106, 160, 255, 0.45);
+    color: #fff;
   }
 
-  .play-toggle.paused {
+  .icon-btn.paused {
     background: rgba(124, 224, 143, 0.18);
     border-color: rgba(124, 224, 143, 0.5);
     color: #7ce08f;
   }
 
-  .hints-btn,
-  .maps-btn,
-  .clear {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 8px 10px;
-    border-radius: 9px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(255, 255, 255, 0.05);
-    color: rgba(255, 255, 255, 0.85);
-    font-size: 12.5px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.12s ease, border-color 0.12s ease;
-  }
-
-  .clear {
-    width: 100%;
-  }
-
-  .hints-btn:hover,
-  .maps-btn:hover {
-    background: rgba(106, 160, 255, 0.2);
-    border-color: rgba(106, 160, 255, 0.45);
-  }
-
-  .clear:hover {
+  .icon-btn.danger:hover {
     background: rgba(255, 99, 71, 0.18);
     border-color: rgba(255, 99, 71, 0.4);
+    color: #ff8a5c;
   }
 </style>
