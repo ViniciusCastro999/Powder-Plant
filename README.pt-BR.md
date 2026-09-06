@@ -28,8 +28,8 @@
 Pinte areia, água, fogo, lava, ácido, pólvora, plantas e dezenas de outros
 materiais numa grade e veja tudo interagir. Líquidos buscam o próprio nível, pós
 formam pilhas, o fogo se espalha, explosivos detonam em cadeia, sementes germinam
-e uma **temperatura ambiente** global muda conforme o que você coloca no cenário
-— comandando combustão espontânea, congelamento, fervura e o crescimento das
+e uma **temperatura ambiente** global muda conforme o que você coloca no cenário,
+comandando combustão espontânea, congelamento, fervura e o crescimento das
 plantas.
 
 > A interface está disponível em inglês, português e japonês (seletor no canto inferior esquerdo).
@@ -37,12 +37,12 @@ plantas.
 ## Recursos
 
 - **~25 materiais** em 8 categorias temáticas, cada um com física própria.
-- **Simulação falling-sand** feita do zero — um autômato celular com movimento
+- **Simulação falling-sand** feita do zero: um autômato celular com movimento
   por densidade, propagação de fogo e ácido, e otimização de dormir/acordar.
 - **Eletricidade** que percorre condutores em forma de pulsos.
 - **Explosões** com ondas de choque, estilhaços e reações em cadeia (Pólvora, C4, gás).
 - **Jogo da Vida de Conway** como um material próprio ("Vida").
-- **Temperatura global** com 8 faixas — aqueça a grade até a faixa *Próspero* e
+- **Temperatura global** com 8 faixas. Aqueça a grade até a faixa *Próspero* e
   as plantas florescem.
 - **Salvar / carregar / exportar / importar** cenários como arquivos `.pnp.json`
   (via `localStorage`).
@@ -55,7 +55,7 @@ plantas.
 | **Renderização** | [Pixi.js 8](https://pixijs.com/) desenhando a grade de células |
 | **Ferramentas** | [Vite](https://vite.dev/) como bundler e dev server |
 
-Sem dependências de runtime além do Pixi — a simulação é toda código próprio.
+Sem dependências de runtime além do Pixi. A simulação é toda código próprio.
 
 ## Como rodar
 
@@ -89,7 +89,7 @@ npm run check     # type-check do Svelte + TypeScript
   congelamento, fervura e o crescimento das plantas.
 - O botão **Dicas** abre uma janela com a descrição e as interações de cada material.
 - O **seletor de idioma** (canto inferior esquerdo, ao lado da temperatura) troca a
-  interface entre inglês, português e japonês — a escolha fica salva no navegador e,
+  interface entre inglês, português e japonês. A escolha fica salva no navegador e,
   na primeira visita, usa o idioma do navegador.
 
 ## Materiais

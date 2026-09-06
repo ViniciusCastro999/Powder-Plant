@@ -9,13 +9,13 @@ export interface MaterialInfo {
 type InfoMap = Partial<Record<MaterialId, MaterialInfo>>;
 
 /**
- * Player-facing description + interaction notes for the hints popup — kept
+ * Player-facing description + interaction notes for the hints popup, kept
  * short and general, not simulation internals. One map per language.
  */
 const EN: InfoMap = {
   [MaterialId.Sand]: {
     description: "Falls and piles up, like real sand.",
-    interactions: ["Sinks through Water and Acid — slower than Stone.", "Melts in Lava."],
+    interactions: ["Sinks through Water and Acid, slower than Stone.", "Melts in Lava."],
   },
   [MaterialId.Water]: {
     description: "A liquid that flows and seeks its own level.",
@@ -27,7 +27,7 @@ const EN: InfoMap = {
       "Soaked up by Dirt, turning it into Mud.",
       "Helps plants and seeds grow.",
       "Freezes near Ice, or on its own once the climate gets cold enough (only if not salty).",
-      "Slowly boils above 100°C into rising Steam — condenses back to Water once the climate cools.",
+      "Slowly boils above 100°C into rising Steam that condenses back to Water once the climate cools.",
     ],
   },
   [MaterialId.Stone]: {
@@ -56,7 +56,7 @@ const EN: InfoMap = {
     interactions: ["Turns into Mud near Water.", "Seeds germinate into small dry sprouts in it."],
   },
   [MaterialId.Mud]: {
-    description: "Already-wet soil — the best place to plant.",
+    description: "Already-wet soil, the best place to plant.",
     interactions: ["Seeds germinate into little flowering branches in it."],
   },
   [MaterialId.Seed]: {
@@ -84,21 +84,21 @@ const EN: InfoMap = {
     description: "A corrosive liquid that's used up as it eats through things.",
     interactions: [
       "Dissolves whatever it touches; resistant materials (Stone, Metal) hold out longer.",
-      "Slowly boils above 83°C (before Water) into Acid Vapor — rains back down as fresh Acid once the climate cools.",
+      "Slowly boils above 83°C (before Water) into Acid Vapor, which rains back down as fresh Acid once the climate cools.",
     ],
   },
   [MaterialId.Gunpowder]: {
     description: "An unstable explosive powder.",
     interactions: [
       "Catches fire easily and blows up into flying shrapnel that shoves everything nearby (Sand, Water, etc.), but not very far.",
-      "Sets off other Gunpowder or C4 nearby in a chain, a beat after the initial blast — a big pile goes off in waves, not all at once.",
+      "Sets off other Gunpowder or C4 nearby in a chain, a beat after the initial blast, so a big pile goes off in waves rather than all at once.",
     ],
   },
   [MaterialId.C4]: {
     description: "The same explosive as Gunpowder, but a solid block that stays put.",
     interactions: [
       "Catches fire easily and explodes exactly like Gunpowder, with the same shrapnel.",
-      "Detonates along with nearby Gunpowder or other C4 in a chain — no matter which one lit first.",
+      "Detonates along with nearby Gunpowder or other C4 in a chain, no matter which one lit first.",
       "Doesn't fall or move: stays exactly where it was placed until it explodes.",
     ],
   },
@@ -107,7 +107,7 @@ const EN: InfoMap = {
     interactions: [
       "Catches fire extremely easily and explodes, just like Gunpowder and C4.",
       "Ignites on its own if the climate warms up (far more heat-sensitive than any other flammable).",
-      "Rises and disperses instead of falling — vanishes fast if it isn't lit.",
+      "Rises and disperses instead of falling, and vanishes fast if it isn't lit.",
     ],
   },
   [MaterialId.Oil]: {
@@ -130,7 +130,7 @@ const EN: InfoMap = {
     description: "A cellular organism that is born, survives and dies by the rules of Conway's Game of Life.",
     interactions: [
       "A live cell with 2 or 3 live neighbours survives; otherwise it dies. An empty space with exactly 3 live neighbours comes to life.",
-      "Devours nearby Seed, Flower, Sprout, Plant and Wood, turning them into more Life — each at a different speed (Seed is fast, Wood very slow). It doubles as it eats.",
+      "Devours nearby Seed, Flower, Sprout, Plant and Wood, turning them into more Life, each at a different speed (Seed is fast, Wood very slow). It doubles as it eats.",
     ],
   },
   [MaterialId.Ice]: {
@@ -143,16 +143,16 @@ const EN: InfoMap = {
   [MaterialId.Glass]: {
     description: "A fragile solid, but completely immune to Acid.",
     interactions: [
-      "Explosion shrapnel and Electricity crack it, one hit at a time — a few impacts on the same spot break it into Sand there, rather than the whole pane shattering at once.",
-      "Immune to Acid — the acid doesn't even spend a charge trying to corrode it.",
+      "Explosion shrapnel and Electricity crack it one hit at a time; a few impacts on the same spot break it into Sand there, rather than the whole pane shattering at once.",
+      "Immune to Acid: the acid doesn't even spend a charge trying to corrode it.",
     ],
   },
   [MaterialId.Clone]: {
     description: "A block that stays put and copies the first material to touch it.",
     interactions: [
-      "Once touched by any material, it generates that same material endlessly, forever — including Electricity.",
+      "Once touched by any material, it generates that same material endlessly, forever, Electricity included.",
       "Once locked to a material it never changes, even if the original that touched it disappears.",
-      "A still-unlocked Clone block touching an already-locked Clone gradually copies the same material — it only spreads through connected Clone blocks.",
+      "A still-unlocked Clone block touching an already-locked Clone gradually copies the same material, and it only spreads through connected Clone blocks.",
       "Immune to Acid.",
     ],
   },
@@ -160,14 +160,14 @@ const EN: InfoMap = {
     description: "A solid, immovable block that warms the surroundings without ever changing itself.",
     interactions: [
       "Warms the climate like Fire and Lava, but doesn't catch fire, melt or ignite anything around it.",
-      "Immune to everything — Acid, Electricity, shrapnel — built purely to control temperature.",
+      "Immune to everything (Acid, Electricity, shrapnel), built purely to control temperature.",
     ],
   },
   [MaterialId.ColdBlock]: {
     description: "A solid, immovable block that cools the surroundings without ever changing itself.",
     interactions: [
       "Cools the climate like Ice, but doesn't melt or freeze anything around it.",
-      "Immune to everything — Acid, Electricity, shrapnel — built purely to control temperature.",
+      "Immune to everything (Acid, Electricity, shrapnel), built purely to control temperature.",
     ],
   },
 };
@@ -175,7 +175,7 @@ const EN: InfoMap = {
 const PT: InfoMap = {
   [MaterialId.Sand]: {
     description: "Cai e forma pilhas, como areia de verdade.",
-    interactions: ["Afunda na Água e no Ácido — mais devagar que a Pedra.", "Derrete na Lava."],
+    interactions: ["Afunda na Água e no Ácido, mais devagar que a Pedra.", "Derrete na Lava."],
   },
   [MaterialId.Water]: {
     description: "Líquido que flui e busca o próprio nível.",
@@ -187,7 +187,7 @@ const PT: InfoMap = {
       "Absorvida pela Terra, virando Barro.",
       "Ajuda plantas e sementes a crescerem.",
       "Congela perto de Gelo, ou sozinha quando o clima esfria bastante (só se não estiver salgada).",
-      "Ferve lentamente a partir de 100°C, virando Vapor que sobe — volta a ser Água quando o clima esfriar de novo.",
+      "Ferve lentamente a partir de 100°C, virando Vapor que sobe e volta a ser Água quando o clima esfriar de novo.",
     ],
   },
   [MaterialId.Stone]: {
@@ -216,7 +216,7 @@ const PT: InfoMap = {
     interactions: ["Vira Barro perto de Água.", "Sementes germinam nela em brotinhos secos."],
   },
   [MaterialId.Mud]: {
-    description: "Solo já molhado — o melhor lugar para plantar.",
+    description: "Solo já molhado, o melhor lugar para plantar.",
     interactions: ["Sementes germinam nela em pequenos galhos com flores."],
   },
   [MaterialId.Seed]: {
@@ -248,21 +248,21 @@ const PT: InfoMap = {
     description: "Líquido corrosivo que se consome enquanto corrói.",
     interactions: [
       "Dissolve o que tocar; materiais resistentes (Pedra, Metal) aguentam mais.",
-      "Ferve lentamente a partir de 83°C (antes da Água) virando Vapor de Ácido — chove de volta como Ácido fresco quando o clima esfriar.",
+      "Ferve lentamente a partir de 83°C (antes da Água) virando Vapor de Ácido, que chove de volta como Ácido fresco quando o clima esfriar.",
     ],
   },
   [MaterialId.Gunpowder]: {
     description: "Pó explosivo instável.",
     interactions: [
       "Pega fogo fácil e explode em estilhaços que voam e empurram tudo que estiver por perto (Areia, Água, etc.), mas não muito longe.",
-      "Detona outras Pólvoras ou C4 por perto em cadeia, um pouco depois da explosão inicial — um monte grande delas explode em ondas, não tudo de uma vez.",
+      "Detona outras Pólvoras ou C4 por perto em cadeia, um pouco depois da explosão inicial, então um monte grande delas explode em ondas, não tudo de uma vez.",
     ],
   },
   [MaterialId.C4]: {
     description: "Mesmo explosivo da Pólvora, só que em bloco sólido e parado no lugar.",
     interactions: [
       "Pega fogo fácil e explode exatamente como a Pólvora, com os mesmos estilhaços.",
-      "Detona junto com Pólvora ou outro C4 por perto em cadeia — não importa qual dos dois acendeu primeiro.",
+      "Detona junto com Pólvora ou outro C4 por perto em cadeia, não importa qual dos dois acendeu primeiro.",
       "Não cai nem se move: fica exatamente onde foi colocado até explodir.",
     ],
   },
@@ -271,7 +271,7 @@ const PT: InfoMap = {
     interactions: [
       "Pega fogo com muita facilidade e explode, igual Pólvora e C4.",
       "Pega fogo sozinho se o clima esquentar (bem mais sensível a calor que qualquer outro inflamável).",
-      "Sobe e se dispersa em vez de cair — some rápido se não for aceso.",
+      "Sobe e se dispersa em vez de cair, e some rápido se não for aceso.",
     ],
   },
   [MaterialId.Oil]: {
@@ -294,7 +294,7 @@ const PT: InfoMap = {
     description: "Um organismo celular que nasce, sobrevive e morre seguindo as regras do Jogo da Vida de Conway.",
     interactions: [
       "Uma célula viva com 2 ou 3 vizinhas vivas sobrevive; fora isso, morre. Um espaço vazio com exatamente 3 vizinhas vivas nasce.",
-      "Devora Semente, Flor, Broto, Planta e Madeira ao redor, virando mais Vida — cada material é devorado numa velocidade diferente (Semente é rápida, Madeira é bem lenta). Ao comer, ela se duplica.",
+      "Devora Semente, Flor, Broto, Planta e Madeira ao redor, virando mais Vida, cada material numa velocidade diferente (Semente é rápida, Madeira é bem lenta). Ao comer, ela se duplica.",
     ],
   },
   [MaterialId.Ice]: {
@@ -307,16 +307,16 @@ const PT: InfoMap = {
   [MaterialId.Glass]: {
     description: "Sólido frágil, mas totalmente imune a Ácido.",
     interactions: [
-      "Estilhaços de explosão e Eletricidade o trincam, um impacto de cada vez — alguns golpes no mesmo ponto o quebram em Areia ali, em vez de toda a placa se estilhaçar de uma vez.",
-      "Imune a Ácido — o ácido nem gasta carga tentando corroê-lo.",
+      "Estilhaços de explosão e Eletricidade o trincam, um impacto de cada vez; alguns golpes no mesmo ponto o quebram em Areia ali, em vez de toda a placa se estilhaçar de uma vez.",
+      "Imune a Ácido: o ácido nem gasta carga tentando corroê-lo.",
     ],
   },
   [MaterialId.Clone]: {
     description: "Bloco parado que copia o primeiro material que encostar nele.",
     interactions: [
-      "Ao ser tocado por qualquer material, passa a gerar esse mesmo material sem parar, para sempre — inclusive Eletricidade.",
+      "Ao ser tocado por qualquer material, passa a gerar esse mesmo material sem parar, para sempre, inclusive Eletricidade.",
       "Uma vez travado em um material, nunca muda, mesmo que o original que o tocou desapareça.",
-      "Um bloco de Clone ainda destravado, encostado em outro Clone já travado, aos poucos copia o mesmo material — só se espalha por blocos de Clone conectados entre si.",
+      "Um bloco de Clone ainda destravado, encostado em outro Clone já travado, aos poucos copia o mesmo material, e só se espalha por blocos de Clone conectados entre si.",
       "Imune a Ácido.",
     ],
   },
@@ -324,14 +324,14 @@ const PT: InfoMap = {
     description: "Bloco sólido e imóvel que esquenta o ambiente, sem nunca sofrer nenhuma alteração.",
     interactions: [
       "Esquenta o clima como Fogo e Lava, mas não pega fogo, não derrete e não incendeia nada ao redor.",
-      "Imune a tudo — Ácido, Eletricidade, estilhaços — feito só para controlar a temperatura.",
+      "Imune a tudo (Ácido, Eletricidade, estilhaços), feito só para controlar a temperatura.",
     ],
   },
   [MaterialId.ColdBlock]: {
     description: "Bloco sólido e imóvel que esfria o ambiente, sem nunca sofrer nenhuma alteração.",
     interactions: [
       "Esfria o clima como o Gelo, mas não derrete e não congela nada ao redor.",
-      "Imune a tudo — Ácido, Eletricidade, estilhaços — feito só para controlar a temperatura.",
+      "Imune a tudo (Ácido, Eletricidade, estilhaços), feito só para controlar a temperatura.",
     ],
   },
 };
@@ -339,7 +339,7 @@ const PT: InfoMap = {
 const JA: InfoMap = {
   [MaterialId.Sand]: {
     description: "本物の砂のように落ちて積もる。",
-    interactions: ["水や酸の中を沈む — 石より遅い。", "溶岩で溶ける。"],
+    interactions: ["水や酸の中を沈む。石より遅い。", "溶岩で溶ける。"],
   },
   [MaterialId.Water]: {
     description: "流れて水平を求める液体。",
@@ -351,7 +351,7 @@ const JA: InfoMap = {
       "土に吸われて泥になる。",
       "植物や種の成長を助ける。",
       "氷のそばで凍る。気候が十分に冷えれば単独でも凍る（塩水でない場合のみ）。",
-      "100℃を超えるとゆっくり沸騰して上昇する蒸気になる — 気候が冷えると再び水に戻る。",
+      "100℃を超えるとゆっくり沸騰して上昇する蒸気になり、気候が冷えると再び水に戻る。",
     ],
   },
   [MaterialId.Stone]: {
@@ -380,7 +380,7 @@ const JA: InfoMap = {
     interactions: ["水のそばで泥になる。", "種がその中で乾いた小さな芽に発芽する。"],
   },
   [MaterialId.Mud]: {
-    description: "すでに湿った土 — 植えるのに最適な場所。",
+    description: "すでに湿った土。植えるのに最適な場所。",
     interactions: ["種がその中で花のついた小さな枝に発芽する。"],
   },
   [MaterialId.Seed]: {
@@ -412,21 +412,21 @@ const JA: InfoMap = {
     description: "腐食しながら自らも消費されていく液体。",
     interactions: [
       "触れたものを溶かす。耐性のある素材（石、金属）ほど長く持ちこたえる。",
-      "83℃を超えると（水より先に）ゆっくり沸騰して酸の蒸気になる — 気候が冷えると新鮮な酸となって降り戻る。",
+      "83℃を超えると（水より先に）ゆっくり沸騰して酸の蒸気になり、気候が冷えると新鮮な酸となって降り戻る。",
     ],
   },
   [MaterialId.Gunpowder]: {
     description: "不安定な爆発性の粉。",
     interactions: [
       "簡単に引火し、破片となって飛び散り、近くのすべて（砂、水など）を押しのける。ただしそれほど遠くまでは飛ばない。",
-      "近くの他の火薬や C4 を連鎖的に、最初の爆発の少し後に誘爆させる — 大きな山は一度にではなく波状に爆発する。",
+      "近くの他の火薬や C4 を、最初の爆発の少し後に連鎖的に誘爆させる。大きな山は一度にではなく波状に爆発する。",
     ],
   },
   [MaterialId.C4]: {
     description: "火薬と同じ爆発物だが、その場に留まる固体ブロック。",
     interactions: [
       "簡単に引火し、火薬とまったく同じ破片で爆発する。",
-      "近くの火薬や他の C4 と連鎖的に誘爆する — どちらが先に着火したかは関係ない。",
+      "近くの火薬や他の C4 と連鎖的に誘爆する。どちらが先に着火したかは関係ない。",
       "落ちも動きもしない：爆発するまで置かれた場所にとどまる。",
     ],
   },
@@ -435,7 +435,7 @@ const JA: InfoMap = {
     interactions: [
       "非常に簡単に引火し、火薬や C4 と同じように爆発する。",
       "気候が暖まると自然に発火する（他のどの可燃物よりも熱に敏感）。",
-      "落ちるのではなく上昇して拡散する — 着火されなければすぐに消える。",
+      "落ちるのではなく上昇して拡散する。着火されなければすぐに消える。",
     ],
   },
   [MaterialId.Oil]: {
@@ -458,7 +458,7 @@ const JA: InfoMap = {
     description: "コンウェイのライフゲームのルールに従って生まれ、生き残り、死ぬ細胞状の生命体。",
     interactions: [
       "生きたセルは 2 または 3 個の生きた隣接セルがあれば生き残り、それ以外では死ぬ。空きマスはちょうど 3 個の生きた隣接セルがあると誕生する。",
-      "周囲の種・花・芽・植物・木を食べてさらにライフになる — 素材ごとに食べる速さが違う（種は速く、木は非常に遅い）。食べると倍に増える。",
+      "周囲の種・花・芽・植物・木を食べてさらにライフになる。素材ごとに食べる速さが違い（種は速く、木は非常に遅い）、食べると倍に増える。",
     ],
   },
   [MaterialId.Ice]: {
@@ -471,16 +471,16 @@ const JA: InfoMap = {
   [MaterialId.Glass]: {
     description: "もろい固体だが、酸には完全に耐性がある。",
     interactions: [
-      "爆発の破片や電気は一撃ずつヒビを入れる — 同じ場所に数回当たるとそこが砕けて砂になり、板全体が一度に割れることはない。",
-      "酸に耐性 — 酸は腐食しようとして電荷を消費すらしない。",
+      "爆発の破片や電気は一撃ずつヒビを入れる。同じ場所に数回当たるとそこが砕けて砂になり、板全体が一度に割れることはない。",
+      "酸に耐性がある。酸は腐食しようとして電荷を消費すらしない。",
     ],
   },
   [MaterialId.Clone]: {
     description: "その場に留まり、最初に触れた素材をコピーするブロック。",
     interactions: [
-      "どの素材でも触れられると、その同じ素材を永遠に生成し続ける — 電気も含む。",
+      "どの素材でも触れられると、その同じ素材を永遠に生成し続ける（電気も含む）。",
       "一度ある素材に固定されると、触れた元の素材が消えても決して変わらない。",
-      "まだ固定されていないクローンブロックが、すでに固定されたクローンに触れていると、少しずつ同じ素材をコピーする — つながったクローンブロックの間だけで広がる。",
+      "まだ固定されていないクローンブロックが、すでに固定されたクローンに触れていると、少しずつ同じ素材をコピーする。つながったクローンブロックの間だけで広がる。",
       "酸に耐性がある。",
     ],
   },
@@ -488,14 +488,14 @@ const JA: InfoMap = {
     description: "自らは一切変化せず、周囲を暖める、動かない固体ブロック。",
     interactions: [
       "火や溶岩のように気候を暖めるが、発火も融解もせず、周囲の何も燃やさない。",
-      "すべてに耐性 — 酸、電気、破片 — 純粋に温度を操作するために作られている。",
+      "すべてに耐性があり（酸、電気、破片）、純粋に温度を操作するために作られている。",
     ],
   },
   [MaterialId.ColdBlock]: {
     description: "自らは一切変化せず、周囲を冷やす、動かない固体ブロック。",
     interactions: [
       "氷のように気候を冷やすが、周囲の何も溶かさず凍らせない。",
-      "すべてに耐性 — 酸、電気、破片 — 純粋に温度を操作するために作られている。",
+      "すべてに耐性があり（酸、電気、破片）、純粋に温度を操作するために作られている。",
     ],
   },
 };

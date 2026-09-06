@@ -28,7 +28,7 @@
 Paint sand, water, fire, lava, acid, gunpowder, plants and dozens of other
 materials onto a grid and watch them interact. Liquids seek their own level,
 powders pile up, fire spreads, explosives chain-detonate, seeds germinate, and a
-global **ambient temperature** shifts with whatever you place — driving
+global **ambient temperature** shifts with whatever you place, driving
 spontaneous combustion, freezing, boiling and plant growth.
 
 > The UI is available in English, Portuguese and Japanese (switcher in the bottom-left corner).
@@ -36,12 +36,12 @@ spontaneous combustion, freezing, boiling and plant growth.
 ## Features
 
 - **~25 materials** across 8 thematic categories, each with its own physics.
-- **Falling-sand simulation** written from scratch — a cellular automaton with
+- **Falling-sand simulation** written from scratch: a cellular automaton with
   density-based movement, fire and acid propagation, and sleep/wake optimisation.
 - **Electricity** that travels through conductors as pulses.
 - **Explosions** with blast waves, shrapnel and chain reactions (Gunpowder, C4, gas).
 - **Conway's Game of Life** as a material of its own ("Vida").
-- **Global temperature** with 8 bands — warm the grid into the *prosperous* band
+- **Global temperature** with 8 bands. Warm the grid into the *prosperous* band
   and plants bloom into flowers.
 - **Save / load / export / import** scenes as `.pnp.json` files (via `localStorage`).
 
@@ -53,7 +53,7 @@ spontaneous combustion, freezing, boiling and plant growth.
 | **Rendering** | [Pixi.js 8](https://pixijs.com/) drawing the cell grid |
 | **Tooling** | [Vite](https://vite.dev/) as bundler and dev server |
 
-No runtime dependencies beyond Pixi — the simulation is all first-party code.
+No runtime dependencies beyond Pixi. The simulation is all first-party code.
 
 ## Getting started
 
@@ -86,7 +86,7 @@ npm run check     # Svelte + TypeScript type-check
   combustion, freezing, boiling and plant growth.
 - The **Hints** button opens a window describing every material and its interactions.
 - The **language switch** (bottom-left, next to the temperature) toggles the UI
-  between English, Portuguese and Japanese — the choice is remembered in the
+  between English, Portuguese and Japanese. The choice is remembered in the
   browser, and defaults to your browser language on first visit.
 
 ## Materials
