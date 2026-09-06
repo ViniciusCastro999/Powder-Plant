@@ -3,7 +3,6 @@
 # 🌱 Powder & Plant
 
 **A browser-based falling-sand particle sandbox.**
-_Um simulador de partículas do tipo falling-sand que roda no navegador._
 
 ![Powder & Plant screenshot](docs/screenshot.png)
 
@@ -12,13 +11,14 @@ _Um simulador de partículas do tipo falling-sand que roda no navegador._
 ![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
 ![Pixi.js](https://img.shields.io/badge/Pixi.js-8-E91E63?logo=pixijs&logoColor=white)
 
-**[English](#english) · [Português](#português)**
+<br>
+
+[![English](https://img.shields.io/badge/lang-English-2ea44f?style=for-the-badge)](README.md)
+[![Português](https://img.shields.io/badge/lang-Portugu%C3%AAs-6e7781?style=for-the-badge)](README.pt-BR.md)
 
 </div>
 
 ---
-
-## English
 
 Paint sand, water, fire, lava, acid, gunpowder, plants and dozens of other
 materials onto a grid and watch them interact. Liquids seek their own level,
@@ -28,7 +28,7 @@ spontaneous combustion, freezing, boiling and plant growth.
 
 > The in-game UI and all material names are in Portuguese.
 
-### Features
+## Features
 
 - **~25 materials** across 8 thematic categories, each with its own physics.
 - **Falling-sand simulation** written from scratch — a cellular automaton with
@@ -40,7 +40,7 @@ spontaneous combustion, freezing, boiling and plant growth.
   and plants bloom into flowers.
 - **Save / load / export / import** scenes as `.pnp.json` files (via `localStorage`).
 
-### Tech stack
+## Tech stack
 
 | | |
 |---|---|
@@ -50,7 +50,7 @@ spontaneous combustion, freezing, boiling and plant growth.
 
 No runtime dependencies beyond Pixi — the simulation is all first-party code.
 
-### Getting started
+## Getting started
 
 Requires Node.js (20+ recommended).
 
@@ -67,7 +67,7 @@ npm run preview   # serve the production build locally
 npm run check     # Svelte + TypeScript type-check
 ```
 
-### How to play
+## How to play
 
 - **Pick a material** from the bottom bar (grouped by category).
 - **Draw on the canvas** with mouse or touch. Brush shapes: Point, Line, Square
@@ -81,7 +81,7 @@ npm run check     # Svelte + TypeScript type-check
   combustion, freezing, boiling and plant growth.
 - The **Dicas** button opens a window describing every material and its interactions.
 
-### Materials
+## Materials
 
 | Category | Materials |
 |---|---|
@@ -97,7 +97,7 @@ npm run check     # Svelte + TypeScript type-check
 Some materials only appear as reactions: **Broto** and **Flor** (from germinating
 seeds), **Vapor** (boiled water) and **Vapor de Ácido** (boiled acid).
 
-### Project structure
+## Project structure
 
 ```
 src/
@@ -120,125 +120,10 @@ src/
     types.ts           MaterialId, categories, simulation buffers
 ```
 
-### How the simulation works
+## How the simulation works
 
 The core is [src/sim/grid.ts](src/sim/grid.ts): the grid stores `material` and
 `meta` (one byte per cell) in flat `Uint8Array`s, and `step()` walks the grid
 bottom-to-top each frame applying movement (powders, liquids, gases), fire, acid,
 electricity (pulses), explosions (blast waves), Conway's Game of Life (the "Vida"
 material) and the ambient-temperature effects.
-
----
-
-## Português
-
-Pinte areia, água, fogo, lava, ácido, pólvora, plantas e dezenas de outros
-materiais numa grade e veja tudo interagir. Líquidos buscam o próprio nível, pós
-formam pilhas, o fogo se espalha, explosivos detonam em cadeia, sementes germinam
-e uma **temperatura ambiente** global muda conforme o que você coloca no cenário
-— comandando combustão espontânea, congelamento, fervura e o crescimento das
-plantas.
-
-> Toda a interface e os nomes dos materiais estão em português.
-
-### Recursos
-
-- **~25 materiais** em 8 categorias temáticas, cada um com física própria.
-- **Simulação falling-sand** feita do zero — um autômato celular com movimento
-  por densidade, propagação de fogo e ácido, e otimização de dormir/acordar.
-- **Eletricidade** que percorre condutores em forma de pulsos.
-- **Explosões** com ondas de choque, estilhaços e reações em cadeia (Pólvora, C4, gás).
-- **Jogo da Vida de Conway** como um material próprio ("Vida").
-- **Temperatura global** com 8 faixas — aqueça a grade até a faixa *Próspero* e
-  as plantas florescem.
-- **Salvar / carregar / exportar / importar** cenários como arquivos `.pnp.json`
-  (via `localStorage`).
-
-### Stack
-
-| | |
-|---|---|
-| **UI** | [Svelte 5](https://svelte.dev/) (runes) + TypeScript |
-| **Renderização** | [Pixi.js 8](https://pixijs.com/) desenhando a grade de células |
-| **Ferramentas** | [Vite](https://vite.dev/) como bundler e dev server |
-
-Sem dependências de runtime além do Pixi — a simulação é toda código próprio.
-
-### Como rodar
-
-Requer Node.js (recomendado 20+).
-
-```bash
-npm install
-npm run dev       # dev server com HMR em http://localhost:5173
-```
-
-Outros scripts:
-
-```bash
-npm run build     # build de produção em dist/
-npm run preview   # serve o build de produção localmente
-npm run check     # type-check do Svelte + TypeScript
-```
-
-### Como jogar
-
-- **Escolha um material** na barra inferior (organizada por categorias).
-- **Desenhe na tela** com o mouse ou toque. As formas de pincel são Ponto, Linha,
-  Área (quadrado) e Área (círculo), com tamanho ajustável.
-- **Borracha** apaga células; **Limpar tudo** zera a grade inteira.
-- **Mapas** abre a janela de salvar/carregar: guarde o cenário atual com um nome
-  (fica salvo no navegador), recarregue mapas salvos, exporte qualquer um como
-  arquivo `.pnp.json` e importe arquivos de volta para compartilhar cenários
-  entre navegadores.
-- O painel mostra a contagem de células ativas e a **temperatura ambiente**, que
-  sobe com Fogo/Lava/Calor e desce com Gelo/Frio, afetando combustão espontânea,
-  congelamento, fervura e o crescimento das plantas.
-- O botão **Dicas** abre uma janela com a descrição e as interações de cada material.
-
-### Materiais
-
-| Categoria | Materiais |
-|---|---|
-| Partículas | Areia · Pedra · Terra · Barro · Sal |
-| Sólidos | Madeira · Metal · Vidro |
-| Líquidos | Água · Óleo · Ácido |
-| Vida | Planta · Semente · Vida |
-| Calor | Fogo · Lava · Calor |
-| Frio | Gelo · Frio |
-| Explosivos | Pólvora · C4 · Gás |
-| Especiais | Eletricidade · Clone |
-
-Alguns materiais só aparecem como reação: **Broto** e **Flor** (de sementes que
-germinam), **Vapor** (água fervida) e **Vapor de Ácido** (ácido fervido).
-
-### Estrutura do projeto
-
-```
-src/
-  main.ts              ponto de entrada, monta o App
-  App.svelte           layout: canvas + painel inferior + modais
-  components/
-    Canvas.svelte      cria a grade, roda o loop de simulação, trata o pincel
-    BottomPanel.svelte seletor de material, pincel, stats, botões
-    HintsModal.svelte  janela de ajuda com descrições dos materiais
-    MapsModal.svelte   janela de salvar / carregar / exportar / importar mapas
-    Icon.svelte        ícones SVG
-  render/
-    PixiStage.ts       desenha a grade (e overlays de faíscas/explosão) no Pixi
-  sim/
-    grid.ts            o coração: autômato celular, física, reações, temperatura
-    materials.ts       definição de cada material e agrupamento da paleta
-    materialInfo.ts    textos de descrição/interação para o modal de dicas
-    temperature.ts     faixas de temperatura compartilhadas entre sim e UI
-    storage.ts         serialização (RLE) e persistência de mapas no localStorage
-    types.ts           MaterialId, categorias, buffers da simulação
-```
-
-### Como a simulação funciona
-
-O núcleo é [src/sim/grid.ts](src/sim/grid.ts): a grade guarda `material` e `meta`
-(um byte por célula) em `Uint8Array` planos, e `step()` percorre a grade de baixo
-para cima a cada frame aplicando movimento (pós, líquidos, gases), fogo, ácido,
-eletricidade (pulsos), explosões (ondas de choque), o Jogo da Vida de Conway (o
-material "Vida") e os efeitos de temperatura ambiente.
