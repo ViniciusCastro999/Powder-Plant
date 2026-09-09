@@ -147,6 +147,22 @@ const EN: InfoMap = {
       "Immune to Acid: the acid doesn't even spend a charge trying to corrode it.",
     ],
   },
+  [MaterialId.Brick]: {
+    description: "Fired masonry. A sturdy, inert wall block. What the Mason builds houses from, and paintable by hand.",
+    interactions: [
+      "Very acid-resistant and fireproof.",
+      "A Brick, Stone or Wood roof overhead with a wall to each side is shelter. The folk crowd inside a house when the climate turns too hot or too cold to bear.",
+      "The Raider smashes it like any other structure.",
+    ],
+  },
+  [MaterialId.Wheat]: {
+    description: "The Farmer's crop. A shoot sown on soil that grows a short stalk and ripens from green to gold.",
+    interactions: [
+      "Roots in Dirt or Mud; grows a cell or two taller with headroom, and a ripe head self-seeds onto bare soil nearby, so a sown row becomes a field.",
+      "A ripe head is food. The folk (and the Farmer that grew it) eat it for a full meal; green shoots are left to grow up.",
+      "Dry straw: burns readily and scorches from ambient heat. Withers unrooted or in a hard frost.",
+    ],
+  },
   [MaterialId.Clone]: {
     description: "A block that stays put and copies the first material to touch it.",
     interactions: [
@@ -168,6 +184,79 @@ const EN: InfoMap = {
     interactions: [
       "Cools the climate like Ice, but doesn't melt or freeze anything around it.",
       "Immune to everything (Acid, Electricity, shrapnel), built purely to control temperature.",
+    ],
+  },
+  [MaterialId.Ant]: {
+    description: "A tiny walker that follows surfaces. Climbs walls, trudges up slopes, and falls when nothing's underfoot.",
+    interactions: [
+      "Eats Plant, Sprout, Flower and Seed, and gnaws slowly through Wood and Mud; follows the scent of nearby food and gathers on it.",
+      "Starves without food and multiplies when well fed.",
+      "Burrows through loose Sand, Dirt and Mud, carving tunnels as the grains spill back.",
+      "Drowns in Water, burns in Fire and Lava (fire sweeps a whole colony), dissolves in Acid.",
+      "Hunted by Birds. Burrow underground to hide.",
+    ],
+  },
+  [MaterialId.Bird]: {
+    description: "Soars in a lazy band near the top of the scene, but swoops the moment it spots prey.",
+    interactions: [
+      "Hunts: a hungry Bird drops out of its cruise and dives at any Ant on the ground or Fish at the surface it spots, snatching it on contact.",
+      "Also pecks Seed, and drops a Seed below it now and then. A moving seed-disperser that greens the ground it passes.",
+      "Flees Fire and Lava, but burns if it can't get clear (fire sweeps a whole flock).",
+    ],
+  },
+  [MaterialId.Fish]: {
+    description: "Swims only inside Water, fresh or salty, schooling loosely with other Fish.",
+    interactions: [
+      "Nibbles submerged Plant, Sprout and Seed; breeds in roomy water when well fed.",
+      "Bolts for deep water when a Bird hovers overhead. Staying down is its only escape from a swoop.",
+      "Suffocates and flops out of water, cooks if the water boils, and is trapped by encroaching Ice.",
+      "Dies on contact with Acid, Lava or Fire.",
+    ],
+  },
+  [MaterialId.Magic]: {
+    description: "A short-lived mote of enchantment that drifts upward and wanders, transmuting one neighbour per tick.",
+    interactions: [
+      "Quenches Fire, Lava and Acid; weathers Stone into Dirt and greens Dirt and Wood into Plant.",
+      "Defuses Gunpowder and C4 into harmless Sand.",
+      "Makes plants bloom and stalled sprouts grow again; rarely conjures a creature into open space.",
+      "Fades after its lifespan, sometimes leaving a Flower behind.",
+    ],
+  },
+  [MaterialId.Mason]: {
+    description: "One of the folk, a builder. A focused worker that heads for the nearest job and clambers over what's in its way instead of pacing off it.",
+    interactions: [
+      "Quarries loose earth from a dune, hillside or pit. It won't dig the flat walking ground, only grade it.",
+      "Levels the lot first, digging humps down and filling hollows, then raises a whole house at once on the flat ground: walls and a roof with a doorway.",
+      "Six shapes and sizes, from a two-folk lean-to shed to an eighteen-folk hipped manor, by the room and supply the site offers. Peaked, hipped, mono-pitch and battlemented roofs, lit windows, a doubled wall base and a chimney.",
+      "Style follows what's abundant: loose earth for a fired-Brick house, a stand of Wood for a timber cabin, a cold field of Ice for an igloo.",
+      "Keeps standing houses in repair, patching a wall or roof knocked out by a Raider, a fire or a blast.",
+      "The folk shelter in those houses when the climate turns too hot or too cold. Each house holds only so many, and a full one is passed over for the next. Folk squeeze straight through a thin house wall rather than getting boxed in.",
+      "Drowns in deep Water, dies in Lava, catches fire from flame.",
+    ],
+  },
+  [MaterialId.Firefighter]: {
+    description: "One of the folk. Runs toward fire to put it out.",
+    interactions: [
+      "Scoops Water when it passes a pool. Carrying it, next to flame, it throws the water, clearing every touching Fire cell and leaving a splash.",
+      "With no water it beats at the flames bare-handed, slower and at some risk of catching alight.",
+      "Fire-resistant and never self-combusts, but flees Lava. The answer to a Raider's arson.",
+    ],
+  },
+  [MaterialId.Farmer]: {
+    description: "One of the folk. A planter, turning barren ground into cropland.",
+    interactions: [
+      "Carries Water from a pool to dry Dirt, turning it to Mud, then grades the furrow ahead flat and sows Wheat on it. Wheat only takes on level ground.",
+      "A sown row ripens green to gold and self-seeds into a whole field. The Farmer harvests ripe heads (and stray mature Plant or Flower) for a full meal.",
+      "The Wheat it grows is the village's staple. Every hungry folk heads for the nearest crop.",
+    ],
+  },
+  [MaterialId.Raider]: {
+    description: "One of the folk gone wrong. The wrecker.",
+    interactions: [
+      "Sets fires: lights a touching flammable, or drops a flame beside it.",
+      "Smashes touching Wood, Glass and Brick to tear houses down, and chips Stone and Metal into Sand.",
+      "Kills and eats a touching Ant, Fish, Mason, Firefighter or Farmer; roams toward the nearest of any of it.",
+      "Barely flammable, so it walks through its own fires; only Lava stops it. Braves any weather, slowly dying of exposure in the worst of it.",
     ],
   },
 };
@@ -311,6 +400,22 @@ const PT: InfoMap = {
       "Imune a Ácido: o ácido nem gasta carga tentando corroê-lo.",
     ],
   },
+  [MaterialId.Brick]: {
+    description: "Alvenaria queimada. Um bloco de parede resistente e inerte. É do que o Pedreiro constrói as casas, e dá pra pintar à mão.",
+    interactions: [
+      "Muito resistente a Ácido e à prova de fogo.",
+      "Um teto de Tijolo, Pedra ou Madeira em cima com uma parede de cada lado é abrigo. O povo se recolhe dentro de uma casa quando o clima fica quente ou frio demais.",
+      "O Saqueador o quebra como qualquer outra estrutura.",
+    ],
+  },
+  [MaterialId.Wheat]: {
+    description: "A plantação do Fazendeiro. Um broto semeado na terra que cria um colmo baixo e amadurece de verde a dourado.",
+    interactions: [
+      "Enraíza em Terra ou Barro; cresce um ou dois cells se tiver espaço, e uma espiga madura se semeia sozinha na terra nua ao lado, então uma fileira semeada vira uma lavoura.",
+      "A espiga madura é alimento. O povo (e o Fazendeiro que a cultivou) come para uma refeição cheia; os brotos verdes ficam pra crescer.",
+      "Palha seca: pega fogo fácil e queima com o calor ambiente. Murcha sem raiz ou numa geada forte.",
+    ],
+  },
   [MaterialId.Clone]: {
     description: "Bloco parado que copia o primeiro material que encostar nele.",
     interactions: [
@@ -332,6 +437,79 @@ const PT: InfoMap = {
     interactions: [
       "Esfria o clima como o Gelo, mas não derrete e não congela nada ao redor.",
       "Imune a tudo (Ácido, Eletricidade, estilhaços), feito só para controlar a temperatura.",
+    ],
+  },
+  [MaterialId.Ant]: {
+    description: "Uma andarilha minúscula que segue superfícies. Sobe paredes, encara ladeiras e cai quando não tem chão embaixo.",
+    interactions: [
+      "Come Planta, Broto, Flor e Semente, e rói devagar Madeira e Barro; segue o cheiro de comida por perto e se junta em cima dela.",
+      "Passa fome sem comida e se multiplica quando bem alimentada.",
+      "Escava Areia, Terra e Barro soltos, abrindo túneis enquanto os grãos escorrem de volta.",
+      "Se afoga na Água, queima no Fogo e na Lava (o fogo varre a colônia inteira), se dissolve no Ácido.",
+      "É caçada pelos Pássaros. Cave um túnel para se esconder.",
+    ],
+  },
+  [MaterialId.Bird]: {
+    description: "Plana numa faixa preguiçosa perto do topo da cena, mas dá um bote assim que avista uma presa.",
+    interactions: [
+      "Caça: com fome, o Pássaro larga o voo tranquilo e mergulha em cima de qualquer Formiga no chão ou Peixe na superfície que avistar, agarrando no contato.",
+      "Também bica Semente e de vez em quando solta uma abaixo de si. Um semeador ambulante que verdeja o chão por onde passa.",
+      "Foge do Fogo e da Lava, mas queima se não escapar (o fogo varre o bando inteiro).",
+    ],
+  },
+  [MaterialId.Fish]: {
+    description: "Nada apenas dentro da Água, doce ou salgada, formando cardumes frouxos com outros Peixes.",
+    interactions: [
+      "Belisca Planta, Broto e Semente submersos; se reproduz em água com espaço quando bem alimentado.",
+      "Dispara para a água funda quando um Pássaro paira acima. Ficar no fundo é sua única defesa contra o bote.",
+      "Sufoca e se debate fora d'água, cozinha se a água ferver e fica preso pelo Gelo que avança.",
+      "Morre ao encostar em Ácido, Lava ou Fogo.",
+    ],
+  },
+  [MaterialId.Magic]: {
+    description: "Uma centelha de encantamento de vida curta que sobe à deriva e vagueia, transmutando um vizinho por tick.",
+    interactions: [
+      "Apaga Fogo, Lava e Ácido; desgasta Pedra em Terra e verdeja Terra e Madeira em Planta.",
+      "Desarma Pólvora e C4, virando Areia inofensiva.",
+      "Faz plantas florescerem e brotos parados voltarem a crescer; raramente conjura uma criatura no espaço aberto.",
+      "Some depois da sua vida útil, às vezes deixando uma Flor no lugar.",
+    ],
+  },
+  [MaterialId.Mason]: {
+    description: "Do povo. Um construtor. Trabalhador focado: vai direto pro serviço mais próximo e passa por cima do que estiver no caminho em vez de bater e voltar.",
+    interactions: [
+      "Extrai terra solta de uma duna, encosta ou cova. Não escava o chão plano onde anda, só o nivela.",
+      "Primeiro aplaina o lote, cavando lombas e tapando buracos, e só então levanta a casa inteira de uma vez sobre o chão plano: paredes e teto com porta.",
+      "Seis formas e tamanhos, do abrigo pra dois ao solar de telhado tacaniço pra dezoito, conforme o espaço e o material do lugar. Telhados de duas águas, tacaniço, de uma água e ameado, janelas acesas, base de parede dupla e chaminé.",
+      "O estilo segue o que é abundante: terra solta vira casa de Tijolo, um bosque de Madeira vira cabana, um campo frio de Gelo vira iglu.",
+      "Faz manutenção nas casas de pé, remendando parede ou teto derrubado por Saqueador, fogo ou explosão.",
+      "O povo se abriga nessas casas quando o clima fica quente ou frio demais. Cada casa comporta um tanto, e uma cheia é deixada de lado pela próxima. O povo passa direto por uma parede fina de casa em vez de ficar preso.",
+      "Se afoga em Água funda, morre na Lava, pega fogo com chama.",
+    ],
+  },
+  [MaterialId.Firefighter]: {
+    description: "Do povo. Corre até o fogo para apagá-lo.",
+    interactions: [
+      "Enche as mãos de Água quando passa por uma poça. Carregando, ao lado da chama, joga a água, limpando toda célula de Fogo encostada e deixando um respingo.",
+      "Sem água, bate nas chamas com as próprias mãos, mais devagar e correndo o risco de pegar fogo.",
+      "Resistente ao fogo e nunca se incendeia sozinho, mas foge da Lava. A resposta ao incêndio do Saqueador.",
+    ],
+  },
+  [MaterialId.Farmer]: {
+    description: "Do povo. Um fazendeiro, transformando terreno estéril em lavoura.",
+    interactions: [
+      "Leva Água da poça até a Terra seca virando Barro, depois aplaina o sulco à frente e semeia Trigo nele. O Trigo só pega em chão nivelado.",
+      "Uma fileira semeada amadurece de verde a dourado e se semeia sozinha numa lavoura inteira; o Fazendeiro colhe as espigas maduras (e Planta/Flor madura solta) para uma refeição completa.",
+      "O Trigo que ele cultiva é o sustento da vila. Todo povo com fome vai até a plantação mais próxima.",
+    ],
+  },
+  [MaterialId.Raider]: {
+    description: "Do povo, mas desviado. O vândalo.",
+    interactions: [
+      "Ateia fogo: acende um inflamável encostado, ou solta uma chama ao lado.",
+      "Quebra Madeira, Vidro e Tijolo encostados (derrubando casas) e lasca Pedra e Metal em Areia.",
+      "Mata e come Formiga, Peixe, Pedreiro, Bombeiro ou Fazendeiro encostado; vagueia até o mais próximo de qualquer um deles.",
+      "Quase não pega fogo. Anda pelas próprias chamas; só a Lava o detém. Enfrenta qualquer clima (e morre aos poucos de exposição no pior deles).",
     ],
   },
 };
@@ -475,6 +653,22 @@ const JA: InfoMap = {
       "酸に耐性がある。酸は腐食しようとして電荷を消費すらしない。",
     ],
   },
+  [MaterialId.Brick]: {
+    description: "焼いた組積材。丈夫で不活性な壁ブロック。石工が家を建てる材料で、手で描くこともできる。",
+    interactions: [
+      "酸にとても強く、燃えない。",
+      "頭上にレンガ・石・木の屋根があり、左右に壁があれば「屋根の下」。気候が暑すぎたり寒すぎたりすると、住民は家の中に避難する。",
+      "略奪者は他の建造物と同じように壊す。",
+    ],
+  },
+  [MaterialId.Wheat]: {
+    description: "農夫の作物。土に蒔かれた芽が短い茎を伸ばし、緑から黄金へと熟す。",
+    interactions: [
+      "土か泥に根を張る。頭上に空きがあれば1〜2セル伸び、熟した穂は隣の裸地に自分で種を落とすので、蒔いた列が畑になる。",
+      "熟した穂は食料。住民（と育てた農夫）が食べて満腹になる。緑の芽は育つまで残される。",
+      "乾いた藁：よく燃え、周囲の熱でも焦げる。根がなければ、また厳しい霜で枯れる。",
+    ],
+  },
   [MaterialId.Clone]: {
     description: "その場に留まり、最初に触れた素材をコピーするブロック。",
     interactions: [
@@ -496,6 +690,78 @@ const JA: InfoMap = {
     interactions: [
       "氷のように気候を冷やすが、周囲の何も溶かさず凍らせない。",
       "すべてに耐性があり（酸、電気、破片）、純粋に温度を操作するために作られている。",
+    ],
+  },
+  [MaterialId.Ant]: {
+    description: "表面をたどる小さな歩行者。壁を登り、坂を上り、足場がなくなると落ちる。",
+    interactions: [
+      "植物・芽・花・種を食べ、木や泥もゆっくりかじる。近くの餌の匂いをたどって群がる。",
+      "餌がないと餓死し、十分に食べると増える。",
+      "ゆるい砂・土・泥を掘り進み、こぼれ戻る粒がトンネルを作る。",
+      "水で溺れ、火と溶岩で燃え（火はコロニー全体を走り抜ける）、酸で溶ける。",
+      "鳥に狩られる。地中に潜って隠れられる。",
+    ],
+  },
+  [MaterialId.Bird]: {
+    description: "画面上部のゆるやかな帯を悠々と滑空するが、獲物を見つけた瞬間に急降下する。",
+    interactions: [
+      "狩り：腹をすかせた鳥は滑空をやめ、見つけた地上のアリや水面の魚に急降下し、触れた瞬間に捕らえる。",
+      "種もついばみ、ときどき真下に落とす。通り道の地面を緑にする移動する種まき役。",
+      "火と溶岩から逃げるが、逃げ切れないと燃える（火は群れ全体を走り抜ける）。",
+    ],
+  },
+  [MaterialId.Fish]: {
+    description: "真水でも塩水でも、水の中だけを泳ぎ、他の魚とゆるい群れを作る。",
+    interactions: [
+      "水中の植物・芽・種をかじる。十分に食べると、余裕のある水中で繁殖する。",
+      "頭上に鳥が来ると深みへ逃げ込む。潜り続けるのが急降下からの唯一の逃げ道。",
+      "水から出ると窒息して跳ね回り、水が沸くと煮え、迫る氷に閉じ込められる。",
+      "酸・溶岩・火に触れると死ぬ。",
+    ],
+  },
+  [MaterialId.Magic]: {
+    description: "漂い昇りながらさまよう、短命な魔法の粒。毎ティック、隣の1マスを変質させる。",
+    interactions: [
+      "火・溶岩・酸を鎮め、石を土に風化させ、土や木を植物に変える。",
+      "火薬と C4 を無害な砂に変えて不発にする。",
+      "植物を咲かせ、止まった芽を再び育てる。まれに開けた場所に生き物を呼び出す。",
+      "寿命が尽きると消え、ときおり跡に花を残す。",
+    ],
+  },
+  [MaterialId.Mason]: {
+    description: "住民のひとり。建築家。目的第一の働き手で、一番近い仕事へ直行し、壁にぶつかって引き返す代わりに乗り越えていく。",
+    interactions: [
+      "砂丘・斜面・くぼみからゆるい土を切り出し（平らな地面は掘らず均す）、建てる前に敷地を*整地する*。出っ張りを削り、へこみを埋める。",
+      "平らな地面の上に家をまるごと一度に建てる。戸口のある壁と屋根。差し掛け小屋（2人用）から寄棟の館（18人用）まで六つの形と大きさ。切妻・寄棟・片流れ・胸壁付きの屋根、灯りのついた窓、二重の腰壁、煙突。",
+      "様式は周囲に多い素材で決まる：ゆるい土 → 焼きレンガの家、木立 → 木の小屋、寒い氷原 → かまくら。",
+      "建っている家を修繕する。略奪者・火・爆発で壊れた壁や屋根を塞ぐ。",
+      "気候が暑すぎたり寒すぎたりすると、住民はその家に避難する。1軒に入れる人数には限りがあり、満員の家は避けて次の家へ向かう。住民は行き止まりで詰まる代わりに、薄い家の壁をすり抜けて進む。",
+      "深い水で溺れ、溶岩で死に、炎で燃える。",
+    ],
+  },
+  [MaterialId.Firefighter]: {
+    description: "住民のひとり。火に向かって走り、消し止める。",
+    interactions: [
+      "水たまりのそばを通ると水をすくう。抱えて炎の隣に来ると水を投げ、触れているすべての火を消して水しぶきを残す。",
+      "水がなければ素手で炎を叩く。遅く、自分も燃える危険がある。",
+      "耐火性で自然発火はしないが、溶岩からは逃げる。略奪者の放火への答え。",
+    ],
+  },
+  [MaterialId.Farmer]: {
+    description: "住民のひとり。種をまき、不毛の地を畑に変える。",
+    interactions: [
+      "たまりから乾いた土へ水を運んで泥に変え、前方の畝を平らに均してから小麦をまく。小麦は平らな地面にしか根づかない。",
+      "まいた列は緑から黄金へ熟し、自分で種を落として畑一面に広がる。農夫は熟した穂（と落ちている熟した植物・花）を収穫して腹を満たす。",
+      "育てた小麦は村の主食。空腹の住民はみな一番近い畑へ向かう。",
+    ],
+  },
+  [MaterialId.Raider]: {
+    description: "道を外れた住民。破壊者。",
+    interactions: [
+      "火をつける：触れている可燃物に着火するか、隣に炎を落とす。",
+      "触れている木・ガラス・レンガを壊して家を取り壊し、石と金属を砂に削る。",
+      "触れているアリ・魚・石工・消防士・農夫を殺して食べる。近くのそれらに向かってうろつく。",
+      "ほとんど燃えず、自分の炎の中を歩く。止められるのは溶岩だけ。どんな気候にも耐える（最悪の気候ではじわじわ凍死・熱死する）。",
     ],
   },
 };

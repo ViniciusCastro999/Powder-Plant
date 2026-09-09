@@ -431,9 +431,175 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     // meant to read as a serious hazard.
     spontaneousIgniteTemp: 65,
   },
+  [MaterialId.Ant]: {
+    id: MaterialId.Ant,
+    name: "Formiga",
+    category: MaterialCategory.Creature,
+    color: [178, 92, 60],
+    // Light enough that a grain of Areia settling on top can't crush it into
+    // the floor, heavy enough that it reads as matter, not a spark.
+    density: 4,
+    flammable: true,
+    // Once alight it burns a good while — long enough for the flame to jump
+    // to the next ant in the trail before it goes out, so a torch to a
+    // colony actually sweeps through it.
+    burnTicks: 45,
+    ignitionChance: 0.24,
+    explosive: false,
+    acidResistance: 1,
+    conductive: false,
+    // Never bursts into flame from ambient heat alone — only real contact
+    // with Fogo/Lava lights an ant.
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.Bird]: {
+    id: MaterialId.Bird,
+    name: "Pássaro",
+    category: MaterialCategory.Creature,
+    color: [124, 152, 194],
+    density: 3,
+    flammable: true,
+    burnTicks: 50,
+    ignitionChance: 0.22,
+    explosive: false,
+    acidResistance: 1,
+    conductive: false,
+    // Only ever catches by real contact with flame, never from a hot sky.
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.Fish]: {
+    id: MaterialId.Fish,
+    name: "Peixe",
+    category: MaterialCategory.Creature,
+    color: [228, 128, 92],
+    density: 4,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    acidResistance: 1,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.Magic]: {
+    id: MaterialId.Magic,
+    name: "Magia",
+    category: MaterialCategory.Magic,
+    color: [182, 92, 232],
+    density: 1,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    // Ácido flows right past it — you can't corrode enchantment.
+    acidResistance: 0,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.Mason]: {
+    id: MaterialId.Mason,
+    name: "Pedreiro",
+    category: MaterialCategory.Creature,
+    color: [176, 162, 142],
+    density: 5,
+    flammable: true,
+    burnTicks: 40,
+    ignitionChance: 0.14,
+    explosive: false,
+    acidResistance: 1,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.Firefighter]: {
+    id: MaterialId.Firefighter,
+    name: "Bombeiro",
+    category: MaterialCategory.Creature,
+    color: [214, 74, 58],
+    density: 5,
+    // Dressed for it — resists the flames it fights, and never bursts alight
+    // from a merely hot room.
+    flammable: true,
+    burnTicks: 30,
+    ignitionChance: 0.05,
+    explosive: false,
+    acidResistance: 1,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.Farmer]: {
+    id: MaterialId.Farmer,
+    name: "Plantador",
+    category: MaterialCategory.Creature,
+    color: [120, 158, 84],
+    density: 5,
+    flammable: true,
+    burnTicks: 40,
+    ignitionChance: 0.15,
+    explosive: false,
+    acidResistance: 1,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.Brick]: {
+    id: MaterialId.Brick,
+    name: "Tijolo",
+    category: MaterialCategory.Solid,
+    color: [156, 82, 62],
+    density: 9,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    // Fired and mortared — shrugs off Ácido far better than raw Pedra.
+    acidResistance: 12,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.Raider]: {
+    id: MaterialId.Raider,
+    name: "Saqueador",
+    category: MaterialCategory.Creature,
+    color: [122, 58, 66],
+    density: 5,
+    // Fireproof by trade — it walks straight through the fires it sets and
+    // never burns. Only Lava (see grid.ts folkUpkeep) and Ácido stop it.
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    acidResistance: 2,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.Wheat]: {
+    id: MaterialId.Wheat,
+    name: "Trigo",
+    category: MaterialCategory.Organic,
+    color: [206, 170, 96], // ripe gold; the renderer greens it while it's young
+    density: 6,
+    flammable: true,
+    burnTicks: 32,
+    ignitionChance: 0.16,
+    explosive: false,
+    acidResistance: 1,
+    conductive: false,
+    // Dry straw — catches from ambient heat a little before a leafy plant does.
+    spontaneousIgniteTemp: 52,
+  },
 };
 
 export const MATERIAL_LIST: MaterialDef[] = Object.values(MATERIALS);
+
+/**
+ * Materials the brush only ever drops one cell of, one click at a time,
+ * whatever the brush size or shape — o povo, so a fat brush can't flood the
+ * map with a hundred townsfolk in a single stroke. Enforced in both
+ * SimGrid.paint* (never place more than one) and Canvas.svelte (no painting
+ * on drag or hold).
+ */
+export const SINGLE_DROP_MATERIALS: readonly MaterialId[] = [
+  MaterialId.Mason, MaterialId.Firefighter, MaterialId.Farmer, MaterialId.Raider,
+];
 
 export interface PaletteCategory {
   id: string;
@@ -463,7 +629,7 @@ export const PALETTE_CATEGORIES: PaletteCategory[] = [
     id: "solidos",
     label: "Sólidos",
     icon: "metal",
-    materials: [MaterialId.Wood, MaterialId.Metal, MaterialId.Glass],
+    materials: [MaterialId.Wood, MaterialId.Metal, MaterialId.Glass, MaterialId.Brick],
   },
   {
     id: "liquidos",
@@ -475,7 +641,7 @@ export const PALETTE_CATEGORIES: PaletteCategory[] = [
     id: "vida",
     label: "Vida",
     icon: "plant",
-    materials: [MaterialId.Plant, MaterialId.Seed, MaterialId.Vida],
+    materials: [MaterialId.Plant, MaterialId.Seed, MaterialId.Wheat, MaterialId.Vida],
   },
   {
     id: "calor",
@@ -496,10 +662,22 @@ export const PALETTE_CATEGORIES: PaletteCategory[] = [
     materials: [MaterialId.Gunpowder, MaterialId.C4, MaterialId.CombustibleGas],
   },
   {
+    id: "criaturas",
+    label: "Criaturas",
+    icon: "bird",
+    materials: [MaterialId.Ant, MaterialId.Bird, MaterialId.Fish],
+  },
+  {
+    id: "povo",
+    label: "Pip",
+    icon: "folk",
+    materials: [MaterialId.Mason, MaterialId.Firefighter, MaterialId.Farmer, MaterialId.Raider],
+  },
+  {
     id: "especiais",
     label: "Especiais",
     icon: "electricity",
-    materials: [MaterialId.Electricity, MaterialId.Clone],
+    materials: [MaterialId.Electricity, MaterialId.Clone, MaterialId.Magic],
   },
 ];
 

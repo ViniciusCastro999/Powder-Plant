@@ -36,9 +36,19 @@
     [MaterialId.Steam]: "water",
     [MaterialId.AcidVapor]: "acid",
     [MaterialId.CombustibleGas]: "gas",
+    [MaterialId.Ant]: "ant",
+    [MaterialId.Bird]: "bird",
+    [MaterialId.Fish]: "fish",
+    [MaterialId.Magic]: "magic",
+    [MaterialId.Mason]: "mason",
+    [MaterialId.Firefighter]: "firefighter",
+    [MaterialId.Farmer]: "farmer",
+    [MaterialId.Raider]: "raider",
+    [MaterialId.Brick]: "brick",
     // Sprout and Flor only ever appear by germinating from a Semente —
     // neither has a palette button, but the type still needs an entry for
     // every id.
+    [MaterialId.Wheat]: "wheat",
     [MaterialId.Sprout]: "plant",
     [MaterialId.Flor]: "plant",
   };

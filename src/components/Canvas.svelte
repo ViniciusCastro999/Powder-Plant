@@ -3,6 +3,7 @@
   import { SimGrid } from "../sim/grid";
   import { PixiStage } from "../render/PixiStage";
   import { BrushShape, type MaterialId } from "../sim/types";
+  import { SINGLE_DROP_MATERIALS } from "../sim/materials";
   import type { MapSnapshot } from "../sim/storage";
 
   /** Fixed row count; column count is derived from the container's actual aspect ratio at mount (see onMount) so the sim grid always exactly fills the box instead of letterboxing on whichever axis the window happens to be wider or narrower on. */
@@ -33,6 +34,10 @@
   let previewStart = $state<{ x: number; y: number } | null>(null);
   let previewCurrent = $state<{ x: number; y: number } | null>(null);
   const showsPreview = $derived(brushShape !== BrushShape.Point);
+  // O povo drop one per click, whatever the brush — so no painting on drag,
+  // no painting while the pointer is held still, and a shape brush just
+  // drops one at the press point on release.
+  const singleDrop = $derived(SINGLE_DROP_MATERIALS.includes(selectedMaterial));
 
   export function clear(): void {
     grid?.reset();
@@ -74,7 +79,7 @@
         // Keeps emitting while the pointer is held still — otherwise a
         // brush parked over a spot that just freed up (e.g. sand falling
         // out from under it) stays dry until the pointer actually moves.
-        if (pointerDown && brushShape === BrushShape.Point && lastCell) {
+        if (pointerDown && brushShape === BrushShape.Point && lastCell && !singleDrop) {
           localGrid.paint(lastCell[0], lastCell[1], radiusFromSize(brushSize), selectedMaterial);
         }
         s.renderFrame();
@@ -130,7 +135,7 @@
     if (!pointerDown || !grid) return;
     const cell = cellAt(e.clientX, e.clientY);
     if (brushShape === BrushShape.Point) {
-      if (cell && lastCell) {
+      if (cell && lastCell && !singleDrop) {
         grid.paintLine(lastCell[0], lastCell[1], cell[0], cell[1], radiusFromSize(brushSize), selectedMaterial);
       }
     } else {
@@ -148,10 +153,14 @@
         } else if (brushShape === BrushShape.Square) {
           grid.paintRect(startCell[0], startCell[1], end[0], end[1], selectedMaterial);
         } else if (brushShape === BrushShape.Circle) {
-          const dx = end[0] - startCell[0];
-          const dy = end[1] - startCell[1];
-          const radius = Math.max(1, Math.round(Math.sqrt(dx * dx + dy * dy)));
-          grid.paint(startCell[0], startCell[1], radius, selectedMaterial);
+          // Drag a bounding box, same as the square brush — the circle fills
+          // it (start and end sit on opposite ends of a diameter), so it
+          // grows toward the cursor instead of ballooning out behind the
+          // press point.
+          const cx = (startCell[0] + end[0]) / 2;
+          const cy = (startCell[1] + end[1]) / 2;
+          const radius = Math.max(1, Math.round(Math.hypot(end[0] - startCell[0], end[1] - startCell[1]) / 2));
+          grid.paint(Math.round(cx), Math.round(cy), radius, selectedMaterial);
         }
       }
     }
@@ -186,9 +195,9 @@
         />
       {:else if brushShape === BrushShape.Circle}
         <circle
-          cx={previewStart.x}
-          cy={previewStart.y}
-          r={Math.hypot(previewCurrent.x - previewStart.x, previewCurrent.y - previewStart.y)}
+          cx={(previewStart.x + previewCurrent.x) / 2}
+          cy={(previewStart.y + previewCurrent.y) / 2}
+          r={Math.hypot(previewCurrent.x - previewStart.x, previewCurrent.y - previewStart.y) / 2}
         />
       {/if}
     </svg>

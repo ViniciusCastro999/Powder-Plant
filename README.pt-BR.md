@@ -36,11 +36,34 @@ plantas.
 
 ## Recursos
 
-- **~25 materiais** em 8 categorias temáticas, cada um com física própria.
+- **~35 materiais** em 10 categorias temáticas, cada um com física própria.
 - **Simulação falling-sand** feita do zero: um autômato celular com movimento
   por densidade, propagação de fogo e ácido, e otimização de dormir/acordar.
 - **Eletricidade** que percorre condutores em forma de pulsos.
-- **Explosões** com ondas de choque, estilhaços e reações em cadeia (Pólvora, C4, gás).
+- **Explosões baseadas em impulso**: a detonação varre toda a carga conectada num
+  estouro rápido e então arremessa a areia, a água e os destroços ao redor como
+  projéteis sob gravidade, que voam em arco, se espalham e assentam de volta,
+  cavando uma cratera de verdade com borda (Pólvora, C4, gás).
+- **Criaturas** com comportamento próprio e uma pequena cadeia alimentar:
+  **Formigas** andam pelas superfícies, seguem o cheiro de comida, roem madeira e
+  escavam; **Pássaros** planam e então dão **botes** para caçar formigas e peixes
+  na superfície, além de espalhar sementes; **Peixes** formam cardumes e mergulham
+  fundo fugindo do pássaro. Comem, se reproduzem e diminuem quando falta comida.
+- **Pip**: figurinhas em pé, não pontos, cada uma com um ofício e indo direto pro
+  serviço mais próximo em vez de ficar andando à toa. O **Pedreiro** extrai terra
+  de uma encosta, aplaina o chão e então levanta uma casa inteira de uma vez.
+  Seis formas e tamanhos, com telhados de duas águas, tacaniço, de uma água ou
+  ameado, janelas acesas e chaminé (tijolo, madeira ou gelo, conforme o que há
+  por perto). Ele faz manutenção quando um Saqueador ou explosão abre um buraco;
+  o povo se abriga dentro, até a lotação de cada casa, quando o clima fica
+  hostil. O **Bombeiro** busca água e apaga o fogo. O **Fazendeiro** aplaina um
+  sulco e semeia **trigo**, o sustento da vila, pro qual todo Pip com fome vai. O
+  **Saqueador** incendeia, quebra tudo e caça o resto. Solte um Saqueador e veja
+  os outros três responderem.
+- **Pintar Pip** solta uma figura por clique, seja qual for o tamanho do pincel,
+  então uma multidão é algo que você posiciona de propósito, não que inunda o mapa.
+- **Magia**: uma centelha que vagueia transmutando o entorno rumo à vida e à
+  ordem. Apaga o fogo, desgasta pedra em terra, verdeja terra, desarma explosivos.
 - **Jogo da Vida de Conway** como um material próprio ("Vida").
 - **Temperatura global** com 8 faixas. Aqueça a grade até a faixa *Próspero* e
   as plantas florescem.
@@ -97,13 +120,15 @@ npm run check     # type-check do Svelte + TypeScript
 | Categoria | Materiais |
 |---|---|
 | Partículas | Areia · Pedra · Terra · Barro · Sal |
-| Sólidos | Madeira · Metal · Vidro |
+| Sólidos | Madeira · Metal · Vidro · Tijolo |
 | Líquidos | Água · Óleo · Ácido |
-| Vida | Planta · Semente · Vida |
+| Vida | Planta · Semente · Trigo · Vida |
 | Calor | Fogo · Lava · Calor |
 | Frio | Gelo · Frio |
 | Explosivos | Pólvora · C4 · Gás |
-| Especiais | Eletricidade · Clone |
+| Criaturas | Formiga · Pássaro · Peixe |
+| Pip | Pedreiro · Bombeiro · Fazendeiro · Saqueador |
+| Especiais | Eletricidade · Clone · Magia |
 
 Alguns materiais só aparecem como reação: **Broto** e **Flor** (de sementes que
 germinam), **Vapor** (água fervida) e **Vapor de Ácido** (ácido fervido).
@@ -140,5 +165,6 @@ src/
 O núcleo é [src/sim/grid.ts](src/sim/grid.ts): a grade guarda `material` e `meta`
 (um byte por célula) em `Uint8Array` planos, e `step()` percorre a grade de baixo
 para cima a cada frame aplicando movimento (pós, líquidos, gases), fogo, ácido,
-eletricidade (pulsos), explosões (ondas de choque), o Jogo da Vida de Conway (o
-material "Vida") e os efeitos de temperatura ambiente.
+eletricidade (pulsos), explosões (impulso + destroços voadores), comportamento das criaturas
+(formigas, pássaros, peixes; e os Pip: pedreiro, bombeiro, fazendeiro, saqueador), transmutação da magia, o Jogo da Vida
+de Conway (o material "Vida") e os efeitos de temperatura ambiente.

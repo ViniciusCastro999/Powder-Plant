@@ -10,6 +10,38 @@ const SALT_LIGHTEN = 0.45;
 const FIRE_FADE_TICKS = 20;
 /** Impacts a Vidro cell takes before it shatters — kept in sync with GLASS_SHATTER_HITS in grid.ts, used here only to tint cracked glass. */
 const GLASS_SHATTER_HITS = 3;
+/** A Magia mote's starting lifespan — kept in sync with MAGIC_LIFE in grid.ts, used here only to fade the mote as it ages. */
+const MAGIC_LIFE = 200;
+/** Trigo ripeness (meta) at which a stalk renders fully gold — kept in sync with WHEAT_RIPE in grid.ts. */
+const WHEAT_RIPE = 120;
+/** Meta bits a mason stamps on a house cell — kept in sync with grid.ts. Used to style walls, light windows, cap chimneys and shade the room inside. */
+const HOUSE_WALL_META = 0x40;
+const HOUSE_ANCHOR_META = 0x80;
+const HOUSE_KIND_MASK = 0x07;
+const HOUSE_WALL = 0;
+const HOUSE_WINDOW = 2;
+const HOUSE_CHIMNEY = 3;
+const HOUSE_FLOOR = 4;
+/** Warm, dim tone an empty cell enclosed by a house is tinted toward, so a house reads as a room with an inside rather than a hollow outline. */
+const HOUSE_INTERIOR: readonly [number, number, number] = [58, 44, 38];
+/** Cool glaze the transparent body of Vidro is tinted toward, over whatever ambient background shows through it. */
+const GLASS_TINT: readonly [number, number, number] = [198, 224, 232];
+/** Bright edge color a Vidro cell on the border of a pane picks up, so the sheet reads as a pane with a rim rather than a flat fill. */
+const GLASS_EDGE: readonly [number, number, number] = [226, 245, 255];
+/**
+ * O povo render as a 3-pixel standing figure (feet cell + torso + head)
+ * plus a tool pixel held out in front — this is the colour of that tool,
+ * per folk type, and the presence of an entry is what marks a material as
+ * "one of the folk, draw a figure". Kept in sync with the four folk
+ * MaterialIds.
+ */
+const FOLK_FIGURE: Partial<Record<MaterialId, readonly [number, number, number]>> = {
+  [MaterialId.Mason]: [196, 190, 178], // a pale stone block / trowel
+  [MaterialId.Firefighter]: [92, 172, 236], // a jet of water
+  [MaterialId.Farmer]: [132, 214, 112], // a green sprout
+  [MaterialId.Raider]: [255, 138, 58], // a lit torch
+};
+
 /** Petal color variants for Flor, picked per-cell by its meta value. */
 const FLOWER_COLORS: readonly (readonly [number, number, number])[] = [
   [235, 120, 170],
@@ -153,6 +185,8 @@ export class PixiStage {
   private readonly sprite: Sprite;
   /** Non-empty cells as of the last `renderFrame()` — counted alongside the render pass instead of a second full scan. */
   activeCellCount = 0;
+  /** Frame tick, bumped every `renderFrame()` — drives the animated shimmer on Magia. */
+  private frame = 0;
 
   private constructor(app: Application, grid: SimGrid, pixels: Uint8Array, source: BufferImageSource, sprite: Sprite) {
     this.app = app;
@@ -209,6 +243,7 @@ export class PixiStage {
   }
 
   renderFrame(): void {
+    this.frame++;
     this.fitSprite();
     // The grid sprite is sized to fill the container exactly (no
     // letterboxing — see fitSprite), so it fully covers the renderer's own
@@ -234,6 +269,34 @@ export class PixiStage {
         let dr = br;
         let dg = bg;
         let db = bb;
+        // Inside a house? A roof/wall cell close overhead plus house cells
+        // out to either side means this empty cell is a room — fill it warm
+        // and dim so the house isn't a hollow wire outline. The overhead
+        // check is the cheap pre-filter; most empty cells fail it at once.
+        const hx = i % width;
+        let roofAbove = false;
+        for (let d = 1; d <= 4 && !roofAbove; d++) {
+          const a = i - d * width;
+          if (a >= 0 && (meta[a] & HOUSE_WALL_META) !== 0 && material[a] !== MaterialId.Empty) roofAbove = true;
+        }
+        if (roofAbove) {
+          let wallL = false;
+          let wallR = false;
+          for (let d = 1; d <= 6; d++) {
+            if (!wallL && hx - d >= 0 && (meta[i - d] & HOUSE_WALL_META) !== 0 && material[i - d] !== MaterialId.Empty) wallL = true;
+            if (!wallR && hx + d < width && (meta[i + d] & HOUSE_WALL_META) !== 0 && material[i + d] !== MaterialId.Empty) wallR = true;
+          }
+          if (wallL && wallR) {
+            dr = dr + (HOUSE_INTERIOR[0] - dr) * 0.82;
+            dg = dg + (HOUSE_INTERIOR[1] - dg) * 0.82;
+            db = db + (HOUSE_INTERIOR[2] - db) * 0.82;
+            this.pixels[p] = clamp8(dr);
+            this.pixels[p + 1] = clamp8(dg);
+            this.pixels[p + 2] = clamp8(db);
+            this.pixels[p + 3] = 255;
+            continue;
+          }
+        }
         if (decor) {
           const x = i % width;
           const y = (i / width) | 0;
@@ -257,6 +320,50 @@ export class PixiStage {
         continue;
       }
       activeCount++;
+      if (id === MaterialId.Glass) {
+        // Vidro renders as a transparent pane: mostly the ambient
+        // background showing straight through, lightly glazed cool, with a
+        // faint diagonal reflection streak and sparse specular flecks for
+        // body, and a bright rim on every cell that sits on the pane's
+        // edge (the grid border counts) so it reads as glass with an
+        // outline rather than a flat fill. Cracks (meta) still frost it
+        // toward white a step per impact.
+        const x = i % width;
+        const y = (i / width) | 0;
+        // Faint constant glaze lift so the pane never disappears entirely
+        // against a near-black background, then a stronger blend toward the
+        // cool tint on top of the ambient colour that shows through.
+        let cr = br + (GLASS_TINT[0] - br) * 0.24 + 6;
+        let cg = bg + (GLASS_TINT[1] - bg) * 0.24 + 8;
+        let cb = bb + (GLASS_TINT[2] - bb) * 0.24 + 9;
+        const diag = (((x - y) % 9) + 9) % 9;
+        const streak = diag < 2 ? 15 : diag < 3 ? 6 : 0;
+        const h = hash(i);
+        const fleck = h % 37 === 0 ? 28 : h % 11 === 0 ? 8 : 0;
+        cr += streak + fleck;
+        cg += streak + fleck;
+        cb += streak + fleck + 2;
+        const rim =
+          x === 0 || y === 0 || x === width - 1 || y === this.grid.height - 1 ||
+          material[i - 1] !== MaterialId.Glass || material[i + 1] !== MaterialId.Glass ||
+          material[i - width] !== MaterialId.Glass || material[i + width] !== MaterialId.Glass;
+        if (rim) {
+          cr += (GLASS_EDGE[0] - cr) * 0.5;
+          cg += (GLASS_EDGE[1] - cg) * 0.5;
+          cb += (GLASS_EDGE[2] - cb) * 0.5;
+        }
+        if (meta[i] > 0) {
+          const t = Math.min(1, meta[i] / GLASS_SHATTER_HITS) * 0.6;
+          cr += (250 - cr) * t;
+          cg += (250 - cg) * t;
+          cb += (250 - cb) * t;
+        }
+        this.pixels[p] = clamp8(cr);
+        this.pixels[p + 1] = clamp8(cg);
+        this.pixels[p + 2] = clamp8(cb);
+        this.pixels[p + 3] = 255;
+        continue;
+      }
       if (id === MaterialId.Water && meta[i] > 0) {
         // Salty water stays the same blue, just lighter — lerping each
         // channel toward white by a fraction, instead of toward a fixed
@@ -270,6 +377,14 @@ export class PixiStage {
         // instead of always rendering the same flower color, so different
         // germinations read as visually distinct little flowers.
         [r, g, b] = FLOWER_COLORS[meta[i] % FLOWER_COLORS.length];
+      } else if (id === MaterialId.Wheat) {
+        // Green while it's a young shoot, ripening to gold as its meta clock
+        // climbs to WHEAT_RIPE; the very tip of a ripe head lightens further.
+        const t = Math.min(1, meta[i] / WHEAT_RIPE);
+        r = 96 + (216 - 96) * t;
+        g = 150 + (176 - 150) * t;
+        b = 74 + (96 - 74) * t;
+        if (t >= 1) { r += 16; g += 14; }
       } else if (id === MaterialId.Fire) {
         // Fades toward black over its last FIRE_FADE_TICKS of fuel instead
         // of burning at full brightness right up until it pops to Empty.
@@ -277,23 +392,84 @@ export class PixiStage {
         r *= t;
         g *= t;
         b *= t;
-      } else if (id === MaterialId.Glass && meta[i] > 0) {
-        // Cracked glass frosts toward opaque white, a step per impact, so
-        // the damage from a blast is visible before the cell gives way.
-        const t = Math.min(1, meta[i] / GLASS_SHATTER_HITS) * 0.55;
-        r = r + (250 - r) * t;
-        g = g + (250 - g) * t;
-        b = b + (250 - b) * t;
+      } else if (id === MaterialId.Magic) {
+        // A shimmering violet mote: an animated per-cell grain (driven by
+        // `frame`) plus the odd near-white sparkle, dimming as its
+        // lifespan runs down.
+        const lifeT = Math.min(1, meta[i] / MAGIC_LIFE);
+        const shimmer = (((hash(i) ^ (this.frame * 0x9e3779b9)) >>> 0) % 110) - 45;
+        r = 150 + shimmer * 1.3;
+        g = 70 + shimmer * 0.5;
+        b = 210 + shimmer * 0.7;
+        if ((((hash(i) >>> 3) + this.frame) & 15) === 0) {
+          r = 250;
+          g = 240;
+          b = 255;
+        }
+        const fade = 0.45 + 0.55 * lifeT;
+        r *= fade;
+        g *= fade;
+        b *= fade;
+      } else if (
+        (meta[i] & HOUSE_WALL_META) !== 0 &&
+        (id === MaterialId.Brick || id === MaterialId.Wood || id === MaterialId.Ice)
+      ) {
+        const kind = (meta[i] & HOUSE_ANCHOR_META) !== 0 ? HOUSE_WALL : meta[i] & HOUSE_KIND_MASK;
+        if (kind === HOUSE_WINDOW) {
+          // A lit window: warm lamplight in the pane, cooler at night... just
+          // warm, with a thin dark frame from the surrounding wall grain.
+          const flick = ((hash(i) + (this.frame >> 3)) % 7) - 3;
+          r = 250 + flick;
+          g = 208 + flick;
+          b = 120 + flick * 2;
+        } else if (kind === HOUSE_CHIMNEY) {
+          // Soot-darkened masonry, darkest at the very top (the flue mouth).
+          const cap = material[i - width] !== id ? -34 : -14;
+          r += cap; g += cap; b += cap;
+        } else if (kind === HOUSE_FLOOR) {
+          // Flagstone floor: darker than the walls, with a flag-joint fleck.
+          const joint = (hash(i) % 5 === 0) ? -22 : -30;
+          r += joint; g += joint; b += joint;
+        } else {
+          // Plain wall/roof: darker mortar course every other row; the anchor
+          // doorpost sunk a shade deeper. Reads as built masonry, not a slab.
+          const course = (((i / width) | 0) & 1) === 0 ? -13 : 2;
+          const post = (meta[i] & HOUSE_ANCHOR_META) !== 0 ? -20 : 0;
+          r += course + post;
+          g += course + post;
+          b += course + post;
+        }
       }
-      // Liquids constantly swap cells while finding their level, so grain
-      // keyed on grid position (not particle identity) would flicker as
-      // water moves — keep them a flat color and reserve the grain for
-      // materials that actually stay put once settled.
-      const grain = MATERIALS[id].category === MaterialCategory.Liquid ? 0 : (hash(i) % 21) - 10;
+      // Liquids and moving creatures constantly swap cells, so grain keyed
+      // on grid position (not particle identity) would flicker as they
+      // move — keep those flat and reserve the grain for materials that
+      // actually stay put once settled. Magia does its own shimmer above.
+      const cat = MATERIALS[id].category;
+      const grain =
+        cat === MaterialCategory.Liquid || cat === MaterialCategory.Creature || cat === MaterialCategory.Magic
+          ? 0
+          : (hash(i) % 21) - 10;
       this.pixels[p] = clamp8(r + grain);
       this.pixels[p + 1] = clamp8(g + grain);
       this.pixels[p + 2] = clamp8(b + grain);
       this.pixels[p + 3] = 255;
+
+      // O povo aren't single dots like the animals — the grid cell is their
+      // feet, and a small upright figure is stamped into the empty cells
+      // above: a paler head two up, a torso with a back arm one up, and the
+      // trade's tool held out in the facing direction. Those cells sit at a
+      // lower index than `i`, so the main loop already drew them this frame
+      // — overwriting them here is final.
+      const folk = FOLK_FIGURE[id];
+      if (folk) {
+        const fx = i % width;
+        const fy = (i / width) | 0;
+        const facing = meta[i] & 1 ? 1 : -1;
+        this.stampFolkPixel(fx, fy - 1, r * 1.08, g * 1.08, b * 1.08); // torso
+        this.stampFolkPixel(fx, fy - 2, r * 0.5 + 122, g * 0.5 + 112, b * 0.5 + 100); // head
+        this.stampFolkPixel(fx - facing, fy - 1, r * 0.85, g * 0.85, b * 0.85); // back arm
+        this.stampFolkPixel(fx + facing, fy - 1, folk[0], folk[1], folk[2]); // tool arm
+      }
     }
 
     // Electricity has no physical form, so it's never in `material` —
@@ -305,6 +481,23 @@ export class PixiStage {
       this.pixels[p] = er;
       this.pixels[p + 1] = eg;
       this.pixels[p + 2] = eb;
+      this.pixels[p + 3] = 255;
+    }
+
+    // Explosion debris: real chunks of material an explosion has thrown
+    // into the air, not yet landed (they're Empty on the grid while in
+    // flight). Draw each as its own material's color so a blast reads as
+    // sand, water and splinters arcing outward and raining back down.
+    for (const d of this.grid.activeDebris) {
+      const gx = Math.round(d.x);
+      const gy = Math.round(d.y);
+      if (!this.grid.inBounds(gx, gy)) continue;
+      const p = this.grid.index(gx, gy) * 4;
+      const [dr, dg, db] = MATERIALS[d.material].color;
+      const gr = (hash(gx * 2 + gy * 131) % 21) - 10;
+      this.pixels[p] = clamp8(dr + gr);
+      this.pixels[p + 1] = clamp8(dg + gr);
+      this.pixels[p + 2] = clamp8(db + gr);
       this.pixels[p + 3] = 255;
     }
 
@@ -340,8 +533,21 @@ export class PixiStage {
       this.pixels[p + 3] = 255;
     }
 
-    this.activeCellCount = activeCount + this.grid.activePulses.length + this.grid.activeShrapnel.length;
+    this.activeCellCount =
+      activeCount + this.grid.activePulses.length + this.grid.activeShrapnel.length + this.grid.activeDebris.length;
     this.source.update();
+  }
+
+  /** Paints one pixel of a folk figure, but only over empty air — a figure standing in a low tunnel just shows fewer of its parts rather than drawing over the ceiling. */
+  private stampFolkPixel(cx: number, cy: number, r: number, g: number, b: number): void {
+    if (cx < 0 || cx >= this.grid.width || cy < 0 || cy >= this.grid.height) return;
+    const ci = cy * this.grid.width + cx;
+    if (this.grid.material[ci] !== MaterialId.Empty) return;
+    const p = ci * 4;
+    this.pixels[p] = clamp8(r);
+    this.pixels[p + 1] = clamp8(g);
+    this.pixels[p + 2] = clamp8(b);
+    this.pixels[p + 3] = 255;
   }
 }
 

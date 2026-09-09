@@ -35,11 +35,33 @@ spontaneous combustion, freezing, boiling and plant growth.
 
 ## Features
 
-- **~25 materials** across 8 thematic categories, each with its own physics.
+- **~35 materials** across 10 thematic categories, each with its own physics.
 - **Falling-sand simulation** written from scratch: a cellular automaton with
   density-based movement, fire and acid propagation, and sleep/wake optimisation.
 - **Electricity** that travels through conductors as pulses.
-- **Explosions** with blast waves, shrapnel and chain reactions (Gunpowder, C4, gas).
+- **Impulse-based explosions**. A detonation sweeps the whole connected charge in
+  one fast crack, then physically hurls the surrounding sand, water and debris
+  outward as gravity-bound projectiles that arc, scatter and pile back down,
+  digging a real crater with a rim (Gunpowder, C4, gas).
+- **Creatures** with goal-driven behaviour and a small food web: **Ants** walk
+  surfaces, follow food scent, gnaw wood and burrow; **Birds** soar, then **swoop**
+  to hunt ants and surfacing fish, and scatter seeds; **Fish** school and dive deep
+  from a hovering bird. They feed, breed and thin out when the food runs low.
+- **Pip**: little upright figures, not dots, each working a trade and heading
+  straight for the nearest job rather than milling about. The **Mason** quarries
+  loose earth from a hillside, levels the ground, then raises a whole house at
+  once. Six shapes and sizes, with peaked, hipped, mono-pitch or battlemented
+  roofs, lit windows and a chimney (brick, timber or ice, by what's nearby). It
+  keeps houses patched when a Raider or a blast knocks a hole in one; the folk
+  shelter inside, up to each house's capacity, when the climate turns hostile.
+  The **Firefighter** fetches water and douses flames. The **Farmer** grades a
+  furrow and sows **wheat**, the village's staple crop that every hungry Pip heads
+  for. The **Raider** torches, smashes and hunts everything else. Set a Raider
+  loose and watch the other three answer it.
+- **Painting Pip** drops one figure per click, whatever the brush size, so a
+  crowd is something you place deliberately rather than flood the map with.
+- **Magic**: a drifting mote that transmutes its surroundings toward life and
+  order. It quenches fire, weathers stone to soil, greens dirt, defuses explosives.
 - **Conway's Game of Life** as a material of its own ("Vida").
 - **Global temperature** with 8 bands. Warm the grid into the *prosperous* band
   and plants bloom into flowers.
@@ -94,13 +116,15 @@ npm run check     # Svelte + TypeScript type-check
 | Category | Materials |
 |---|---|
 | Particles | Sand · Stone · Dirt · Mud · Salt |
-| Solids | Wood · Metal · Glass |
+| Solids | Wood · Metal · Glass · Brick |
 | Liquids | Water · Oil · Acid |
-| Life | Plant · Seed · Life |
+| Life | Plant · Seed · Wheat · Life |
 | Heat | Fire · Lava · Heat |
 | Cold | Ice · Cold |
 | Explosives | Gunpowder · C4 · Gas |
-| Special | Electricity · Clone |
+| Creatures | Ant · Bird · Fish |
+| Pip | Mason · Firefighter · Farmer · Raider |
+| Special | Electricity · Clone · Magic |
 
 Some materials only appear as reactions: **Sprout** and **Flower** (from
 germinating seeds), **Steam** (boiled water) and **Acid Vapor** (boiled acid).
@@ -137,5 +161,6 @@ src/
 The core is [src/sim/grid.ts](src/sim/grid.ts): the grid stores `material` and
 `meta` (one byte per cell) in flat `Uint8Array`s, and `step()` walks the grid
 bottom-to-top each frame applying movement (powders, liquids, gases), fire, acid,
-electricity (pulses), explosions (blast waves), Conway's Game of Life (the "Vida"
+electricity (pulses), explosions (impulse + flying debris), creature behaviour
+(ants, birds, fish; and the Pips. Mason, firefighter, farmer, raider), magic transmutation, Conway's Game of Life (the "Vida"
 material) and the ambient-temperature effects.

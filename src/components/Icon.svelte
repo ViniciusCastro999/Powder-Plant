@@ -22,6 +22,14 @@
     <path d="M12 21 V10" />
     <path d="M12 14 C12 14 6 14 5 8 C10 7 12 11 12 14 Z" />
     <path d="M12 12 C12 12 18 12 19 6 C14 5 12 9 12 12 Z" />
+  {:else if name === "wheat"}
+    <path d="M12 21 V8" />
+    <path d="M12 8 C12 5 13.5 3 16 2 C16 5 14.5 7 12 8 Z" />
+    <path d="M12 8 C12 5 10.5 3 8 2 C8 5 9.5 7 12 8 Z" />
+    <path d="M12 12 C12 10 13 8.5 15 8 C15 10 14 11.5 12 12 Z" />
+    <path d="M12 12 C12 10 11 8.5 9 8 C9 10 10 11.5 12 12 Z" />
+    <path d="M12 16 C12 14 13 12.5 15 12 C15 14 14 15.5 12 16 Z" />
+    <path d="M12 16 C12 14 11 12.5 9 12 C9 14 10 15.5 12 16 Z" />
   {:else if name === "eraser"}
     <path d="M6 15 L15 6 L19 10 L10 19 H6 Z" />
     <path d="M6 15 L10 19" />
@@ -136,5 +144,45 @@
   {:else if name === "globe"}
     <circle cx="12" cy="12" r="9" />
     <path d="M3 12 H21 M12 3 C14.5 6 15.5 9 15.5 12 C15.5 15 14.5 18 12 21 C9.5 18 8.5 15 8.5 12 C8.5 9 9.5 6 12 3 Z" />
+  {:else if name === "ant"}
+    <circle cx="12" cy="6.5" r="2" />
+    <circle cx="12" cy="11.5" r="2.2" />
+    <circle cx="12" cy="17" r="2.6" />
+    <path d="M10.5 5.5 L8 3.5 M13.5 5.5 L16 3.5" stroke-width="1.3" />
+    <path d="M10 10 L6 8 M10 12 L6 13 M14 10 L18 8 M14 12 L18 13 M10.5 16 L7 18 M13.5 16 L17 18" stroke-width="1.2" />
+  {:else if name === "bird"}
+    <path d="M3 8 C6 8 7 10 9 10 C7 13 4 13 3 12 C4 11 3.5 9.5 3 8 Z" fill="currentColor" stroke="none" />
+    <path d="M8.5 10 C11 6 15 4 20 4 C18 8 16 11 12 12 C15 13 17 15 17 18 C13 17 9 15 8 12 Z" />
+    <circle cx="17.5" cy="6.5" r="0.7" fill="currentColor" stroke="none" />
+  {:else if name === "fish"}
+    <path d="M4 12 C7 7 13 6 17 9 L20 6 V18 L17 15 C13 18 7 17 4 12 Z" />
+    <circle cx="8.5" cy="11" r="0.8" fill="currentColor" stroke="none" />
+    <path d="M13 8.5 C13 11 13 13 12.5 15.5" stroke-width="1.1" opacity="0.6" />
+  {:else if name === "magic"}
+    <path d="M6 20 L15 11 M13 9 L17 5 M17 5 L16 7 M17 5 L19 6" />
+    <path d="M8 4 L8.7 6 L10.7 6.7 L8.7 7.4 L8 9.4 L7.3 7.4 L5.3 6.7 L7.3 6 Z" fill="currentColor" stroke="none" />
+    <path d="M17.5 13 L18 14.5 L19.5 15 L18 15.5 L17.5 17 L17 15.5 L15.5 15 L17 14.5 Z" fill="currentColor" stroke="none" />
+  {:else if name === "folk"}
+    <circle cx="12" cy="5.5" r="2.4" />
+    <path d="M12 8 V15 M12 10 L7.5 13 M12 10 L16.5 13 M12 15 L8.5 21 M12 15 L15.5 21" />
+  {:else if name === "mason"}
+    <circle cx="10" cy="5" r="2.2" />
+    <path d="M10 7.2 V14 M10 9 L6.5 12 M10 14 L7 20 M10 14 L13 20" />
+    <path d="M13 8 L20 8 M18 8 V4 L21 4" stroke-width="1.4" />
+  {:else if name === "firefighter"}
+    <circle cx="10" cy="5" r="2.2" />
+    <path d="M10 7.2 V14 M10 9 L6.5 12 M10 14 L7 20 M10 14 L13 20" />
+    <path d="M14.5 8 C13.5 9.6 12.8 10.6 12.8 11.8 A1.8 1.8 0 0 0 16.2 11.8 C16.2 10.8 15.5 10.4 15.5 11.1 C15.5 9.6 15 9.2 14.5 8 Z" fill="currentColor" stroke="none" />
+  {:else if name === "farmer"}
+    <circle cx="10" cy="5" r="2.2" />
+    <path d="M10 7.2 V14 M10 9 L6.5 12 M10 14 L7 20 M10 14 L13 20" />
+    <path d="M15 20 V11 M15 11 C15 11 12.5 11 12 8 C14 7.5 15 9 15 11 Z M15 12 C15 12 17.5 12 18 9 C16 8.5 15 10 15 12 Z" stroke-width="1.3" />
+  {:else if name === "raider"}
+    <circle cx="10" cy="5" r="2.2" />
+    <path d="M10 7.2 V14 M10 9 L6 11 M10 14 L7 20 M10 14 L13 20" />
+    <path d="M13.5 13 L20 6 M20 6 L18.6 6.2 M20 6 L19.8 7.4 M15 8 L13 6" stroke-width="1.4" />
+  {:else if name === "brick"}
+    <path d="M3 6 H21 M3 12 H21 M3 18 H21 M3 6 V18 M21 6 V18" />
+    <path d="M12 6 V12 M7 12 V18 M17 12 V18 M9 6 V6" stroke-width="1.4" />
   {/if}
 </svg>
