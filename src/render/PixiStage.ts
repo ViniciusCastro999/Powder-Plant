@@ -14,6 +14,10 @@ const GLASS_SHATTER_HITS = 3;
 const MAGIC_LIFE = 200;
 /** Trigo ripeness (meta) at which a stalk renders fully gold — kept in sync with WHEAT_RIPE in grid.ts. */
 const WHEAT_RIPE = 120;
+/** Alavanca on-state / Fio+Porta powered-state bit — kept in sync with CIRCUIT_ON_META in grid.ts. */
+const CIRCUIT_ON_META = 0x01;
+/** Marks an Alavanca cell as the handle/knob rather than the base plate — kept in sync with LEVER_ARM_META in grid.ts. */
+const LEVER_ARM_META = 0x02;
 /** Meta bits a mason stamps on a house cell — kept in sync with grid.ts. Used to style walls, light windows, cap chimneys and shade the room inside. */
 const HOUSE_WALL_META = 0x40;
 const HOUSE_ANCHOR_META = 0x80;
@@ -29,17 +33,19 @@ const GLASS_TINT: readonly [number, number, number] = [198, 224, 232];
 /** Bright edge color a Vidro cell on the border of a pane picks up, so the sheet reads as a pane with a rim rather than a flat fill. */
 const GLASS_EDGE: readonly [number, number, number] = [226, 245, 255];
 /**
- * O povo render as a 3-pixel standing figure (feet cell + torso + head)
- * plus a tool pixel held out in front — this is the colour of that tool,
- * per folk type, and the presence of an entry is what marks a material as
- * "one of the folk, draw a figure". Kept in sync with the four folk
- * MaterialIds.
+ * O povo (and the Esqueletos) render as a little standing figure stamped into
+ * the empty cells above the grid cell (their feet). For the working trades the
+ * value is the colour of the tool held out in front; the Guerreiro and
+ * Esqueleto draw their own bespoke figures (see the render loop) and only need
+ * an entry here to be marked "draw a figure". An empowered unit (hp top bit)
+ * draws a larger, tinted version.
  */
 const FOLK_FIGURE: Partial<Record<MaterialId, readonly [number, number, number]>> = {
   [MaterialId.Mason]: [196, 190, 178], // a pale stone block / trowel
-  [MaterialId.Firefighter]: [92, 172, 236], // a jet of water
+  [MaterialId.Lumberjack]: [150, 96, 46], // an axe haft
   [MaterialId.Farmer]: [132, 214, 112], // a green sprout
-  [MaterialId.Raider]: [255, 138, 58], // a lit torch
+  [MaterialId.Warrior]: [214, 224, 236], // (bespoke figure)
+  [MaterialId.Skeleton]: [232, 230, 216], // (bespoke figure)
 };
 
 /** Petal color variants for Flor, picked per-cell by its meta value. */
@@ -232,6 +238,16 @@ export class PixiStage {
     this.sprite.height = this.grid.height * scale;
     this.sprite.x = (this.app.screen.width - this.sprite.width) / 2;
     this.sprite.y = (this.app.screen.height - this.sprite.height) / 2;
+  }
+
+  /** On-screen size of one grid cell, in CSS pixels — for drawing a brush-coverage cursor over the canvas. */
+  get cellSize(): number {
+    return this.sprite.width / this.grid.width;
+  }
+
+  /** The sprite's on-screen box (CSS pixels, relative to the canvas), so an overlay can clamp a cursor to the painted area. */
+  get spriteBox(): { x: number; y: number; w: number; h: number } {
+    return { x: this.sprite.x, y: this.sprite.y, w: this.sprite.width, h: this.sprite.height };
   }
 
   /** Maps a canvas-space pointer position to a grid cell, or null if outside the letterboxed sprite. */
@@ -439,6 +455,21 @@ export class PixiStage {
           g += course + post;
           b += course + post;
         }
+      } else if (id === MaterialId.Lever) {
+        // The base plate stays dull iron; the diagonal handle/knob (see
+        // LEVER_ARM_META) is a brighter brass so the fixture actually reads
+        // as a lever, not a flat block. Both light up warm while it's on —
+        // that glow, and toggling what it powers, are the only tells.
+        if ((meta[i] & LEVER_ARM_META) !== 0) { r += 60; g += 40; b -= 20; }
+        if ((meta[i] & CIRCUIT_ON_META) !== 0) { r += 90; g += 70; b += 10; }
+      } else if (id === MaterialId.Wire) {
+        // Dead copper unpowered; a live, glowing orange the instant current
+        // reaches it.
+        if ((meta[i] & CIRCUIT_ON_META) !== 0) { r = 235; g = 140; b = 40; }
+      } else if (id === MaterialId.Door) {
+        // Doesn't animate open — this lighter cast is the only visual sign
+        // it's currently passable.
+        if ((meta[i] & CIRCUIT_ON_META) !== 0) { r += 70; g += 55; b += 45; }
       }
       // Liquids and moving creatures constantly swap cells, so grain keyed
       // on grid position (not particle identity) would flicker as they
@@ -454,21 +485,65 @@ export class PixiStage {
       this.pixels[p + 2] = clamp8(b + grain);
       this.pixels[p + 3] = 255;
 
-      // O povo aren't single dots like the animals — the grid cell is their
-      // feet, and a small upright figure is stamped into the empty cells
-      // above: a paler head two up, a torso with a back arm one up, and the
-      // trade's tool held out in the facing direction. Those cells sit at a
-      // lower index than `i`, so the main loop already drew them this frame
-      // — overwriting them here is final.
+      // O povo (and the Esqueletos) aren't single dots like the animals — the
+      // grid cell is their feet, and a small humanoid figure is stamped into
+      // the empty cells above: head, a torso with two arms, legs, and the
+      // trade's tool held out in front. Those cells sit at a lower index than
+      // `i`, so the main loop already drew them this frame — overwriting them
+      // here is final. An empowered fighter (hp top bit) draws taller and
+      // wider, with a colour cast.
       const folk = FOLK_FIGURE[id];
       if (folk) {
         const fx = i % width;
         const fy = (i / width) | 0;
-        const facing = meta[i] & 1 ? 1 : -1;
-        this.stampFolkPixel(fx, fy - 1, r * 1.08, g * 1.08, b * 1.08); // torso
-        this.stampFolkPixel(fx, fy - 2, r * 0.5 + 122, g * 0.5 + 112, b * 0.5 + 100); // head
-        this.stampFolkPixel(fx - facing, fy - 1, r * 0.85, g * 0.85, b * 0.85); // back arm
-        this.stampFolkPixel(fx + facing, fy - 1, folk[0], folk[1], folk[2]); // tool arm
+        const f = meta[i] & 1 ? 1 : -1;
+        const big = (this.grid.hp[i] & 0x80) !== 0;
+        const px = (cx: number, cy: number, rr: number, gg: number, bb: number) => this.stampFolkPixel(cx, cy, rr, gg, bb);
+
+        if (id === MaterialId.Skeleton) {
+          if (big) {
+            const c = (v: number): readonly [number, number, number] => [v, v * 1.09, v * 0.93];
+            px(fx, fy - 1, ...c(118));                                              // dark pelvis
+            px(fx - f, fy - 2, ...c(170)); px(fx, fy - 2, ...c(150)); px(fx + f, fy - 2, ...c(170)); // hips/ribs
+            px(fx - f, fy - 3, ...c(158)); px(fx, fy - 3, ...c(148)); px(fx + f, fy - 3, ...c(158)); // ribcage/shoulders
+            px(fx, fy - 4, ...c(246)); px(fx - f, fy - 4, ...c(150));               // skull + jaw
+            px(fx, fy - 5, ...c(212));                                              // crown
+            px(fx + f, fy - 4, ...c(172));                                          // raised arm
+          } else {
+            px(fx, fy - 1, 120, 118, 110);                                          // pelvis, dark
+            px(fx - f, fy - 2, 178, 175, 162); px(fx, fy - 2, 150, 148, 138); px(fx + f, fy - 2, 178, 175, 162); // ribcage + shoulders
+            px(fx, fy - 3, 248, 246, 232);                                          // skull, brightest
+            px(fx + f, fy - 3, 190, 187, 174);                                      // raised arm
+          }
+        } else if (id === MaterialId.Warrior) {
+          const mail: readonly [number, number, number] = big ? [206, 172, 96] : [186, 154, 112];
+          const skin: readonly [number, number, number] = [216, 178, 132];
+          const shield: readonly [number, number, number] = big ? [150, 118, 68] : [122, 92, 60];
+          const grip: readonly [number, number, number] = [196, 150, 72];
+          const blade: readonly [number, number, number] = [222, 230, 242];
+          const tip: readonly [number, number, number] = [240, 246, 252];
+          if (big) {
+            px(fx, fy - 1, ...mail); px(fx, fy - 2, ...mail); px(fx, fy - 3, ...mail); // tall torso
+            px(fx, fy - 4, ...skin); px(fx, fy - 5, 172, 146, 106);                   // head + helm
+            px(fx - f, fy - 2, ...shield); px(fx - f, fy - 3, 206, 176, 120); px(fx - f, fy - 4, ...shield); // kite shield + boss
+            px(fx + f, fy - 2, ...grip);                                              // gauntlet on the grip
+            px(fx + f, fy - 3, ...blade); px(fx + f, fy - 4, ...blade); px(fx + f, fy - 5, ...tip); // greatsword
+          } else {
+            px(fx, fy - 1, ...mail); px(fx, fy - 2, ...mail);                         // torso
+            px(fx, fy - 3, ...skin);                                                  // head
+            px(fx - f, fy - 2, ...shield);                                            // shield arm
+            px(fx + f, fy - 2, ...grip);                                              // sword hand
+            px(fx + f, fy - 3, ...blade); px(fx + f, fy - 4, ...tip);                 // blade raised
+          }
+        } else {
+          // The working trades: a plain humanoid, tool held out in front.
+          px(fx, fy - 1, r * 0.86, g * 0.86, b * 0.86);                              // legs / waist
+          px(fx, fy - 2, r * 1.12, g * 1.12, b * 1.12);                              // torso
+          px(fx - f, fy - 2, r * 0.8, g * 0.8, b * 0.8);                             // back arm
+          px(fx, fy - 3, r * 0.5 + 122, g * 0.5 + 112, b * 0.5 + 100);              // head
+          px(fx + f, fy - 2, folk[0], folk[1], folk[2]);                            // tool hand
+          px(fx + f, fy - 3, folk[0], folk[1], folk[2]);                            // tool raised
+        }
       }
     }
 
@@ -531,6 +606,23 @@ export class PixiStage {
       this.pixels[p + 1] = clamp8(this.pixels[p + 1] + (250 - this.pixels[p + 1]) * t);
       this.pixels[p + 2] = clamp8(this.pixels[p + 2] + (230 - this.pixels[p + 2]) * t);
       this.pixels[p + 3] = 255;
+    }
+
+    // Combat hits — a red flash on the struck cell and the figure standing on
+    // it, so a blow landing reads at a glance.
+    for (const f of this.grid.activeHits) {
+      const t = 0.15 + 0.7 * (f.life / f.maxLife);
+      for (let dy = 0; dy >= -2; dy--) {
+        const gx = f.x;
+        const gy = f.y + dy;
+        if (!this.grid.inBounds(gx, gy)) break;
+        if (dy < 0 && this.grid.material[this.grid.index(gx, gy)] !== MaterialId.Empty) break;
+        const p = this.grid.index(gx, gy) * 4;
+        this.pixels[p] = clamp8(this.pixels[p] + (255 - this.pixels[p]) * t);
+        this.pixels[p + 1] = clamp8(this.pixels[p + 1] + (40 - this.pixels[p + 1]) * t);
+        this.pixels[p + 2] = clamp8(this.pixels[p + 2] + (40 - this.pixels[p + 2]) * t);
+        this.pixels[p + 3] = 255;
+      }
     }
 
     this.activeCellCount =

@@ -148,11 +148,10 @@ const EN: InfoMap = {
     ],
   },
   [MaterialId.Brick]: {
-    description: "Fired masonry. A sturdy, inert wall block. What the Mason builds houses from, and paintable by hand.",
+    description: "Fired masonry. A sturdy, inert wall block. What the Builder builds houses from, and paintable by hand.",
     interactions: [
       "Very acid-resistant and fireproof.",
       "A Brick, Stone or Wood roof overhead with a wall to each side is shelter. The folk crowd inside a house when the climate turns too hot or too cold to bear.",
-      "The Raider smashes it like any other structure.",
     ],
   },
   [MaterialId.Wheat]: {
@@ -223,40 +222,70 @@ const EN: InfoMap = {
     ],
   },
   [MaterialId.Mason]: {
-    description: "One of the folk, a builder. A focused worker that heads for the nearest job and clambers over what's in its way instead of pacing off it.",
+    description: "One of the folk. The Builder: levels a patch of ground and raises a whole house on it at once, and decks a raised timber bridge across a river in its way.",
     interactions: [
-      "Quarries loose earth from a dune, hillside or pit. It won't dig the flat walking ground, only grade it.",
-      "Levels the lot first, digging humps down and filling hollows, then raises a whole house at once on the flat ground: walls and a roof with a doorway.",
-      "Six shapes and sizes, from a two-folk lean-to shed to an eighteen-folk hipped manor, by the room and supply the site offers. Peaked, hipped, mono-pitch and battlemented roofs, lit windows, a doubled wall base and a chimney.",
+      "Grades the lot flat first (shifting a hump of earth into a hollow, never removing any), then conjures the frame in one go: walls and a roof with a doorway. Hillsides and beaches stay whole.",
+      "Six compact shapes and sizes, from a two-folk lean-to to a thirteen-folk hipped manor, by the room and supply the site offers. Peaked, hipped, mono-pitch and battlemented roofs, lit windows and a chimney.",
+      "Founds a new house only until there's one per Pip, so a village stays a village.",
       "Style follows what's abundant: loose earth for a fired-Brick house, a stand of Wood for a timber cabin, a cold field of Ice for an igloo.",
-      "Keeps standing houses in repair, patching a wall or roof knocked out by a Raider, a fire or a blast.",
-      "The folk shelter in those houses when the climate turns too hot or too cold. Each house holds only so many, and a full one is passed over for the next. Folk squeeze straight through a thin house wall rather than getting boxed in.",
+      "Reaching a river with room to build across it, it lays a raised Wood walkway plank by plank and carries on over.",
+      "Keeps standing houses in repair, patching a wall or roof knocked out by a fire or a blast. Folk shelter in them when the climate turns, up to each house's capacity, and walk straight through the walls to get in.",
       "Drowns in deep Water, dies in Lava, catches fire from flame.",
     ],
   },
-  [MaterialId.Firefighter]: {
-    description: "One of the folk. Runs toward fire to put it out.",
+  [MaterialId.Lumberjack]: {
+    description: "One of the folk. A forester, growing and cutting timber.",
     interactions: [
-      "Scoops Water when it passes a pool. Carrying it, next to flame, it throws the water, clearing every touching Fire cell and leaving a splash.",
-      "With no water it beats at the flames bare-handed, slower and at some risk of catching alight.",
-      "Fire-resistant and never self-combusts, but flees Lava. The answer to a Raider's arson.",
+      "Grades a patch flat, then sows a Seed on it and leaves it be. The Seed grows a real tree on its own: a bare trunk that hardens to Wood under a spreading green crown.",
+      "Only once a tree is fully grown does it fell it, and felling takes a while — it stands and swings the axe first. The whole tree comes down at once, leaving the ground clear for the next.",
+      "Raises a woodshed once the woodlot's producing; felled logs go into store. That woodpile is what a Builder needs before it will bridge a river.",
+      "Drowns in deep Water, dies in Lava, catches fire from flame.",
     ],
   },
   [MaterialId.Farmer]: {
     description: "One of the folk. A planter, turning barren ground into cropland.",
     interactions: [
       "Carries Water from a pool to dry Dirt, turning it to Mud, then grades the furrow ahead flat and sows Wheat on it. Wheat only takes on level ground.",
-      "A sown row ripens green to gold and self-seeds into a whole field. The Farmer harvests ripe heads (and stray mature Plant or Flower) for a full meal.",
-      "The Wheat it grows is the village's staple. Every hungry folk heads for the nearest crop.",
+      "A sown row ripens green to gold and self-seeds into a whole field. Harvesting a ripe head takes a while — the Farmer stands and works at it.",
+      "Raises a granary once the field's established; the harvest goes into store there. Every hungry folk still heads for the nearest standing crop.",
     ],
   },
-  [MaterialId.Raider]: {
-    description: "One of the folk gone wrong. The wrecker.",
+  [MaterialId.Warrior]: {
+    description: "One of the folk. The village guard, sword in one hand and shield in the other.",
     interactions: [
-      "Sets fires: lights a touching flammable, or drops a flame beside it.",
-      "Smashes touching Wood, Glass and Brick to tear houses down, and chips Stone and Metal into Sand.",
-      "Kills and eats a touching Ant, Fish, Mason, Firefighter or Farmer; roams toward the nearest of any of it.",
-      "Barely flammable, so it walks through its own fires; only Lava stops it. Braves any weather, slowly dying of exposure in the worst of it.",
+      "Patrols among the houses. The moment a Skeleton comes into sight it closes on it and trades blows, one point a strike, about once a second.",
+      "Carries 10 hit points to a working Pip's 5, so it can hold a fight the others can't.",
+      "Drowns in deep Water like any folk, dies in Lava, catches fire from flame.",
+    ],
+  },
+  [MaterialId.Skeleton]: {
+    description: "A shambling undead that hunts the folk.",
+    interactions: [
+      "Makes for the nearest Pip it can see and, toe to toe, strikes it for one point about once a second. A working Pip has 5 hit points, a Warrior 10.",
+      "Slower than the folk, so they can outrun it. It has 5 hit points of its own.",
+      "A Warrior's blows put it down; so do Fire, Lava, Acid and deep Water.",
+    ],
+  },
+  [MaterialId.Lever]: {
+    description: "A switch. Right-click it to flip it on or off.",
+    interactions: [
+      "On, it powers a touching Wire or Door directly — no Wire needed for something it's already next to.",
+      "Lights up when it's on.",
+    ],
+  },
+  [MaterialId.Wire]: {
+    description: "Carries power from a Lever to a Door.",
+    interactions: [
+      "Powered the moment it touches an on Lever or another powered Wire; goes dark again the instant nothing feeds it.",
+      "Glows while powered.",
+    ],
+  },
+  [MaterialId.Door]: {
+    description: "A wall that lets folk through while it's powered.",
+    interactions: [
+      "Powered by a touching Lever or Wire, it goes intangible to folk and creatures, just like a house wall, and lightens in color.",
+      "Unpowered, it's a solid wall again.",
+      "Wood — catches fire like any other timber.",
     ],
   },
 };
@@ -401,11 +430,10 @@ const PT: InfoMap = {
     ],
   },
   [MaterialId.Brick]: {
-    description: "Alvenaria queimada. Um bloco de parede resistente e inerte. É do que o Pedreiro constrói as casas, e dá pra pintar à mão.",
+    description: "Alvenaria queimada. Um bloco de parede resistente e inerte. É do que o Construtor constrói as casas, e dá pra pintar à mão.",
     interactions: [
       "Muito resistente a Ácido e à prova de fogo.",
       "Um teto de Tijolo, Pedra ou Madeira em cima com uma parede de cada lado é abrigo. O povo se recolhe dentro de uma casa quando o clima fica quente ou frio demais.",
-      "O Saqueador o quebra como qualquer outra estrutura.",
     ],
   },
   [MaterialId.Wheat]: {
@@ -482,34 +510,64 @@ const PT: InfoMap = {
       "Primeiro aplaina o lote, cavando lombas e tapando buracos, e só então levanta a casa inteira de uma vez sobre o chão plano: paredes e teto com porta.",
       "Seis formas e tamanhos, do abrigo pra dois ao solar de telhado tacaniço pra dezoito, conforme o espaço e o material do lugar. Telhados de duas águas, tacaniço, de uma água e ameado, janelas acesas, base de parede dupla e chaminé.",
       "O estilo segue o que é abundante: terra solta vira casa de Tijolo, um bosque de Madeira vira cabana, um campo frio de Gelo vira iglu.",
-      "Faz manutenção nas casas de pé, remendando parede ou teto derrubado por Saqueador, fogo ou explosão.",
+      "Faz manutenção nas casas de pé, remendando parede ou teto derrubado por fogo ou explosão.",
       "O povo se abriga nessas casas quando o clima fica quente ou frio demais. Cada casa comporta um tanto, e uma cheia é deixada de lado pela próxima. O povo passa direto por uma parede fina de casa em vez de ficar preso.",
       "Se afoga em Água funda, morre na Lava, pega fogo com chama.",
     ],
   },
-  [MaterialId.Firefighter]: {
-    description: "Do povo. Corre até o fogo para apagá-lo.",
+  [MaterialId.Lumberjack]: {
+    description: "Do povo. Um silvicultor, que planta e corta madeira.",
     interactions: [
-      "Enche as mãos de Água quando passa por uma poça. Carregando, ao lado da chama, joga a água, limpando toda célula de Fogo encostada e deixando um respingo.",
-      "Sem água, bate nas chamas com as próprias mãos, mais devagar e correndo o risco de pegar fogo.",
-      "Resistente ao fogo e nunca se incendeia sozinho, mas foge da Lava. A resposta ao incêndio do Saqueador.",
+      "Aplaina um trecho, semeia uma Semente e deixa quieto. A Semente vira uma árvore de verdade sozinha: um tronco nu que endurece em Madeira sob uma copa verde.",
+      "Só derruba quando a árvore está totalmente crescida, e derrubar demora um pouco (ele fica lá machadando primeiro). A árvore inteira cai de uma vez, deixando o chão livre pra próxima.",
+      "Levanta um galpão quando o bosque começa a produzir; as toras vão pro estoque lá. Esse monte de madeira é o que o Construtor precisa antes de fazer uma ponte.",
+      "Se afoga em Água funda, morre na Lava, pega fogo com chama.",
     ],
   },
   [MaterialId.Farmer]: {
     description: "Do povo. Um fazendeiro, transformando terreno estéril em lavoura.",
     interactions: [
       "Leva Água da poça até a Terra seca virando Barro, depois aplaina o sulco à frente e semeia Trigo nele. O Trigo só pega em chão nivelado.",
-      "Uma fileira semeada amadurece de verde a dourado e se semeia sozinha numa lavoura inteira; o Fazendeiro colhe as espigas maduras (e Planta/Flor madura solta) para uma refeição completa.",
-      "O Trigo que ele cultiva é o sustento da vila. Todo povo com fome vai até a plantação mais próxima.",
+      "Uma fileira semeada amadurece de verde a dourado e se semeia sozinha numa lavoura inteira. Colher uma espiga madura demora um pouco (o Fazendeiro fica lá trabalhando).",
+      "Levanta um celeiro quando a lavoura se estabelece; a colheita vai pro estoque lá. Todo povo com fome ainda vai até a plantação em pé mais próxima.",
     ],
   },
-  [MaterialId.Raider]: {
-    description: "Do povo, mas desviado. O vândalo.",
+  [MaterialId.Warrior]: {
+    description: "Do povo. A guarda da vila, espada numa mão e escudo na outra.",
     interactions: [
-      "Ateia fogo: acende um inflamável encostado, ou solta uma chama ao lado.",
-      "Quebra Madeira, Vidro e Tijolo encostados (derrubando casas) e lasca Pedra e Metal em Areia.",
-      "Mata e come Formiga, Peixe, Pedreiro, Bombeiro ou Fazendeiro encostado; vagueia até o mais próximo de qualquer um deles.",
-      "Quase não pega fogo. Anda pelas próprias chamas; só a Lava o detém. Enfrenta qualquer clima (e morre aos poucos de exposição no pior deles).",
+      "Patrulha entre as casas. Assim que um Esqueleto aparece à vista, ele parte pra cima e troca golpes, um ponto por ataque, mais ou menos uma vez por segundo.",
+      "Aguenta 10 pontos de vida contra os 5 de um Pip comum, então segura uma luta que os outros não seguram.",
+      "Se afoga em Água funda como qualquer um do povo, morre na Lava, pega fogo com chama.",
+    ],
+  },
+  [MaterialId.Skeleton]: {
+    description: "Um morto-vivo cambaleante que caça o povo.",
+    interactions: [
+      "Vai atrás do Pip mais próximo que enxerga e, corpo a corpo, bate nele por um ponto mais ou menos uma vez por segundo. Um Pip comum tem 5 de vida, um Guerreiro 10.",
+      "Mais lento que o povo, dá pra fugir dele. Tem 5 pontos de vida.",
+      "Os golpes de um Guerreiro derrubam ele; Fogo, Lava, Ácido e Água funda também.",
+    ],
+  },
+  [MaterialId.Lever]: {
+    description: "Um interruptor. Clique com o botão direito nela pra ligar ou desligar.",
+    interactions: [
+      "Ligada, energiza um Fio ou uma Porta que ela esteja tocando direto — não precisa de Fio pra algo já colado nela.",
+      "Acende quando está ligada.",
+    ],
+  },
+  [MaterialId.Wire]: {
+    description: "Leva energia de uma Alavanca até uma Porta.",
+    interactions: [
+      "Energizado assim que toca numa Alavanca ligada ou noutro Fio energizado; apaga de novo assim que ninguém mais alimenta ele.",
+      "Brilha enquanto energizado.",
+    ],
+  },
+  [MaterialId.Door]: {
+    description: "Uma parede que deixa o povo atravessar enquanto energizada.",
+    interactions: [
+      "Energizada por uma Alavanca ou Fio tocando nela, fica intangível pro povo e pras criaturas, igual parede de casa, e clareia de cor.",
+      "Sem energia, volta a ser uma parede sólida.",
+      "Madeira — pega fogo que nem qualquer outra tábua.",
     ],
   },
 };
@@ -654,11 +712,10 @@ const JA: InfoMap = {
     ],
   },
   [MaterialId.Brick]: {
-    description: "焼いた組積材。丈夫で不活性な壁ブロック。石工が家を建てる材料で、手で描くこともできる。",
+    description: "焼いた組積材。丈夫で不活性な壁ブロック。大工が家を建てる材料で、手で描くこともできる。",
     interactions: [
       "酸にとても強く、燃えない。",
       "頭上にレンガ・石・木の屋根があり、左右に壁があれば「屋根の下」。気候が暑すぎたり寒すぎたりすると、住民は家の中に避難する。",
-      "略奪者は他の建造物と同じように壊す。",
     ],
   },
   [MaterialId.Wheat]: {
@@ -734,34 +791,64 @@ const JA: InfoMap = {
       "砂丘・斜面・くぼみからゆるい土を切り出し（平らな地面は掘らず均す）、建てる前に敷地を*整地する*。出っ張りを削り、へこみを埋める。",
       "平らな地面の上に家をまるごと一度に建てる。戸口のある壁と屋根。差し掛け小屋（2人用）から寄棟の館（18人用）まで六つの形と大きさ。切妻・寄棟・片流れ・胸壁付きの屋根、灯りのついた窓、二重の腰壁、煙突。",
       "様式は周囲に多い素材で決まる：ゆるい土 → 焼きレンガの家、木立 → 木の小屋、寒い氷原 → かまくら。",
-      "建っている家を修繕する。略奪者・火・爆発で壊れた壁や屋根を塞ぐ。",
+      "建っている家を修繕する。火や爆発で壊れた壁や屋根を塞ぐ。",
       "気候が暑すぎたり寒すぎたりすると、住民はその家に避難する。1軒に入れる人数には限りがあり、満員の家は避けて次の家へ向かう。住民は行き止まりで詰まる代わりに、薄い家の壁をすり抜けて進む。",
       "深い水で溺れ、溶岩で死に、炎で燃える。",
     ],
   },
-  [MaterialId.Firefighter]: {
-    description: "住民のひとり。火に向かって走り、消し止める。",
+  [MaterialId.Lumberjack]: {
+    description: "住民のひとり。木を育てて伐る林業者。",
     interactions: [
-      "水たまりのそばを通ると水をすくう。抱えて炎の隣に来ると水を投げ、触れているすべての火を消して水しぶきを残す。",
-      "水がなければ素手で炎を叩く。遅く、自分も燃える危険がある。",
-      "耐火性で自然発火はしないが、溶岩からは逃げる。略奪者の放火への答え。",
+      "地面を均してから種をまき、あとはそっとしておく。種は自分で本物の木に育つ。木材に硬くなる裸の幹と、広がる緑の樹冠。",
+      "木が完全に育ってから伐る。伐るのには時間がかかる（まず立って斧を振る）。木は一度に丸ごと倒れ、跡地は次の苗のために空く。",
+      "林が実り始めると小屋を建て、伐った丸太はそこに蓄える。その木材の山が、大工が橋を架けるのに必要になる。",
+      "深い水で溺れ、溶岩で死に、炎で燃える。",
     ],
   },
   [MaterialId.Farmer]: {
     description: "住民のひとり。種をまき、不毛の地を畑に変える。",
     interactions: [
       "たまりから乾いた土へ水を運んで泥に変え、前方の畝を平らに均してから小麦をまく。小麦は平らな地面にしか根づかない。",
-      "まいた列は緑から黄金へ熟し、自分で種を落として畑一面に広がる。農夫は熟した穂（と落ちている熟した植物・花）を収穫して腹を満たす。",
-      "育てた小麦は村の主食。空腹の住民はみな一番近い畑へ向かう。",
+      "まいた列は緑から黄金へ熟し、自分で種を落として畑一面に広がる。熟した穂の収穫には時間がかかる（農夫は立って作業する）。",
+      "畑が定着すると倉を建て、収穫はそこに蓄える。空腹の住民はみな、一番近い立っている畑へ向かう。",
     ],
   },
-  [MaterialId.Raider]: {
-    description: "道を外れた住民。破壊者。",
+  [MaterialId.Warrior]: {
+    description: "住民のひとり。村の守り手。片手に剣、もう片手に盾。",
     interactions: [
-      "火をつける：触れている可燃物に着火するか、隣に炎を落とす。",
-      "触れている木・ガラス・レンガを壊して家を取り壊し、石と金属を砂に削る。",
-      "触れているアリ・魚・石工・消防士・農夫を殺して食べる。近くのそれらに向かってうろつく。",
-      "ほとんど燃えず、自分の炎の中を歩く。止められるのは溶岩だけ。どんな気候にも耐える（最悪の気候ではじわじわ凍死・熱死する）。",
+      "家々の間を巡回する。骸骨が視界に入るとすぐ詰め寄り、打ち合う。一撃で1ポイント、およそ1秒に一度。",
+      "普通のPipの5に対して10の体力を持ち、他の住民には無理な戦いを支える。",
+      "他の住民と同じく深い水で溺れ、溶岩で死に、炎で燃える。",
+    ],
+  },
+  [MaterialId.Skeleton]: {
+    description: "住民を狩る、よろめく不死者。",
+    interactions: [
+      "見えている一番近いPipへ向かい、接近して1秒に一度ほど1ポイント削る。普通のPipの体力は5、戦士は10。",
+      "住民より遅いので逃げ切れる。自身の体力は5。",
+      "戦士の一撃で倒れる。火・溶岩・酸・深い水でも倒れる。",
+    ],
+  },
+  [MaterialId.Lever]: {
+    description: "スイッチ。右クリックでオン/オフを切り替える。",
+    interactions: [
+      "オンの間は、触れているワイヤーやドアに直接電力を送る — 隣接していればワイヤーは不要。",
+      "オンの間は光る。",
+    ],
+  },
+  [MaterialId.Wire]: {
+    description: "レバーの電力をドアまで運ぶ。",
+    interactions: [
+      "オンのレバーか、通電した別のワイヤーに触れた瞬間に通電する。何も供給されなくなった瞬間に消える。",
+      "通電中は光る。",
+    ],
+  },
+  [MaterialId.Door]: {
+    description: "通電している間、住民やクリーチャーが通り抜けられる壁。",
+    interactions: [
+      "触れているレバーやワイヤーから通電すると、家の壁と同じように住民やクリーチャーに対して透明になり、色も明るくなる。",
+      "通電が切れると、また普通の壁に戻る。",
+      "木製 — 他の木材と同じように燃える。",
     ],
   },
 };

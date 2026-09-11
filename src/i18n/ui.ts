@@ -14,15 +14,20 @@ export type UIStrings = {
 
   // BottomPanel
   erase: string;
+  tools: string;
+  gravity: string;
   shapePoint: string;
   shapeLine: string;
   shapeSquare: string;
   shapeCircle: string;
+  shapeDrag: string;
   hints: string;
   maps: string;
   clearAll: string;
   pause: string;
   play: string;
+  gravityOn: string;
+  gravityOff: string;
 
   // HintsModal
   materialHints: string;
@@ -59,15 +64,20 @@ export const UI: Record<Locale, UIStrings> = {
     languageLabel: "Language",
 
     erase: "Erase",
+    tools: "Tools",
+    gravity: "Gravity",
     shapePoint: "Point",
     shapeLine: "Line",
     shapeSquare: "Area (square)",
     shapeCircle: "Area (circle)",
+    shapeDrag: "Drag",
     hints: "Hints",
     maps: "Maps",
     clearAll: "Clear all",
     pause: "Pause",
     play: "Play",
+    gravityOn: "Gravity on",
+    gravityOff: "Gravity off",
 
     materialHints: "Material hints",
     back: "Back",
@@ -101,15 +111,20 @@ export const UI: Record<Locale, UIStrings> = {
     languageLabel: "Idioma",
 
     erase: "Apagar",
+    tools: "Ferramentas",
+    gravity: "Gravidade",
     shapePoint: "Ponto",
     shapeLine: "Linha",
     shapeSquare: "Área (quadrado)",
     shapeCircle: "Área (círculo)",
+    shapeDrag: "Arrastar",
     hints: "Dicas",
     maps: "Mapas",
     clearAll: "Limpar tudo",
     pause: "Pausar",
     play: "Continuar",
+    gravityOn: "Gravidade ligada",
+    gravityOff: "Gravidade desligada",
 
     materialHints: "Dicas de materiais",
     back: "Voltar",
@@ -143,15 +158,20 @@ export const UI: Record<Locale, UIStrings> = {
     languageLabel: "言語",
 
     erase: "消す",
+    tools: "道具",
+    gravity: "重力",
     shapePoint: "点",
     shapeLine: "線",
     shapeSquare: "範囲（四角）",
     shapeCircle: "範囲（円）",
+    shapeDrag: "ドラッグ",
     hints: "ヒント",
     maps: "マップ",
     clearAll: "すべて消去",
     pause: "一時停止",
     play: "再開",
+    gravityOn: "重力オン",
+    gravityOff: "重力オフ",
 
     materialHints: "素材のヒント",
     back: "戻る",

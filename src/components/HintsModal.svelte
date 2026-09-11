@@ -37,13 +37,17 @@
     [MaterialId.Fish]: "fish",
     [MaterialId.Magic]: "magic",
     [MaterialId.Mason]: "mason",
-    [MaterialId.Firefighter]: "firefighter",
+    [MaterialId.Lumberjack]: "lumberjack",
     [MaterialId.Farmer]: "farmer",
-    [MaterialId.Raider]: "raider",
+    [MaterialId.Warrior]: "warrior",
+    [MaterialId.Skeleton]: "skeleton",
     [MaterialId.Brick]: "brick",
     [MaterialId.Wheat]: "wheat",
     [MaterialId.Sprout]: "plant",
     [MaterialId.Flor]: "plant",
+    [MaterialId.Lever]: "lever",
+    [MaterialId.Wire]: "wire",
+    [MaterialId.Door]: "door",
   };
 
   interface Props {

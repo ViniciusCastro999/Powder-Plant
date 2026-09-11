@@ -498,7 +498,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
   },
   [MaterialId.Mason]: {
     id: MaterialId.Mason,
-    name: "Pedreiro",
+    name: "Construtor",
     category: MaterialCategory.Creature,
     color: [176, 162, 142],
     density: 5,
@@ -510,17 +510,15 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     conductive: false,
     spontaneousIgniteTemp: NEVER_SPONTANEOUS,
   },
-  [MaterialId.Firefighter]: {
-    id: MaterialId.Firefighter,
-    name: "Bombeiro",
+  [MaterialId.Lumberjack]: {
+    id: MaterialId.Lumberjack,
+    name: "Lenhador",
     category: MaterialCategory.Creature,
-    color: [214, 74, 58],
+    color: [150, 108, 56], // timber brown, to read apart from the green Plantador
     density: 5,
-    // Dressed for it — resists the flames it fights, and never bursts alight
-    // from a merely hot room.
     flammable: true,
-    burnTicks: 30,
-    ignitionChance: 0.05,
+    burnTicks: 40,
+    ignitionChance: 0.15,
     explosive: false,
     acidResistance: 1,
     conductive: false,
@@ -555,19 +553,31 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     conductive: false,
     spontaneousIgniteTemp: NEVER_SPONTANEOUS,
   },
-  [MaterialId.Raider]: {
-    id: MaterialId.Raider,
-    name: "Saqueador",
+  [MaterialId.Warrior]: {
+    id: MaterialId.Warrior,
+    name: "Guerreiro",
     category: MaterialCategory.Creature,
-    color: [122, 58, 66],
+    color: [150, 120, 84], // leather and bronze
     density: 5,
-    // Fireproof by trade — it walks straight through the fires it sets and
-    // never burns. Only Lava (see grid.ts folkUpkeep) and Ácido stop it.
-    flammable: false,
-    burnTicks: 0,
-    ignitionChance: 0,
+    flammable: true,
+    burnTicks: 40,
+    ignitionChance: 0.13,
     explosive: false,
-    acidResistance: 2,
+    acidResistance: 1,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.Skeleton]: {
+    id: MaterialId.Skeleton,
+    name: "Esqueleto",
+    category: MaterialCategory.Creature,
+    color: [214, 210, 194], // old bone
+    density: 5,
+    flammable: true,
+    burnTicks: 26,
+    ignitionChance: 0.2,
+    explosive: false,
+    acidResistance: 1,
     conductive: false,
     spontaneousIgniteTemp: NEVER_SPONTANEOUS,
   },
@@ -586,6 +596,48 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     // Dry straw — catches from ambient heat a little before a leafy plant does.
     spontaneousIgniteTemp: 52,
   },
+  [MaterialId.Lever]: {
+    id: MaterialId.Lever,
+    name: "Alavanca",
+    category: MaterialCategory.Solid,
+    color: [110, 108, 116], // dull iron; the renderer lights it warm when on
+    density: 9,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    acidResistance: 6,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.Wire]: {
+    id: MaterialId.Wire,
+    name: "Fio",
+    category: MaterialCategory.Solid,
+    color: [96, 44, 36], // dim copper; the renderer brightens it to a live orange while powered
+    density: 9,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    acidResistance: 4,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.Door]: {
+    id: MaterialId.Door,
+    name: "Porta",
+    category: MaterialCategory.Solid,
+    color: [104, 70, 46], // stained wood; the renderer lightens it while open
+    density: 8,
+    flammable: true,
+    burnTicks: 200,
+    ignitionChance: 0.05,
+    explosive: false,
+    acidResistance: 4,
+    conductive: false,
+    spontaneousIgniteTemp: 110,
+  },
 };
 
 export const MATERIAL_LIST: MaterialDef[] = Object.values(MATERIALS);
@@ -593,12 +645,14 @@ export const MATERIAL_LIST: MaterialDef[] = Object.values(MATERIALS);
 /**
  * Materials the brush only ever drops one cell of, one click at a time,
  * whatever the brush size or shape — o povo, so a fat brush can't flood the
- * map with a hundred townsfolk in a single stroke. Enforced in both
+ * map with a hundred townsfolk in a single stroke; Alavanca, so a fat brush
+ * can't drop a cluster of switches on top of each other. Enforced in both
  * SimGrid.paint* (never place more than one) and Canvas.svelte (no painting
  * on drag or hold).
  */
 export const SINGLE_DROP_MATERIALS: readonly MaterialId[] = [
-  MaterialId.Mason, MaterialId.Firefighter, MaterialId.Farmer, MaterialId.Raider,
+  MaterialId.Mason, MaterialId.Lumberjack, MaterialId.Farmer, MaterialId.Warrior, MaterialId.Skeleton,
+  MaterialId.Lever,
 ];
 
 export interface PaletteCategory {
@@ -618,66 +672,53 @@ export interface PaletteCategory {
  * palette list (HintsModal, `PALETTE` below) — add a new material to a
  * category here and it automatically shows up in both places.
  */
+/**
+ * Five player-facing groups: the three matter states (Pó / Sólidos / Líquidos),
+ * everything alive (plants, animals and the Pips), and the odd meta-materials
+ * (Especiais). Trigo isn't here — only a Fazendeiro grows it. The eraser, drag
+ * brush and gravity toggle aren't materials at all; the UI keeps them in their
+ * own always-visible tools panel.
+ */
 export const PALETTE_CATEGORIES: PaletteCategory[] = [
   {
-    id: "particulas",
-    label: "Partículas",
+    id: "po",
+    label: "Pó",
     icon: "sand",
-    materials: [MaterialId.Sand, MaterialId.Stone, MaterialId.Dirt, MaterialId.Mud, MaterialId.Salt],
+    materials: [MaterialId.Sand, MaterialId.Dirt, MaterialId.Mud, MaterialId.Salt, MaterialId.Gunpowder],
   },
   {
     id: "solidos",
     label: "Sólidos",
     icon: "metal",
-    materials: [MaterialId.Wood, MaterialId.Metal, MaterialId.Glass, MaterialId.Brick],
+    materials: [
+      MaterialId.Stone, MaterialId.Wood, MaterialId.Metal, MaterialId.Glass, MaterialId.Brick,
+      MaterialId.Ice, MaterialId.C4, MaterialId.HeatBlock, MaterialId.ColdBlock,
+    ],
   },
   {
     id: "liquidos",
     label: "Líquidos",
     icon: "water",
-    materials: [MaterialId.Water, MaterialId.Oil, MaterialId.Acid],
+    materials: [MaterialId.Water, MaterialId.Oil, MaterialId.Acid, MaterialId.Lava],
   },
   {
     id: "vida",
     label: "Vida",
     icon: "plant",
-    materials: [MaterialId.Plant, MaterialId.Seed, MaterialId.Wheat, MaterialId.Vida],
-  },
-  {
-    id: "calor",
-    label: "Calor",
-    icon: "fire",
-    materials: [MaterialId.Fire, MaterialId.Lava, MaterialId.HeatBlock],
-  },
-  {
-    id: "frio",
-    label: "Frio",
-    icon: "ice",
-    materials: [MaterialId.Ice, MaterialId.ColdBlock],
-  },
-  {
-    id: "explosivos",
-    label: "Explosivos",
-    icon: "gunpowder",
-    materials: [MaterialId.Gunpowder, MaterialId.C4, MaterialId.CombustibleGas],
-  },
-  {
-    id: "criaturas",
-    label: "Criaturas",
-    icon: "bird",
-    materials: [MaterialId.Ant, MaterialId.Bird, MaterialId.Fish],
-  },
-  {
-    id: "povo",
-    label: "Pip",
-    icon: "folk",
-    materials: [MaterialId.Mason, MaterialId.Firefighter, MaterialId.Farmer, MaterialId.Raider],
+    materials: [
+      MaterialId.Plant, MaterialId.Seed, MaterialId.Vida,
+      MaterialId.Ant, MaterialId.Bird, MaterialId.Fish, MaterialId.Skeleton,
+      MaterialId.Mason, MaterialId.Lumberjack, MaterialId.Farmer, MaterialId.Warrior,
+    ],
   },
   {
     id: "especiais",
     label: "Especiais",
     icon: "electricity",
-    materials: [MaterialId.Electricity, MaterialId.Clone, MaterialId.Magic],
+    materials: [
+      MaterialId.Fire, MaterialId.Electricity, MaterialId.Clone, MaterialId.Magic, MaterialId.CombustibleGas,
+      MaterialId.Lever, MaterialId.Wire, MaterialId.Door,
+    ],
   },
 ];
 

@@ -1,4 +1,4 @@
-import { MaterialCategory, MaterialId } from "./types";
+import { MaterialCategory, MaterialId, type DragBlob } from "./types";
 import { MATERIALS, SINGLE_DROP_MATERIALS } from "./materials";
 import { NEUTRAL_TEMP, EXTREME_COLD, EXTREME_HOT, COLD_1, COLD_2, COLD_3, HOT_2, isProsperous } from "./temperature";
 import { rleEncode, rleDecode, SCHEMA_VERSION, type MapSnapshot } from "./storage";
@@ -33,8 +33,30 @@ const SPROUT_BUDGET_MAX = 34;
  * exactly the "leaving and re-entering the season makes plants pile up
  * endlessly" bug this flag exists to prevent.
  */
-const SPROUT_BUDGET_MASK = 0x7f;
+const SPROUT_BUDGET_MASK = 0x3f;
 const SPROUT_REGROWN_FLAG = 0x80;
+/** Meta bit marking a Sprout (and everything grown from it) as a Lenhador's cultivated tree — it grows without needing water/mud close by, since the forester tends it. */
+const SPROUT_FOREST_FLAG = 0x40;
+/**
+ * Meta bit on a Madeira cell marking it as a living tree's trunk (grown by
+ * stepSprout, not cut by anyone yet). A trunk renders like ordinary wood but
+ * isn't counted as stockpiled timber and won't be pulled into a bridge — only
+ * a Lenhador felling the tree turns it into plain, harvestable Madeira. Sits
+ * clear of the HOUSE_* bits (0x40 wall / 0x80 anchor / 0x07 kind).
+ */
+const TREE_TRUNK_META = 0x20;
+/** Meta bit on a Semente marking it as one a Lenhador sowed — it germinates with a bigger growth budget so it fills out into a real tree, not a shrub. */
+const FOREST_SEED_META = 1;
+/** Growth budget a forester's seedling germinates with (vs a wild Semente's SPROUT_BUDGET_MIN..MAX) — enough for a trunk and a tidy crown, no more. Fits in the 6-bit budget field. */
+const FOREST_SEED_BUDGET = 22;
+/** A forest tree stops growing once it carries this many crown cells — keeps a tended tree from ballooning into a canopy blanket. */
+const TREE_CROWN_CAP = 26;
+/** How many cells a tree grows a bare vertical trunk before its crown bushes out. */
+const TREE_TRUNK_HEIGHT = 4;
+/** Per-tick chance a low, canopy-topped Sprout cell hardens into a Madeira trunk. */
+const TREE_HARDEN_CHANCE = 0.12;
+/** Crown cells (Sprout/Planta/Flor above) a trunk cell needs before it starts to lignify. */
+const TREE_CROWN_FOR_BARK = 2;
 /** Per-tick chance a fully-grown (budget-exhausted), not-yet-regrown Sprout gains a one-time bonus growth budget while sitting in the prosperous climate — see stepSprout. */
 const SPROUT_PROSPEROUS_REGROWTH_CHANCE = 0.004;
 /**
@@ -92,6 +114,8 @@ const PULSE_LEAP_CHANCE = 0.15;
 const LAVA_MELT_METAL = 0.02;
 /** Per-tick chance a Sand cell touching Lava melts into Lava — middle speed. */
 const LAVA_MELT_SAND = 0.008;
+/** Per-tick chance a Sand cell touching Lava or Fire fuses into Glass instead of melting — glassblowing by the fire. */
+const HEAT_FUSE_GLASS = 0.03;
 /** Per-tick chance a Stone cell touching Lava melts into Lava — slowest. */
 const LAVA_MELT_STONE = 0.0025;
 /** Per-tick chance a Gelo cell freezes a touching fresh-water neighbor into more Gelo. */
@@ -192,6 +216,18 @@ const CHAIN_FLOOD_CAP = 1600;
 const CHAIN_DELAY_SEPARATE = 5;
 /** Decorative Shrapnel sparks spawned per individual detonation, scaled by its small pocket size. Low on purpose: a big pile now produces a long chain of these small pops rather than one massive burst. */
 const SHRAPNEL_PER_POP = 7;
+/**
+ * Hard ceiling on how many individual pops (`detonate` calls) happen in one
+ * tick, no matter how much explosive is in play. Each pop is cheap on its
+ * own, but a big enough charge — especially one lit all along one edge, so a
+ * whole wide ring's fuses read zero on the same tick — can otherwise queue up
+ * thousands of them at once and stall the frame for so long the page reads as
+ * hung. Past this budget a fuse that hits zero, or a fresh ignition, just
+ * waits one more tick and tries again instead of detonating immediately — the
+ * blast still goes off in full, it just takes a few extra ticks to finish
+ * eating a monster pile instead of freezing the game trying to do it in one.
+ */
+const DETONATIONS_PER_TICK_CAP = 240;
 /** Fraction of a Vida brush stroke that actually gets painted — see the comment on VIDA in paintCell. */
 const VIDA_PAINT_DENSITY = 0.4;
 /** Chance a spreading Planta blooms into a Flor cell instead of plain leaf, checked only in the prosperous band. */
@@ -353,7 +389,7 @@ const FISH_BIRD_SCARE = 5;
 const FISH_BREED_CHANCE = 0.005;
 
 /*
- * ── O povo (Pedreiro, Bombeiro, Plantador, Saqueador) ────────────────────
+ * ── O povo (Construtor, Lenhador, Plantador, Guerreiro) ─────────────────────
  * Upright folk. They walk surfaces like a Formiga (shared `folkWalk`), each
  * running its own trade on top of that. State byte reuses the creature
  * layout: bit 0 facing, bit 1 (via `creatureTimer` == 1) "carrying
@@ -363,7 +399,7 @@ const FISH_BREED_CHANCE = 0.005;
  * kills on contact, Fogo lights them by the flame's own roll.
  */
 const FOLK_HUNGER_INTERVAL = 320;
-const FOLK_DROWN_CHANCE = 0.1;
+const FOLK_DROWN_CHANCE = 0.03;
 const FOLK_EAT_CHANCE = 0.4;
 /**
  * A Pip only takes a turn (a step, and any work that goes with it) every
@@ -374,51 +410,152 @@ const FOLK_EAT_CHANCE = 0.4;
  */
 const FOLK_ACT_INTERVAL = 4;
 
-/** How many cells around itself each tradesman scans for its work (fire, rubble, soil, targets). Staggered per-column so they don't all scan the same frame. */
-const FOLK_SCAN_RANGE = 14;
+/** How many cells around itself each tradesman scans for its work (water, soil, trees, damaged houses, build sites). Staggered per-column so they don't all scan the same frame. */
+const FOLK_SCAN_RANGE = 28;
+/** How far off an idle Pip will still spot its worksite and amble back toward it rather than striking out across the map. Only kicks in past FOLK_HOME_NEAR, so Pips at work roam freely and don't pile up. */
+const FOLK_HOME_RANGE = 60;
+/** Inside this many cells of a worksite a Pip roams free; past it, it ambles back. A Construtor gets a longer leash — it has to range out past a whole village to find fresh ground for the next house. */
+const FOLK_HOME_NEAR = 20;
+const MASON_HOME_NEAR = 36;
+/**
+ * What an idle Pip of each trade drifts back toward — its own kind of
+ * worksite, plus the houses. Never other folk: folk drawn to folk collapse
+ * into one frozen clump.
+ */
+const FOLK_HOME: Partial<Record<MaterialId, readonly MaterialId[]>> = {
+  [MaterialId.Mason]: [MaterialId.Brick],
+  [MaterialId.Farmer]: [MaterialId.Brick, MaterialId.Wheat, MaterialId.Mud],
+  [MaterialId.Lumberjack]: [MaterialId.Brick, MaterialId.Wood, MaterialId.Sprout, MaterialId.Plant],
+  [MaterialId.Warrior]: [MaterialId.Brick],
+};
 
-/** Per-tick chance a Bombeiro adjacent to Água scoops a load, and — carrying, next to Fogo — throws it. (Fire is urgent, so this stays brisk.) */
-const FIREFIGHTER_SCOOP_CHANCE = 0.5;
-/** Per-tick chance a Bombeiro with no water smothers a touching Fogo cell bare-handed (slower, and it can catch alight doing it). */
-const FIREFIGHTER_SMOTHER_CHANCE = 0.18;
+/** Per-tick chance a Lenhador fells a fully-grown tree it's touching into Madeira. */
+const LUMBERJACK_FELL_CHANCE = 0.22;
+/** Per-tick chance a Lenhador sows a Semente on the bare soil ahead of it. */
+const LUMBERJACK_SOW_CHANCE = 0.32;
+/** How clear of other greenery a patch has to be before a Lenhador plants there. */
+const LUMBERJACK_SPACING = 4;
+/** Width of the strip a Lenhador levels flat before sowing a seedling, like the other trades grade before they work. */
+const LUMBERJACK_PLOT = 2;
+/** Loose Madeira logs a felled tree yields, scattered on the ground beside the (now-clear) stump. */
+const LUMBERJACK_LOG_YIELD = 3;
+/** Madeira within 6 cells at or above which a Lenhador stops felling — the woodlot's stocked, don't carpet the ground with trunks. */
+const LUMBERJACK_STOCK = 10;
+/** How much crown (Broto/Planta/Flor cells around the base) a tree needs before a Lenhador will fell it — a fully stamped crown is ~17 cells, so this only clears once the tree has finished growing, never a sapling or a half-grown one. */
+const LUMBERJACK_MIN_TREE = 12;
 
-/** Per-tick chance a Fazendeiro sows Trigo / waters Terra / harvests when it's in the right spot — deliberately unhurried, so a field fills in over a good while rather than all at once. */
-const FARMER_WORK_CHANCE = 0.22;
+/** Per-tick chance a Fazendeiro sows Trigo / waters Terra when it's in the right spot. */
+const FARMER_WORK_CHANCE = 0.4;
+/** Act-turns a Fazendeiro / Lenhador spends stood working a harvest before it comes in — harvesting isn't instant. */
+const HARVEST_WORK = 5;
+/** How far a Fazendeiro / Lenhador looks for its storehouse to stash a load into. */
+const STORE_REACH = 30;
 
-/** Per-tick chance a Saqueador starts a fire in a touching flammable or empty cell. */
-const RAIDER_ARSON_CHANCE = 0.06;
-/** Per-tick chance a Saqueador smashes a touching Madeira/Vidro, or chips a touching Pedra. */
-const RAIDER_WRECK_CHANCE = 0.12;
-/** Per-tick chance a Saqueador kills & eats a touching Formiga/Peixe/other folk. */
-const RAIDER_KILL_CHANCE = 0.45;
+/** Cut Madeira anywhere on the map at or above which the Construtor has stock enough to start decking a bridge — the woodlot has to be worked up first. Kept comfortably under LUMBERJACK_STOCK so even a single Lenhador's own woodpile clears it; any higher and a village with just one or two foresters never sees a bridge, since each Lenhador stops cutting once its own stock hits LUMBERJACK_STOCK. */
+const BRIDGE_TIMBER_MIN = 8;
 
-/** The four trades of o povo. */
-const FOLK_IDS: readonly MaterialId[] = [
-  MaterialId.Mason, MaterialId.Firefighter, MaterialId.Farmer, MaterialId.Raider,
+/** Hit points a fresh unit spawns with, by kind. Working folk are frail; the Guerreiro is built to last; a Esqueleto is somewhere between. */
+const SPAWN_HP: Partial<Record<MaterialId, number>> = {
+  [MaterialId.Mason]: 5,
+  [MaterialId.Lumberjack]: 5,
+  [MaterialId.Farmer]: 5,
+  [MaterialId.Warrior]: 10,
+  [MaterialId.Skeleton]: 5,
+};
+/** Damage one strike lands. */
+const ATTACK_DAMAGE = 1;
+/** Ticks between strikes — a unit lands roughly one blow a second (the sim runs ~60 ticks/s). */
+const ATTACK_PERIOD = 54;
+/** Ticks a red hit-marker flashes at a struck cell. */
+const HIT_FLASH_LIFE = 7;
+/** `hp` byte: low 7 bits are the points, the top bit flags a unit empowered by Magia (twice the damage, twice the size). */
+const HP_POINTS_MASK = 0x7f;
+const HP_EMPOWERED = 0x80;
+/** How far a Guerreiro scans for a Esqueleto to go and meet — a wide watch, so a guard picks up a threat well before it reaches the houses. */
+const WARRIOR_SIGHT = 52;
+/** How far a Esqueleto scans for a Pip to hunt. */
+const SKELETON_SIGHT = 24;
+/** Within this many cells of a Esqueleto, a working Pip drops its task and backs away — it's faster than the undead, so it can. */
+const SKELETON_FLEE_RANGE = 11;
+/** A Esqueleto takes a turn only every Nth tick — slower and more lurching than the folk (FOLK_ACT_INTERVAL). */
+const SKELETON_ACT_INTERVAL = 8;
+/**
+ * Short radius a Guerreiro / Esqueleto checks for a foe *every* tick, so a
+ * fight already underway never stutters. The full WARRIOR_SIGHT /
+ * SKELETON_SIGHT sweep for spotting a new threat from afar is expensive
+ * (a (2·range+1)² box, and it comes up empty — the whole box has to be
+ * checked — on every tick there's simply nothing around, which with a
+ * houseful of guards is most ticks) so that one only runs on the ordinary
+ * work cadence instead. A real fight is always well inside this radius long
+ * before that cadence would notice it late.
+ */
+const COMBAT_MELEE_CHECK = 6;
+
+/**
+ * Simple circuit: an Alavanca's `meta` low bit is its on/off state (flipped
+ * by right-clicking it — see `toggleLever`); a Fio's and a Porta's low bit is
+ * whether they're currently powered, recomputed fresh every tick by tracing
+ * back through connected Fio to an actually-on Alavanca (`circuitPowered`)
+ * rather than just checking a neighbor's own bit — the latter would let a
+ * closed loop of Fio (or a run left behind after its Alavanca switches off)
+ * keep "confirming" itself forever, each cell citing the neighbor citing it
+ * right back, with the real source gone.
+ */
+const CIRCUIT_ON_META = 0x01;
+/** Marks a stamped Alavanca cell as the knob rather than the housing frame — see LEVER_FRAME/LEVER_KNOB_* and PixiStage's Alavanca render, which shades the two apart so the fixture reads as an actual switch instead of a flat block. Independent of CIRCUIT_ON_META (bit 0). */
+const LEVER_ARM_META = 0x02;
+/** Cap on how many connected Fio cells one circuitPowered trace visits — a perf budget for a pathological loop of wire, not a limit anyone wiring up a door will ever bump into. */
+const CIRCUIT_FLOOD_CAP = 4000;
+/**
+ * A single click of Alavanca stamps a narrow housing (LEVER_FRAME, offsets
+ * from its anchor at the top-left) with a knob sitting inside it — down at
+ * LEVER_KNOB_OFF to start. Flipping it (`toggleLever`) doesn't just recolor:
+ * the knob cell itself moves, to LEVER_KNOB_ON up top, an actual switch
+ * thrown, not a paint job — so the housing has to be tall enough to hold
+ * both slots with a gap between them.
+ */
+const LEVER_FRAME: readonly [number, number][] = [
+  [0, 0], [1, 0], [2, 0],
+  [0, 1], [2, 1],
+  [0, 2], [2, 2],
+  [0, 3], [2, 3],
+  [0, 4], [1, 4], [2, 4],
 ];
-/** What every member of o povo will eat — mature growth and stores. Not Semente or Broto: a Plantador would just eat its own young crop. */
-const FOLK_FOODS = [MaterialId.Plant, MaterialId.Flor, MaterialId.Wood, MaterialId.Mud] as const;
+const LEVER_KNOB_ON: readonly [number, number] = [1, 1];
+const LEVER_KNOB_OFF: readonly [number, number] = [1, 3];
+/** Cap on how many connected Alavanca cells one toggleLever flip visits — a perf budget, well past the size of any lever fixture actually placed. */
+const LEVER_FLOOD_CAP = 64;
+/** Per-tick chance a Esqueleto with nothing in sight shuffles a step / turns. */
+const SKELETON_WANDER_CHANCE = 0.5;
+
+/** The four trades of o povo (the Guerreiro included — it's one of the folk, it just fights instead of building). */
+const FOLK_IDS: readonly MaterialId[] = [
+  MaterialId.Mason, MaterialId.Lumberjack, MaterialId.Farmer, MaterialId.Warrior,
+];
+/** Every Pip a Esqueleto will hunt. */
+const PIP_IDS: readonly MaterialId[] = FOLK_IDS;
 const WATER_ONLY = [MaterialId.Water] as const;
-const FIRE_ONLY = [MaterialId.Fire] as const;
+/** Standing growth a folk walks straight through instead of climbing or snagging on — crops and plant matter. */
+const FOLK_WADEABLE = new Set<MaterialId>([
+  MaterialId.Wheat, MaterialId.Plant, MaterialId.Sprout, MaterialId.Flor, MaterialId.Seed,
+]);
+/** Grown greenery a Lenhador fells for timber, and casts about for. */
+const LUMBERJACK_TREES: readonly MaterialId[] = [MaterialId.Plant, MaterialId.Sprout];
 /** Stray mature growth a Plantador harvests alongside its ripe Trigo. */
 const FARMER_CROPS: readonly MaterialId[] = [MaterialId.Plant, MaterialId.Flor];
-/** Below this fed level a folk with no urgent task heads for the nearest crop. */
-const FOLK_FORAGE_HUNGER = 9;
-/** What a hungry folk walks toward — Trigo above all, plus any stray greenery. */
-const FOLK_FORAGE: readonly MaterialId[] = [MaterialId.Wheat, MaterialId.Plant, MaterialId.Flor];
+/** Below this fed level a folk with no urgent task heads for the nearest wheat. */
+const FOLK_FORAGE_HUNGER = 14;
+/** Below this it drops its trade entirely and makes for food — survival first. */
+const FOLK_STARVING = 6;
+/** How far a starving folk casts about for something to eat. */
+const FOLK_FORAGE_RANGE = 38;
+/** The only thing o povo eat: Trigo. They move the world around, they don't graze it. */
+const FOLK_FORAGE: readonly MaterialId[] = [MaterialId.Wheat];
 const DRY_SOIL = [MaterialId.Dirt] as const;
-/** Living things a Saqueador kills. */
-const RAIDER_PREY = [
-  MaterialId.Ant, MaterialId.Fish, MaterialId.Mason, MaterialId.Firefighter, MaterialId.Farmer,
-] as const;
-/** Structure a Saqueador tears down — houses very much included. */
-const RAIDER_WRECKABLE = [MaterialId.Wood, MaterialId.Glass, MaterialId.Stone, MaterialId.Metal, MaterialId.Brick] as const;
-/** Everything a Saqueador will cross a room for. */
-const RAIDER_HUNT = [...RAIDER_PREY, MaterialId.Wood, MaterialId.Glass, MaterialId.Brick] as const;
 
 /*
  * ── Houses ──────────────────────────────────────────────────────────────
- * A Pedreiro doesn't just wall a field off — given a clear patch of ground
+ * A Construtor doesn't just wall a field off — given a clear patch of ground
  * and a carried load it *founds a house* in one go: one Tijolo cell at the
  * left doorpost (the "anchor"), its `meta` packing an anchor flag, the
  * wall-material style, and which of the HOUSE_PLANS sizes it is; then every
@@ -435,9 +572,8 @@ const RAIDER_HUNT = [...RAIDER_PREY, MaterialId.Wood, MaterialId.Glass, Material
  * plentiful Gelo in a cold climate → an ice hut, otherwise loose earth
  * fired into Tijolo.
  *
- * Masons also keep standing houses in repair: a carrying Pedreiro passing a
- * house with a hole knocked in it (Saqueador, fire, blast) fills the gap
- * back in from its load.
+ * Masons also keep standing houses in repair: a Construtor passing a house
+ * with a hole knocked in it (fire, blast) fills the gap back in.
  *
  * When the ambient climate leaves [FOLK_COMFORT_MIN, MAX] the folk drop
  * their trades and head for shelter; anyone caught out in it too long dies
@@ -471,16 +607,26 @@ interface HousePlan {
   roof: RoofShape;
   capacity: number;
   supply: number;
+  /** A storehouse, not a dwelling: no door, no chimney, no windows — a closed bin the folk stack harvest into. Built by the Fazendeiro (grain) / Lenhador (wood), never the Construtor. */
+  store?: "grain" | "wood";
 }
-/** Smallest → largest. The anchor's `meta` stores the index (bits 2-4), so a mason returning later knows the shape to repair it to. */
+/** Smallest → largest dwellings (0-5), then the two storehouses (6-7). The anchor's `meta` stores the index (bits 2-4), so a mason returning later knows the shape to repair it to. */
 const HOUSE_PLANS: readonly HousePlan[] = [
-  { span: 4, rise: 3, roof: "lean",  capacity: 2, supply: 10 },  // 0 · abrigo — a lean-to shed
-  { span: 5, rise: 4, roof: "gable", capacity: 4, supply: 20 },  // 1 · casa — a peaked cottage
-  { span: 7, rise: 4, roof: "hip",   capacity: 7, supply: 34 },  // 2 · casarão — a hipped house
-  { span: 4, rise: 7, roof: "crown", capacity: 5, supply: 44 },  // 3 · torre — a battlemented tower
-  { span: 10, rise: 5, roof: "gable", capacity: 12, supply: 60 }, // 4 · salão — a long peaked hall
-  { span: 13, rise: 6, roof: "hip",  capacity: 18, supply: 84 }, // 5 · solar — a great hipped manor
+  { span: 3, rise: 2, roof: "lean",  capacity: 2, supply: 8 },   // 0 · abrigo — a lean-to shed
+  { span: 4, rise: 3, roof: "gable", capacity: 3, supply: 14 },  // 1 · casa — a peaked cottage
+  { span: 5, rise: 3, roof: "hip",   capacity: 5, supply: 22 },  // 2 · casarão — a hipped house
+  { span: 3, rise: 5, roof: "crown", capacity: 4, supply: 28 },  // 3 · torre — a battlemented tower
+  { span: 7, rise: 4, roof: "gable", capacity: 9, supply: 40 },  // 4 · salão — a long peaked hall
+  { span: 9, rise: 4, roof: "hip",   capacity: 13, supply: 56 }, // 5 · solar — a great hipped manor
+  { span: 4, rise: 3, roof: "flat",  capacity: 0, supply: 16, store: "grain" }, // 6 · celeiro
+  { span: 4, rise: 3, roof: "flat",  capacity: 0, supply: 16, store: "wood" },  // 7 · galpão
 ];
+/** Plan indices the Construtor will actually found (the rest are storehouses). */
+const MASON_MAX_PLAN = 5;
+const PLAN_GRANARY = 6;
+const PLAN_WOODSHED = 7;
+/** Widest dwelling span the Construtor ever founds — the two storehouses tacked on the end of HOUSE_PLANS are narrower than that, so this can't just be HOUSE_PLANS.at(-1).span any more (that used to be the biggest house, back when the array held only dwellings). Used to keep a house's footprint well clear of the water it'd otherwise trap folk against. */
+const HOUSE_MAX_DWELLING_SPAN = Math.max(...HOUSE_PLANS.slice(0, MASON_MAX_PLAN + 1).map((p) => p.span));
 
 /**
  * Each blueprint cell carries a `kind` so a house reads as a building, not a
@@ -516,7 +662,23 @@ function houseCellMaterial(kind: number, style: number): MaterialId {
  * and a chimney stack above the roof by the left wall.
  */
 function houseCells(plan: HousePlan): HouseCell[] {
-  const { span, rise, roof } = plan;
+  const { span, rise } = plan;
+  // A storehouse is a closed box: four walls, a flat lid, a solid floor, and
+  // nothing else — no doorway (so the harvest stacked inside doesn't spill),
+  // no chimney, no windows.
+  if (plan.store) {
+    const box: [number, number, number][] = [];
+    for (let dy = 0; dy > -rise; dy--) {
+      box.push([0, dy, HOUSE_WALL]);
+      box.push([span, dy, HOUSE_WALL]);
+    }
+    for (let dx = 0; dx <= span; dx++) {
+      box.push([dx, -rise, HOUSE_ROOF]);
+      box.push([dx, 1, HOUSE_FLOOR]);
+    }
+    return box;
+  }
+  const roof = plan.roof;
   const cells: [number, number, number][] = [];
   const thick = span >= 8 ? 1 : 0; // wider houses get a two-cell-thick base course
   for (let dy = 0; dy > -rise; dy--) {
@@ -578,30 +740,42 @@ const houseType = (meta: number): number => (meta >> 2) & 0b111;
 const packHouseAnchor = (style: number, type: number): number =>
   HOUSE_ANCHOR_META | HOUSE_WALL_META | ((type & 0b111) << 2) | (style & 0b11);
 
-/** How far a founding Pedreiro surveys the ground + supply and checks no other house is close (kept equal to the spacing so that check really covers the gap it promises), and the minimum anchor-to-anchor gap between houses. */
+/** How far a founding Construtor surveys the ground + supply and checks no other house is close (kept equal to the spacing so that check really covers the gap it promises), and the minimum anchor-to-anchor gap between houses. */
 const HOUSE_SURVEY_RANGE = 17;
 const HOUSE_SPACING = 17;
 /** How far a chilled folk looks for a house to shelter in. */
 const HOUSE_SHELTER_RANGE = 22;
-/** Per-check chance a carrying Pedreiro on a good, empty, house-free patch raises a house (the whole frame at once). */
-const MASON_FOUND_CHANCE = 0.12;
-/** How far a carrying Pedreiro notices a damaged house it could patch, and the per-tick chance it sets a brick when standing right next to the gap. */
+/** Per-check chance a Construtor on a good, empty, house-free patch raises a house (the whole frame at once). High enough that it commits within a few turns of settling on a site, rather than standing frozen on it. */
+const MASON_FOUND_CHANCE = 0.22;
+/** How often (ticks) the rolling village census is refreshed. */
+const CENSUS_INTERVAL = 90;
+/** Ceiling on standing Trigo per Fazendeiro — a field sized to its keepers, not a runaway prairie. */
+const WHEAT_PER_FARMER = 70;
+/** How far a carrying Construtor notices a damaged house it could patch, and the per-tick chance it sets a brick when standing right next to the gap. */
 const MASON_REPAIR_RANGE = 24;
 const MASON_REPAIR_CHANCE = 0.4;
-/** Loose earth a Pedreiro scoops as raw supply — no Pedra (that's the bedrock floor) and no Madeira (dismantling a whole forest for one cabin reads badly); the finished wall material is chosen separately by `masonSurvey` from what's abundant. */
-const MASON_PICKUP: readonly MaterialId[] = [MaterialId.Sand, MaterialId.Dirt, MaterialId.Mud];
+/** How wide a stretch of water a Construtor will look across for a far bank before deciding there's nothing to bridge to — generous, so a big lake still gets spanned. */
+const MASON_BRIDGE_MAX = 200;
+/** How far along a bank a Construtor will head to reach water it means to bridge. */
+const MASON_APPROACH_MAX = 48;
+/** How many cells above the near lip a Construtor's arched deck crowns — a gentle hump so it clears the water and meets a far bank at any height. */
+const MASON_ARCH_MAX = 7;
+/** How deep a gap between two banks still counts as "water to bridge" — a deep gorge with a stream at the bottom still gets a span. */
+const MASON_SPAN_DROP = 40;
+/** How far below its floor a house sinks a pier through any hollow or open water, so it always has solid footing. */
+const FOUNDATION_DEPTH = 5;
 /**
- * Before founding anything a carrying Pedreiro *levels the lot*: over a strip
- * as wide as the largest house it digs down protrusions and fills shallow
- * pits one cell per turn, until the ground is flat — and a house may only be
- * founded on a flat lot (`houseFootprintClear`). It won't try to carve a
- * cliff: past LEVEL_MAX_STEP cells of unevenness it just moves on.
+ * Before founding anything a Construtor *levels the lot*: over a strip as wide
+ * as the largest house it shifts a cell of earth from the nearest hump into
+ * the nearest hollow, one per turn, until the ground is flat. A house may
+ * only be founded on a flat lot (`houseFootprintClear`). Past LEVEL_MAX_STEP
+ * cells of unevenness it gives up and moves on.
  */
 const LEVEL_MAX_STEP = 2;
 /** Max wall thickness a boxed-in folk will squeeze straight through (see `folkPhase`). */
-const FOLK_PHASE_REACH = 3;
-/** Per-tick chance a folk with nothing to head toward drifts its facing at random — turns aimless walking into a meander instead of a fixed back-and-forth pace. */
-const FOLK_WANDER_TURN = 0.03;
+const FOLK_PHASE_REACH = 4;
+/** Per-tick chance an idle folk (nothing to head toward, no village in sight) flips its facing — keeps it pacing a small patch instead of marching off in a straight line. */
+const FOLK_WANDER_TURN = 0.22;
 
 /** Ambient °C range the folk are content in; outside it they head indoors. */
 const FOLK_COMFORT_MIN = COLD_1;
@@ -656,6 +830,22 @@ const SPROUT_DIRECTIONS = [
   [-1, -1, 2], [1, -1, 2],
   [-1, 0, 1], [1, 0, 1],
 ] as const;
+/** Growth directions for the lowest cells of a shoot — straight up only, so a tree starts with a clean vertical trunk before its crown spreads. */
+const TREE_TRUNK_DIRECTIONS = [[0, -1, 1]] as const;
+/** Trunk cells a tended tree grows before it stamps its crown. */
+const TREE_CROWN_START = TREE_TRUNK_HEIGHT;
+/**
+ * The leaf cells of a tended tree's crown, stamped in one go around the top of
+ * the trunk (relative to the tip cell) — a rounded blob so it reads as
+ * foliage. Only lands on empty air, so a crowded spot just gets a smaller crown.
+ */
+const TREE_CROWN_SHAPE: readonly (readonly [number, number])[] = [
+  [-1, 0], [1, 0], [0, 0],
+  [-2, -1], [-1, -1], [0, -1], [1, -1], [2, -1],
+  [-2, -2], [-1, -2], [0, -2], [1, -2], [2, -2],
+  [-1, -3], [0, -3], [1, -3],
+  [0, -4],
+];
 
 /**
  * Tiny stamped shapes a Semente becomes when it germinates on Barro — a
@@ -816,6 +1006,10 @@ export class SimGrid {
   readonly height: number;
   material: Uint8Array;
   meta: Uint8Array;
+  /** When false, powders, liquids, gases and flying debris hold their position instead of falling/rising. Creatures and reactions carry on as normal. Toggled from the UI. */
+  gravityEnabled = true;
+  /** Grid indices the player is currently holding with the drag tool — the sim leaves these cells alone until they're dropped. */
+  readonly heldCells = new Set<number>();
   /** Reset every tick; stops a cell that already moved from being moved again in the same pass. */
   private processed: Uint8Array;
   /**
@@ -837,6 +1031,23 @@ export class SimGrid {
    * blocked turns that infinite flip-flop into a one-time settle.
    */
   private flowDir: Int8Array;
+  /**
+   * Hit points for the units that fight — o povo and the Esqueletos. One byte
+   * per cell, moved with the creature by `swap`, stamped fresh by `set` from
+   * SPAWN_HP. The top bit (0x80) is the "empowered by Magia" flag — such a
+   * unit hits twice as hard and renders twice as big; the low 7 bits are the
+   * points. Not serialized: a loaded map's creatures come back at full health
+   * (see `load`), which is fine — a fight is a live event.
+   */
+  hp: Uint8Array;
+  /**
+   * A per-unit action clock — ticks left before a unit may act again. For a
+   * fighter it's the cooldown between strikes (reset to ATTACK_PERIOD on a
+   * blow); for a Fazendeiro / Lenhador it's the time a harvest takes (they
+   * stand and work it down before the crop comes in). Moves with the unit via
+   * `swap`, so a knockback or a shove doesn't reset it. Zero when idle.
+   */
+  private workCd: Uint8Array;
   /** Active electricity charges currently travelling through a conductor — see `Pulse`. */
   private pulses: Pulse[] = [];
   /** Decorative explosion sparks in flight — see `Shrapnel`. */
@@ -845,13 +1056,29 @@ export class SimGrid {
   private debris: Debris[] = [];
   /** Brief, very bright flash cells at a fresh detonation's epicenter — purely decorative, see `Flash`. */
   private flashes: Flash[] = [];
+  /** Brief red flash cells where a blow just landed — a combat hit marker, purely decorative. Same struct as `Flash`. */
+  private hits: Flash[] = [];
   /** Global temperature in Celsius — see `updateTemperature`. Starts at the neutral baseline since nothing hot or cold has run yet. */
   private temp = NEUTRAL_TEMP;
   /** Weighted count of Fogo/Lava cells seen so far this tick's main scan — reset and accumulated in `step()`, consumed by `updateTemperature`. An absolute count, not a ratio — see HOT_PIXELS_FOR_MAX. */
   private hotAccum = 0;
   /** Count of Gelo cells seen so far this tick's main scan. */
   private coldAccum = 0;
+  /** Pops left this tick before DETONATIONS_PER_TICK_CAP kicks in — see the constant. Refilled at the top of every `step()`. */
+  private detonationBudget = DETONATIONS_PER_TICK_CAP;
+  /** This tick's powered/unpowered verdict for every Fio/Porta cell circuitPowered has already traced, keyed by grid index — a whole connected run gets settled once by the cell that happens to be visited first instead of repeating the same walk per cell. Cleared at the top of every `step()`. */
+  private circuitCache = new Map<number, boolean>();
+  /** This tick's open/shut verdict for every Porta cell doorPowered has already traced, keyed by grid index — see doorPowered: a connected slab of Porta is one body, open if *any* cell of it is individually fed, not just the cells actually touching a Fio/Alavanca. Cleared at the top of every `step()`. */
+  private doorCache = new Map<number, boolean>();
   private tick = 0;
+  /** Rolling census (refreshed every CENSUS_INTERVAL ticks) the trades use to cap themselves: houses to the head count, crops to the farmer count. */
+  private houseCensus = 0;
+  private folkCensus = 0;
+  private cropCensus = 0;
+  private farmerCensus = 0;
+  private timberCensus = 0;
+  private granaryCensus = 0;
+  private woodshedCensus = 0;
 
   constructor(width: number, height: number) {
     this.width = width;
@@ -861,6 +1088,8 @@ export class SimGrid {
     this.processed = new Uint8Array(width * height);
     this.stillTicks = new Uint8Array(width * height);
     this.flowDir = new Int8Array(width * height);
+    this.hp = new Uint8Array(width * height);
+    this.workCd = new Uint8Array(width * height);
   }
 
   /**
@@ -880,10 +1109,14 @@ export class SimGrid {
     this.processed.fill(0);
     this.stillTicks.fill(0);
     this.flowDir.fill(0);
+    this.hp.fill(0);
+    this.workCd.fill(0);
+    this.heldCells.clear();
     this.pulses = [];
     this.shrapnel = [];
     this.debris = [];
     this.flashes = [];
+    this.hits = [];
     this.temp = NEUTRAL_TEMP;
     this.hotAccum = 0;
     this.coldAccum = 0;
@@ -930,6 +1163,7 @@ export class SimGrid {
         const ti = ty * this.width + tx;
         this.material[ti] = srcMat[si];
         this.meta[ti] = srcMeta[si];
+        this.hp[ti] = SPAWN_HP[srcMat[si] as MaterialId] ?? 0;
       }
     }
     this.temp = Math.max(EXTREME_COLD, Math.min(EXTREME_HOT, snap.temp));
@@ -953,6 +1187,11 @@ export class SimGrid {
   /** Read-only positions (plus fade state) of a fresh detonation's bright Flash cells, for the renderer to overlay. */
   get activeFlashes(): readonly { x: number; y: number; life: number; maxLife: number }[] {
     return this.flashes;
+  }
+
+  /** Read-only positions (plus fade state) of fresh combat-hit markers, for the renderer to flash red. */
+  get activeHits(): readonly { x: number; y: number; life: number; maxLife: number }[] {
+    return this.hits;
   }
 
   /** Current global temperature in Celsius — see `updateTemperature`. */
@@ -982,6 +1221,8 @@ export class SimGrid {
     const i = this.index(x, y);
     this.material[i] = id;
     this.meta[i] = meta;
+    this.hp[i] = SPAWN_HP[id] ?? 0;
+    this.workCd[i] = 0;
     this.wake(x, y);
   }
 
@@ -995,6 +1236,114 @@ export class SimGrid {
     }
   }
 
+  /**
+   * Whether a cell of `id` can be picked up and moved with the drag tool.
+   * Solids stay put (they're structure); Empty, Fire and bodiless Energy
+   * aren't things you can grab. Everything else — powders, liquids, gases,
+   * plants, creatures, a Magia mote — is fair game.
+   */
+  private draggable(id: MaterialId): boolean {
+    if (id === MaterialId.Empty || id === MaterialId.Fire) return false;
+    const cat = MATERIALS[id].category;
+    return cat !== MaterialCategory.Solid && cat !== MaterialCategory.Energy && cat !== MaterialCategory.Empty;
+  }
+
+  /**
+   * Grabs every draggable cell in a disc of `radius` around (cx, cy) into a
+   * `DragBlob` the caller steers with `moveBlob` / releases with `dropBlob`.
+   * The cells stay put on the grid, just frozen (`heldCells`) so the sim
+   * neither moves them nor lets anything flow into the space they occupy,
+   * until the blob is actually steered somewhere else. Returns null if
+   * nothing there could be picked up.
+   */
+  pickUpBlob(cx: number, cy: number, radius: number): DragBlob | null {
+    const cells: DragBlob["cells"] = [];
+    const placed: number[] = [];
+    const r2 = radius * radius;
+    const rInt = Math.max(0, Math.ceil(radius));
+    for (let dy = -rInt; dy <= rInt; dy++) {
+      for (let dx = -rInt; dx <= rInt; dx++) {
+        if (dx * dx + dy * dy > r2) continue;
+        const x = cx + dx;
+        const y = cy + dy;
+        if (!this.inBounds(x, y)) continue;
+        const i = this.index(x, y);
+        if (this.heldCells.has(i)) continue;
+        const id = this.material[i] as MaterialId;
+        if (!this.draggable(id)) continue;
+        cells.push({ dx, dy, mat: id, meta: this.meta[i] });
+        this.heldCells.add(i); // held in place, not lifted out — the hole never opens
+        placed.push(i);
+        this.wake(x, y);
+      }
+    }
+    if (cells.length === 0) return null;
+    return { cells, ax: cx, ay: cy, placed };
+  }
+
+  /** Nearest currently-empty grid index to (x, y) within `reach` cells, or -1. Used so a dragged cell that lands on an obstacle spills beside it instead of vanishing. */
+  private nearestEmpty(x: number, y: number, reach = 3): number {
+    for (let r = 0; r <= reach; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const nx = x + dx;
+          const ny = y + dy;
+          if (this.inBounds(nx, ny) && this.material[this.index(nx, ny)] === MaterialId.Empty) {
+            return this.index(nx, ny);
+          }
+        }
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * Re-stamps a held blob centred on (cx, cy): frees exactly the cells it was
+   * occupying, then lays every cell down again at the new spot — at its own
+   * offset if that's clear, otherwise spilled into the nearest open cell so
+   * nothing is ever dropped. The placed cells stay frozen (`heldCells`) until
+   * `dropBlob`.
+   */
+  moveBlob(blob: DragBlob, cx: number, cy: number): void {
+    this.restampBlob(blob, cx, cy, 3);
+  }
+
+  private restampBlob(blob: DragBlob, cx: number, cy: number, reach: number): void {
+    for (const pi of blob.placed) {
+      if (this.heldCells.has(pi)) {
+        this.material[pi] = MaterialId.Empty;
+        this.meta[pi] = 0;
+        this.heldCells.delete(pi);
+        this.wake(pi % this.width, (pi / this.width) | 0);
+      }
+    }
+    blob.placed.length = 0;
+    for (const c of blob.cells) {
+      const nx = cx + c.dx;
+      const ny = cy + c.dy;
+      const onOffset = this.inBounds(nx, ny) && this.material[this.index(nx, ny)] === MaterialId.Empty;
+      const ni = onOffset
+        ? this.index(nx, ny)
+        : this.nearestEmpty(this.inBounds(nx, ny) ? nx : cx, this.inBounds(nx, ny) ? ny : cy, reach);
+      if (ni < 0) continue; // nothing open within reach this pass — the cell stays in the blob and is retried on the next move / on drop
+      this.material[ni] = c.mat;
+      this.meta[ni] = c.meta;
+      this.heldCells.add(ni);
+      blob.placed.push(ni);
+      this.wake(ni % this.width, (ni / this.width) | 0);
+    }
+    blob.ax = cx;
+    blob.ay = cy;
+  }
+
+  /** Places a held blob one last time and hands its cells back to the sim (they fall, flow, react again from here). Widens the spill search so a full-handed drop onto cluttered ground still lands every cell. */
+  dropBlob(blob: DragBlob, cx: number, cy: number): void {
+    this.restampBlob(blob, cx, cy, Math.max(this.width, this.height));
+    for (const pi of blob.placed) this.heldCells.delete(pi);
+    blob.placed.length = 0;
+  }
+
   private metaFor(id: MaterialId): number {
     if (id === MaterialId.Fire) return MATERIALS[MaterialId.Fire].burnTicks;
     if (id === MaterialId.Acid) return ACID_START_CHARGES;
@@ -1002,8 +1351,8 @@ export class SimGrid {
     // random way.
     if (
       id === MaterialId.Ant || id === MaterialId.Bird || id === MaterialId.Fish ||
-      id === MaterialId.Mason || id === MaterialId.Firefighter ||
-      id === MaterialId.Farmer || id === MaterialId.Raider
+      id === MaterialId.Mason || id === MaterialId.Lumberjack ||
+      id === MaterialId.Farmer || id === MaterialId.Warrior || id === MaterialId.Skeleton
     ) {
       return packCreature(Math.random() < 0.5 ? 1 : -1, 0, CREATURE_FED_MAX);
     }
@@ -1072,9 +1421,11 @@ export class SimGrid {
    * Places a single cell of `id` at or near (cx, cy), for SINGLE_DROP
    * materials. If the exact spot is taken it nudges out to the nearest empty
    * cell within two steps, so a click that lands on a wall or another folk
-   * still isn't wasted.
+   * still isn't wasted. An Alavanca is the exception: it stamps its whole
+   * LEVER_SHAPE fixture instead of one cell (see `dropLever`).
    */
   private dropOne(cx: number, cy: number, id: MaterialId): void {
+    if (id === MaterialId.Lever) { this.dropLever(cx, cy); return; }
     for (let r = 0; r <= 2; r++) {
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
@@ -1085,6 +1436,29 @@ export class SimGrid {
             this.paintCell(x, y, id);
             return;
           }
+        }
+      }
+    }
+  }
+
+  /** Stamps LEVER_SHAPE, anchored at or near (cx, cy) — the nearest spot within two steps whose whole footprint is clear. Every cell starts off (CIRCUIT_ON_META clear), flagged LEVER_ARM_META or not per the shape. */
+  private dropLever(cx: number, cy: number): void {
+    for (let r = 0; r <= 2; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const ax = cx + dx;
+          const ay = cy + dy;
+          let clear = true;
+          for (const [ox, oy] of LEVER_FRAME) {
+            if (!this.inBounds(ax + ox, ay + oy) || this.get(ax + ox, ay + oy) !== MaterialId.Empty) { clear = false; break; }
+          }
+          const [kox, koy] = LEVER_KNOB_OFF;
+          if (clear && (!this.inBounds(ax + kox, ay + koy) || this.get(ax + kox, ay + koy) !== MaterialId.Empty)) clear = false;
+          if (!clear) continue;
+          for (const [ox, oy] of LEVER_FRAME) this.set(ax + ox, ay + oy, MaterialId.Lever, 0);
+          this.set(ax + kox, ay + koy, MaterialId.Lever, LEVER_ARM_META); // starts off
+          return;
         }
       }
     }
@@ -1130,18 +1504,75 @@ export class SimGrid {
     }
   }
 
+  /**
+   * Right-click on a placed Alavanca is how it's switched: an actual thrown
+   * switch, not a recolor — the knob cell itself jumps from LEVER_KNOB_OFF
+   * to LEVER_KNOB_ON (or back), and every housing cell physically touching
+   * it updates its on/off bit to match, so the whole fixture (or however
+   * many lone Alavancas happen to be stuck together) switches as one unit
+   * regardless of which cell the cursor landed on. A no-op anywhere else
+   * (empty ground, a different material, out of bounds).
+   */
+  toggleLever(x: number, y: number): void {
+    if (!this.inBounds(x, y) || this.get(x, y) !== MaterialId.Lever) return;
+    const startI = this.index(x, y);
+    const next = (this.meta[startI] & CIRCUIT_ON_META) === 0 ? CIRCUIT_ON_META : 0;
+    const visited = new Set<number>([startI]);
+    const stack = [startI];
+    let minX = x, minY = y;
+    let knobI = (this.meta[startI] & LEVER_ARM_META) !== 0 ? startI : -1;
+    let budget = LEVER_FLOOD_CAP;
+    while (stack.length > 0 && budget-- > 0) {
+      const i = stack.pop()!;
+      const cx = i % this.width, cy = (i / this.width) | 0;
+      if (cx < minX) minX = cx;
+      if (cy < minY) minY = cy;
+      if ((this.meta[i] & LEVER_ARM_META) !== 0) knobI = i;
+      for (const [dx, dy] of NEIGHBORS_8) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!this.inBounds(nx, ny)) continue;
+        const j = this.index(nx, ny);
+        if (this.material[j] !== MaterialId.Lever || visited.has(j)) continue;
+        visited.add(j);
+        stack.push(j);
+      }
+    }
+    // The frame's own top-left is always the anchor LEVER_FRAME was stamped
+    // from — true whichever slot the knob is currently sitting in.
+    const [kox, koy] = next !== 0 ? LEVER_KNOB_ON : LEVER_KNOB_OFF;
+    const newKnobX = minX + kox, newKnobY = minY + koy;
+    if (knobI >= 0 && this.inBounds(newKnobX, newKnobY)) {
+      const oldX = knobI % this.width, oldY = (knobI / this.width) | 0;
+      this.material[knobI] = MaterialId.Empty;
+      this.meta[knobI] = 0;
+      this.wake(oldX, oldY);
+      this.set(newKnobX, newKnobY, MaterialId.Lever, LEVER_ARM_META | next);
+    }
+    for (const i of visited) {
+      if (i === knobI) continue; // already moved/reset above
+      this.meta[i] = next; // frame cells: never LEVER_ARM_META, just the on/off bit
+      this.wake(i % this.width, (i / this.width) | 0);
+    }
+  }
+
   private swap(ax: number, ay: number, bx: number, by: number): void {
     const ai = this.index(ax, ay);
     const bi = this.index(bx, by);
     const tm = this.material[ai];
     const tmeta = this.meta[ai];
     const tflow = this.flowDir[ai];
+    const thp = this.hp[ai];
+    const tcd = this.workCd[ai];
     this.material[ai] = this.material[bi];
     this.meta[ai] = this.meta[bi];
     this.flowDir[ai] = this.flowDir[bi];
+    this.hp[ai] = this.hp[bi];
+    this.workCd[ai] = this.workCd[bi];
     this.material[bi] = tm;
     this.meta[bi] = tmeta;
     this.flowDir[bi] = tflow;
+    this.hp[bi] = thp;
+    this.workCd[bi] = tcd;
     this.processed[ai] = 1;
     this.processed[bi] = 1;
     this.wake(ax, ay);
@@ -1160,6 +1591,10 @@ export class SimGrid {
     const leftToRight = this.tick % 2 === 0;
     this.hotAccum = 0;
     this.coldAccum = 0;
+    this.detonationBudget = DETONATIONS_PER_TICK_CAP;
+    if (this.circuitCache.size > 0) this.circuitCache.clear();
+    if (this.doorCache.size > 0) this.doorCache.clear();
+    if (this.tick % CENSUS_INTERVAL === 1) this.takeCensus();
 
     // Bottom-to-top so a cell that falls this tick isn't immediately
     // reprocessed as if it were the next row's original occupant.
@@ -1168,6 +1603,7 @@ export class SimGrid {
         const x = leftToRight ? xi : this.width - 1 - xi;
         const i = this.index(x, y);
         if (this.processed[i]) continue;
+        if (this.heldCells.size > 0 && this.heldCells.has(i)) continue; // in the player's hand
         const id = this.material[i] as MaterialId;
         if (id === MaterialId.Empty) continue;
         if (id === MaterialId.Fire) this.hotAccum++;
@@ -1177,13 +1613,13 @@ export class SimGrid {
         const def = MATERIALS[id];
         switch (def.category) {
           case MaterialCategory.Powder:
-            if (this.stillTicks[i] < SLEEP_THRESHOLD && Math.random() < GRAVITY_STRENGTH) {
+            if (this.gravityEnabled && this.stillTicks[i] < SLEEP_THRESHOLD && Math.random() < GRAVITY_STRENGTH) {
               if (this.stepPowder(x, y, def.density)) this.stillTicks[i] = 0;
               else if (this.stillTicks[i] < 255) this.stillTicks[i]++;
             }
             break;
           case MaterialCategory.Liquid:
-            if (this.stillTicks[i] < SLEEP_THRESHOLD && Math.random() < GRAVITY_STRENGTH) {
+            if (this.gravityEnabled && this.stillTicks[i] < SLEEP_THRESHOLD && Math.random() < GRAVITY_STRENGTH) {
               if (this.stepLiquid(x, y, def.density)) this.stillTicks[i] = 0;
               else if (this.stillTicks[i] < 255) this.stillTicks[i]++;
             }
@@ -1198,7 +1634,7 @@ export class SimGrid {
               this.set(x, y, MaterialId.Empty);
               break;
             }
-            if (this.stillTicks[i] < SLEEP_THRESHOLD) {
+            if (this.gravityEnabled && this.stillTicks[i] < SLEEP_THRESHOLD) {
               if (this.stepGas(x, y, def.density)) this.stillTicks[i] = 0;
               else if (this.stillTicks[i] < 255) this.stillTicks[i]++;
             }
@@ -1217,9 +1653,10 @@ export class SimGrid {
             else if (id === MaterialId.Bird) this.stepBird(x, y, i);
             else if (id === MaterialId.Fish) this.stepFish(x, y, i);
             else if (id === MaterialId.Mason) this.stepMason(x, y, i);
-            else if (id === MaterialId.Firefighter) this.stepFirefighter(x, y, i);
+            else if (id === MaterialId.Lumberjack) this.stepLumberjack(x, y, i);
             else if (id === MaterialId.Farmer) this.stepFarmer(x, y, i);
-            else if (id === MaterialId.Raider) this.stepRaider(x, y, i);
+            else if (id === MaterialId.Warrior) this.stepWarrior(x, y, i);
+            else if (id === MaterialId.Skeleton) this.stepSkeleton(x, y, i);
             break;
           case MaterialCategory.Magic:
             this.stepMagic(x, y, i);
@@ -1244,6 +1681,8 @@ export class SimGrid {
         else if (id === MaterialId.Ice) this.stepIce(x, y);
         else if (def.explosive && this.meta[i] > 0) this.stepFuse(x, y, i);
         else if (id === MaterialId.Clone) this.stepClone(x, y, i);
+        else if (id === MaterialId.Wire) this.stepWire(x, y, i);
+        else if (id === MaterialId.Door) this.stepDoor(x, y, i);
 
         // Ambient temperature effects — only make sense once the cell has
         // survived whatever the reactions above just did to it.
@@ -1447,7 +1886,10 @@ export class SimGrid {
       const nx = x + dx;
       const ny = y + dy;
       if (!this.inBounds(nx, ny)) continue;
-      const nDef = MATERIALS[this.get(nx, ny)];
+      const neigh = this.get(nx, ny);
+      // Sand held in the flame slowly fuses to Glass.
+      if (neigh === MaterialId.Sand) { if (Math.random() < HEAT_FUSE_GLASS) this.set(nx, ny, MaterialId.Glass); continue; }
+      const nDef = MATERIALS[neigh];
       if (!nDef.flammable) continue;
       // A flame right next to an animal grabs it far more readily than it
       // would, say, a log — a creature that only had this material's slow
@@ -1498,7 +1940,12 @@ export class SimGrid {
   private igniteAt(x: number, y: number): void {
     const def = MATERIALS[this.get(x, y)];
     if (def.explosive) {
-      this.detonate(x, y);
+      // A whole flank of a huge charge can catch in the same tick (fire or a
+      // blast reaching many separate cells at once) — spend from the shared
+      // pop budget same as a fuse would, and give it a one-tick fuse to retry
+      // through `stepFuse` if the budget's already spent.
+      if (this.canDetonate()) this.detonate(x, y);
+      else this.meta[this.index(x, y)] = 1;
       return;
     }
     this.set(x, y, MaterialId.Fire, def.burnTicks);
@@ -1719,10 +2166,20 @@ export class SimGrid {
     return cells;
   }
 
-  /** A lit fuse (meta > 0) on any explosive cell (Pólvora, C4) counts down once per tick and detonates when it reaches 0 — see `detonate`. */
+  /** Spends one pop of this tick's DETONATIONS_PER_TICK_CAP budget, if there's any left. */
+  private canDetonate(): boolean {
+    if (this.detonationBudget <= 0) return false;
+    this.detonationBudget--;
+    return true;
+  }
+
+  /** A lit fuse (meta > 0) on any explosive cell (Pólvora, C4) counts down once per tick and detonates when it reaches 0 — see `detonate`. Past the per-tick pop budget it just holds at zero and retries next tick, rather than force through and stall the frame. */
   private stepFuse(x: number, y: number, i: number): void {
     this.meta[i]--;
-    if (this.meta[i] <= 0) this.detonate(x, y);
+    if (this.meta[i] <= 0) {
+      if (this.canDetonate()) this.detonate(x, y);
+      else this.meta[i] = 1;
+    }
   }
 
   /**
@@ -1866,7 +2323,7 @@ export class SimGrid {
     const next: Debris[] = [];
     for (const d of this.debris) {
       d.life--;
-      d.vy += DEBRIS_GRAVITY;
+      if (this.gravityEnabled) d.vy += DEBRIS_GRAVITY;
       d.vx *= DEBRIS_DRAG;
       d.vy *= DEBRIS_DRAG;
 
@@ -1957,15 +2414,18 @@ export class SimGrid {
     for (let up = 1; up <= 8; up++) if (place(gx, gy - up)) return;
   }
 
-  /** Ages out every active Flash — see the struct comment. */
+  /** Ages out every active Flash and combat-hit marker — see the struct comment. */
   private advanceFlashes(): void {
-    if (this.flashes.length === 0) return;
-    const next: Flash[] = [];
-    for (const f of this.flashes) {
-      f.life--;
-      if (f.life > 0) next.push(f);
+    if (this.flashes.length > 0) {
+      const next: Flash[] = [];
+      for (const f of this.flashes) { f.life--; if (f.life > 0) next.push(f); }
+      this.flashes = next;
     }
-    this.flashes = next;
+    if (this.hits.length > 0) {
+      const next: Flash[] = [];
+      for (const f of this.hits) { f.life--; if (f.life > 0) next.push(f); }
+      this.hits = next;
+    }
   }
 
   /**
@@ -2183,8 +2643,14 @@ export class SimGrid {
     if (!onMud && !onDirt) return;
     if (Math.random() >= GERMINATE_CHANCE * this.growthFactor()) return;
 
-    if (onMud) {
+    // A forester's seedling grows a full tree even on damp ground, where a
+    // wild Semente would only ever stamp a little flower.
+    const forester = (this.meta[this.index(x, y)] & FOREST_SEED_META) !== 0;
+    if (onMud && !forester) {
       this.stampFlower(x, y);
+    } else if (forester) {
+      const budget = Math.min(SPROUT_BUDGET_MASK, FOREST_SEED_BUDGET + Math.floor(Math.random() * 8));
+      this.set(x, y, MaterialId.Sprout, budget | SPROUT_FOREST_FLAG);
     } else {
       const budget = SPROUT_BUDGET_MIN + Math.floor(Math.random() * (SPROUT_BUDGET_MAX - SPROUT_BUDGET_MIN));
       this.set(x, y, MaterialId.Sprout, budget);
@@ -2226,6 +2692,34 @@ export class SimGrid {
    * letting it resume growing exactly like it would have if it had
    * germinated in good conditions to begin with.
    */
+  /** Cells of trunk (Madeira flagged TREE_TRUNK) plus Broto/Planta stacked straight below (x, y), down to soil — how high up its own stem this cell sits. Capped. */
+  private stemBelow(x: number, y: number): number {
+    let n = 0;
+    for (let d = 1; d <= 10; d++) {
+      const ny = y + d;
+      if (!this.inBounds(x, ny)) break;
+      const j = this.index(x, ny);
+      const m = this.material[j];
+      if (m === MaterialId.Sprout || m === MaterialId.Plant) { n++; continue; }
+      if (m === MaterialId.Wood && (this.meta[j] & TREE_TRUNK_META) !== 0) { n++; continue; }
+      break;
+    }
+    return n;
+  }
+
+  /** Broto/Planta/Flor cells stacked straight above (x, y) — the crown carried over this stem cell. Capped. */
+  private crownAbove(x: number, y: number): number {
+    let n = 0;
+    for (let d = 1; d <= 8; d++) {
+      const ny = y - d;
+      if (!this.inBounds(x, ny)) break;
+      const m = this.material[this.index(x, ny)];
+      if (m === MaterialId.Sprout || m === MaterialId.Plant || m === MaterialId.Flor) n++;
+      else break;
+    }
+    return n;
+  }
+
   private stepSprout(x: number, y: number, i: number): void {
     this.processed[i] = 1;
     const raw = this.meta[i];
@@ -2235,6 +2729,18 @@ export class SimGrid {
     // below for why it has to propagate to every cell grown afterward, not
     // just block the exact cell that rolled it.
     let regrown = (raw & SPROUT_REGROWN_FLAG) !== 0;
+    const forest = (raw & SPROUT_FOREST_FLAG) !== 0; // a Lenhador's tended tree
+
+    // Lignify: a low cell of a tall plant, rooted near soil with a real crown
+    // of leaves above it, slowly turns woody — so a grown tree reads as a
+    // brown trunk under a green canopy instead of one green blob. Checked
+    // before the budget gate so a finished tree still hardens its trunk.
+    const stem = this.stemBelow(x, y);
+    if (stem < TREE_TRUNK_HEIGHT && this.crownAbove(x, y) >= TREE_CROWN_FOR_BARK && Math.random() < TREE_HARDEN_CHANCE) {
+      this.set(x, y, MaterialId.Wood, TREE_TRUNK_META);
+      return;
+    }
+
     if (budget <= 0 && (regrown || !isProsperous(this.temp))) return;
 
     // Mud counts as moisture too — it's Terra that already absorbed its
@@ -2243,7 +2749,7 @@ export class SimGrid {
     // out to 2 cells (not just direct neighbors) so a shoot can still reach
     // its roots' moisture a couple of rows up, instead of stalling the
     // instant it grows one cell away from the water/mud below it.
-    let nearMoisture = false;
+    let nearMoisture = forest; // the forester keeps its saplings watered
     for (let dy = -2; dy <= 2 && !nearMoisture; dy++) {
       for (let dx = -2; dx <= 2; dx++) {
         if (dx === 0 && dy === 0) continue;
@@ -2257,6 +2763,21 @@ export class SimGrid {
         }
       }
     }
+    // A cell sitting on its own stem (Broto/Planta/trunk right below) can
+    // reach further down that stem to its roots' water — that's what lets a
+    // tree keep growing tall well above the damp ground it's rooted in,
+    // instead of every shoot topping out two cells over the soil.
+    if (!nearMoisture) {
+      for (let d = 1; d <= 6; d++) {
+        const ny = y + d;
+        if (!this.inBounds(x, ny)) break;
+        const m = this.material[this.index(x, ny)];
+        if (m === MaterialId.Water || m === MaterialId.Mud) { nearMoisture = true; break; }
+        const stem = m === MaterialId.Sprout || m === MaterialId.Plant ||
+          (m === MaterialId.Wood && (this.meta[this.index(x, ny)] & TREE_TRUNK_META) !== 0);
+        if (!stem) break;
+      }
+    }
     if (!nearMoisture) return;
 
     if (budget <= 0) {
@@ -2268,23 +2789,47 @@ export class SimGrid {
       // — each originally-dormant cell gets exactly one bonus round, ever.
       budget = SPROUT_REGROWTH_BONUS;
       regrown = true;
-      this.meta[i] = budget | SPROUT_REGROWN_FLAG;
+      this.meta[i] = budget | SPROUT_REGROWN_FLAG | (forest ? SPROUT_FOREST_FLAG : 0);
     }
 
     if (Math.random() >= GROWTH_CHANCE * this.growthFactor()) return;
+    const flags = (regrown ? SPROUT_REGROWN_FLAG : 0) | (forest ? SPROUT_FOREST_FLAG : 0);
 
-    // Weighted toward up/up-left/up-right; sideways branches are rarer, and it never grows down.
+    // A tended tree: a clean vertical trunk, then a crown stamped in one go, so
+    // it reads as a real tree rather than a random bush.
+    if (forest) {
+      if (this.crownAbove(x, y) > 0) return; // this cell is inside the crown already
+      if (stem < TREE_CROWN_START) {
+        // still growing the bare trunk, straight up
+        if (this.inBounds(x, y - 1) && this.get(x, y - 1) === MaterialId.Empty) {
+          this.set(x, y - 1, MaterialId.Sprout, ((budget - 1) & SPROUT_BUDGET_MASK) | flags);
+          this.meta[i] = flags; // this cell is trunk now — done, ready to lignify
+        }
+        return;
+      }
+      // reached crown height — stamp the foliage around the tip
+      for (const [dx, dy] of TREE_CROWN_SHAPE) {
+        const cx = x + dx;
+        const cy = y + dy;
+        if (this.inBounds(cx, cy) && this.get(cx, cy) === MaterialId.Empty) {
+          this.set(cx, cy, MaterialId.Sprout, flags); // budget 0 — a settled leaf
+        }
+      }
+      this.meta[i] = flags;
+      return;
+    }
+
+    // Wild Broto: bushy weighted spread, cloning its budget at every branch.
     const candidates: [number, number][] = [];
-    for (const [dx, dy, weight] of SPROUT_DIRECTIONS) {
+    for (const [dx, dy, weight] of (stem < TREE_TRUNK_HEIGHT ? TREE_TRUNK_DIRECTIONS : SPROUT_DIRECTIONS)) {
       const nx = x + dx;
       const ny = y + dy;
       if (!this.inBounds(nx, ny) || this.get(nx, ny) !== MaterialId.Empty) continue;
       for (let w = 0; w < weight; w++) candidates.push([nx, ny]);
     }
     if (candidates.length === 0) return;
-
     const [gx, gy] = candidates[Math.floor(Math.random() * candidates.length)];
-    const childMeta = (budget - 1) | (regrown ? SPROUT_REGROWN_FLAG : 0);
+    const childMeta = ((budget - 1) & SPROUT_BUDGET_MASK) | flags;
     this.set(gx, gy, MaterialId.Sprout, childMeta);
     this.meta[i] = childMeta;
   }
@@ -2303,10 +2848,14 @@ export class SimGrid {
     // Rooted? The cell directly below must be soil or more wheat (a taller
     // segment standing on a lower one). Anything else underfoot — air, water,
     // a wall it grew off the edge of — and the stalk withers.
-    const below = this.inBounds(x, y + 1) ? this.get(x, y + 1) : MaterialId.Stone;
+    const bi = this.inBounds(x, y + 1) ? this.index(x, y + 1) : -1;
+    const below = bi >= 0 ? (this.material[bi] as MaterialId) : MaterialId.Stone;
+    const onStoreFloor = bi >= 0 &&
+      (this.meta[bi] & HOUSE_WALL_META) !== 0 && (this.meta[bi] & HOUSE_KIND_MASK) === HOUSE_FLOOR;
     const rooted =
       below === MaterialId.Dirt || below === MaterialId.Mud || below === MaterialId.Wheat ||
-      below === MaterialId.Sand; // takes to loose sand too, just poorly
+      below === MaterialId.Sand || // takes to loose sand too, just poorly
+      onStoreFloor;                // grain stacked on a storehouse floor keeps
     if (!rooted) {
       if (Math.random() < WHEAT_WITHER_CHANCE) this.set(x, y, MaterialId.Empty);
       return;
@@ -2329,13 +2878,19 @@ export class SimGrid {
       if (stalk < WHEAT_MAX_HEIGHT) this.set(x, y - 1, MaterialId.Wheat, 0);
     }
 
-    // A ripe head sows itself into an adjacent empty cell that has soil under it.
-    if (ripe >= WHEAT_RIPE && Math.random() < WHEAT_SEED_CHANCE * this.growthFactor()) {
+    // A ripe head sows itself into an adjacent empty cell that has soil under
+    // it — but not in under a house, and not once the field's at its limit.
+    if (
+      ripe >= WHEAT_RIPE && !this.roofedOver(x, y) &&
+      this.cropCensus < Math.max(1, this.farmerCensus) * WHEAT_PER_FARMER + 40 &&
+      Math.random() < WHEAT_SEED_CHANCE * this.growthFactor()
+    ) {
       const spots: [number, number][] = [];
       for (const [dx, dy] of [[-1, 0], [1, 0], [-1, 1], [1, 1]] as const) {
         const nx = x + dx;
         const ny = y + dy;
         if (!this.inBounds(nx, ny) || this.get(nx, ny) !== MaterialId.Empty) continue;
+        if (this.roofedOver(nx, ny)) continue;
         const g = this.inBounds(nx, ny + 1) ? this.get(nx, ny + 1) : MaterialId.Stone;
         if (g === MaterialId.Dirt || g === MaterialId.Mud) spots.push([nx, ny]);
       }
@@ -2355,6 +2910,15 @@ export class SimGrid {
       const wi = this.index(nx, ny);
       if (this.material[wi] === MaterialId.Water && this.meta[wi] < 255) {
         this.meta[wi] = 255;
+        this.material[i] = MaterialId.Empty;
+        this.meta[i] = 0;
+        this.wake(x, y);
+        return;
+      }
+      // Salt thaws Gelo it lands on — the ice melts to brine and the grain
+      // dissolves into it. (A real winter trick: salt the ice and it goes.)
+      if (this.material[wi] === MaterialId.Ice && Math.random() < 0.5) {
+        this.set(nx, ny, MaterialId.Water, 255);
         this.material[i] = MaterialId.Empty;
         this.meta[i] = 0;
         this.wake(x, y);
@@ -2478,6 +3042,9 @@ export class SimGrid {
       const ny = y + dy;
       if (!this.inBounds(nx, ny)) continue;
       const nId = this.get(nx, ny);
+      // Sand by the lava mostly fuses to Glass; only sometimes does it melt on
+      // through into more Lava.
+      if (nId === MaterialId.Sand && Math.random() < HEAT_FUSE_GLASS) { this.set(nx, ny, MaterialId.Glass); continue; }
       const chance =
         nId === MaterialId.Metal ? LAVA_MELT_METAL :
         nId === MaterialId.Sand ? LAVA_MELT_SAND :
@@ -2849,7 +3416,10 @@ export class SimGrid {
       const nId = this.get(nx, ny);
       if (nId === MaterialId.Plant || nId === MaterialId.Sprout || nId === MaterialId.Flor || nId === MaterialId.Seed) {
         foods.push([nx, ny]);
-      } else if (nId === MaterialId.Wood || nId === MaterialId.Mud) {
+      } else if (
+        (nId === MaterialId.Wood || nId === MaterialId.Mud) &&
+        (this.meta[this.index(nx, ny)] & HOUSE_WALL_META) === 0 // don't gnaw a house
+      ) {
         solidFoods.push([nx, ny]);
       }
     }
@@ -3359,6 +3929,15 @@ export class SimGrid {
       case MaterialId.Mud:
         this.set(x, y, MaterialId.Sprout, SPROUT_BUDGET_MIN);
         return true;
+      case MaterialId.Warrior:
+      case MaterialId.Skeleton: {
+        // Magia doesn't unmake a fighter — it empowers it: twice the size,
+        // twice the bite. Once only.
+        if ((this.hp[i] & HP_EMPOWERED) !== 0) return false;
+        this.hp[i] = HP_EMPOWERED | Math.min(HP_POINTS_MASK, (this.hp[i] & HP_POINTS_MASK) * 2);
+        this.flashes.push({ x, y, life: FLASH_LIFE, maxLife: FLASH_LIFE });
+        return true;
+      }
       case MaterialId.Wood:
         if (Math.random() < 0.4) {
           this.set(x, y, MaterialId.Plant);
@@ -3433,7 +4012,7 @@ export class SimGrid {
     }
   }
 
-  // ── O povo: Pedreiro, Bombeiro, Plantador, Saqueador ───────────────────
+  // ── O povo: Construtor, Lenhador, Plantador, Guerreiro ─────────────────────
 
   /** Collects the 8-neighbours of (x, y) whose material is in `ids`. */
   private adjacentOf(x: number, y: number, ids: readonly MaterialId[]): [number, number][] {
@@ -3447,15 +4026,19 @@ export class SimGrid {
   }
 
   /**
-   * Horizontal step (-1/0/1) toward the nearest cell in `ids` within
-   * FOLK_SCAN_RANGE, or 0. Only ever called on a Pip's own turn (already
-   * staggered by FOLK_ACT_INTERVAL), so no extra gate here.
+   * Horizontal step (-1/0/1) toward the nearest cell in `ids` within `range`
+   * (default FOLK_SCAN_RANGE), or 0. Only ever called on a Pip's own turn
+   * (already staggered by FOLK_ACT_INTERVAL), so no extra gate here.
    */
-  private folkScanDir(x: number, y: number, ids: readonly MaterialId[]): number {
+  private folkScanForIds(x: number, y: number, ids: readonly MaterialId[], range: number): number {
     let bestD = Infinity;
     let bestDx = 0;
-    for (let dy = -FOLK_SCAN_RANGE; dy <= FOLK_SCAN_RANGE; dy++) {
-      for (let dx = -FOLK_SCAN_RANGE; dx <= FOLK_SCAN_RANGE; dx++) {
+    // Nearest match that's actually off to one side, tracked separately —
+    // see below.
+    let bestDOffAxis = Infinity;
+    let bestDxOffAxis = 0;
+    for (let dy = -range; dy <= range; dy++) {
+      for (let dx = -range; dx <= range; dx++) {
         if (dx === 0 && dy === 0) continue;
         const nx = x + dx;
         const ny = y + dy;
@@ -3466,9 +4049,51 @@ export class SimGrid {
           bestD = d;
           bestDx = Math.sign(dx) || (dy < 0 ? (Math.random() < 0.5 ? 1 : -1) : 0);
         }
+        if (dx !== 0 && d < bestDOffAxis) {
+          bestDOffAxis = d;
+          bestDxOffAxis = Math.sign(dx);
+        }
       }
     }
-    return bestDx;
+    // The single nearest match can be straight up or down (dx === 0, dy >=
+    // 0), which resolves to "no direction" above — that's the right answer
+    // when it's truly the only thing around, but wrong when it's merely the
+    // closest of several and a short walk sideways reaches an equally good
+    // one. Prefer any off-axis match over a direction-less "nearest".
+    return bestDx !== 0 ? bestDx : bestDxOffAxis;
+  }
+  /**
+   * A horizontal step (-1/0/1) back toward the village — the nearest house or
+   * fellow worker between ~8 and FOLK_HOME_RANGE cells off. An idle Pip uses
+   * this so it drifts back to where the work is instead of striking out across
+   * the map; a Pip already in among the houses (nothing past 8 cells, or
+   * nothing at all) gets 0 and just paces where it is.
+   */
+  private folkHomeDir(x: number, y: number, trade: MaterialId): number {
+    const targets = FOLK_HOME[trade];
+    if (!targets) return 0;
+    const near = trade === MaterialId.Mason ? MASON_HOME_NEAR : FOLK_HOME_NEAR;
+    // Expanding rings from r=1, so the first hit is the *nearest* worksite.
+    // Within `near` of it the Pip is home and roams free (0); only a worksite
+    // further off than that reels it back — never a far one while a near one
+    // says it's already home.
+    for (let r = 1; r <= FOLK_HOME_RANGE; r++) {
+      for (let k = -r; k <= r; k++) {
+        const probes: [number, number][] = [
+          [x + k, y - r], [x + k, y + r], [x - r, y + k], [x + r, y + k],
+        ];
+        for (const [nx, ny] of probes) {
+          if (!this.inBounds(nx, ny)) continue;
+          if (targets.includes(this.material[this.index(nx, ny)] as MaterialId)) {
+            return r <= near ? 0 : (Math.sign(nx - x) || (Math.random() < 0.5 ? 1 : -1));
+          }
+        }
+      }
+    }
+    return 0;
+  }
+  private folkScanDir(x: number, y: number, ids: readonly MaterialId[]): number {
+    return this.folkScanForIds(x, y, ids, FOLK_SCAN_RANGE);
   }
 
   /**
@@ -3496,22 +4121,26 @@ export class SimGrid {
         if (dx === 0 && dy === 1) waterBelow = true;
       }
     }
-    // Only drowns when genuinely submerged — deep water underfoot and
-    // pretty much boxed in by it. A folk wading a shoreline or a flooded
-    // floor is fine (and `folkWalk` won't step it into open water anyway).
-    if (waterBelow && waterAround >= 5 && Math.random() < FOLK_DROWN_CHANCE) {
+    // Only drowns when genuinely dragged under — water on all sides, no air
+    // above. A folk swimming at the surface (air overhead) or wading a
+    // shoreline is fine; it makes for the nearest shore in `folkWalk`.
+    if (waterBelow && waterAround >= 7 && Math.random() < FOLK_DROWN_CHANCE) {
       this.set(x, y, MaterialId.Empty);
       return -1;
     }
 
-    // Ripe Trigo first — the staple the Plantador grows for everyone. Only
-    // ripe heads (meta ≥ WHEAT_RIPE); a green shoot is left to grow up.
+    // Trigo — the staple the Plantador grows. A Pip eats only when it's
+    // actually peckish (so a standing field isn't grazed to nothing by a
+    // well-fed crew milling through it): a ripe head once it's below its
+    // forage threshold, a green shoot only when genuinely starving.
     for (const [dx, dy] of NEIGHBORS_8) {
       const nx = x + dx;
       const ny = y + dy;
       if (!this.inBounds(nx, ny)) continue;
       const ni = this.index(nx, ny);
-      if (this.material[ni] === MaterialId.Wheat && this.meta[ni] >= WHEAT_RIPE) {
+      if (this.material[ni] !== MaterialId.Wheat) continue;
+      const ripe = this.meta[ni] >= WHEAT_RIPE;
+      if ((ripe && fed <= FOLK_FORAGE_HUNGER) || fed <= FOLK_STARVING) {
         if (Math.random() < FOLK_EAT_CHANCE) {
           this.set(nx, ny, MaterialId.Empty);
           return CREATURE_FED_MAX;
@@ -3520,15 +4149,6 @@ export class SimGrid {
       }
     }
 
-    const food = this.adjacentOf(x, y, FOLK_FOODS);
-    if (food.length > 0) {
-      if (Math.random() < FOLK_EAT_CHANCE) {
-        const [fx, fy] = food[Math.floor(Math.random() * food.length)];
-        this.set(fx, fy, MaterialId.Empty);
-        return CREATURE_FED_MAX;
-      }
-      return fed;
-    }
     // Exposure: a hostile climate with no roof over its head slowly kills,
     // the further past comfort the faster.
     const past =
@@ -3542,7 +4162,11 @@ export class SimGrid {
     }
 
     if (fed > 0 && Math.random() < 1 / FOLK_HUNGER_INTERVAL) return fed - 1;
-    if (fed === 0 && Math.random() < CREATURE_STARVE_DEATH_CHANCE) {
+    // A Pip run right out of food doesn't drop dead — it's an agent you
+    // placed, not livestock. It just sits at empty and keeps looking (see
+    // the starving forage in `folkWalk`). Only a truly barren, foodless map
+    // ever thins the crew, and very slowly.
+    if (fed === 0 && Math.random() < CREATURE_STARVE_DEATH_CHANCE * 0.15) {
       this.set(x, y, MaterialId.Empty);
       return -1;
     }
@@ -3646,39 +4270,236 @@ export class SimGrid {
     x: number, y: number, i: number,
     facing: number, fed: number, carry: number, wantDir: number,
   ): void {
-    // A hungry folk with no heading drifts toward the nearest crop.
-    if (wantDir === 0 && fed <= FOLK_FORAGE_HUNGER) {
-      wantDir = this.folkScanDir(x, y, FOLK_FORAGE);
+    // Peckish: break off the errand and head for the nearest crop within a
+    // wide radius — a folk that's marching a beat (a mason looking for a lot,
+    // say) has to be able to divert for a bite or it starves out there.
+    if (fed <= FOLK_FORAGE_HUNGER) {
+      const foodDir = this.folkScanForIds(x, y, FOLK_FORAGE, FOLK_FORAGE_RANGE);
+      if (foodDir !== 0) wantDir = foodDir;
     }
+    // Nothing pressing and no work in reach: amble back toward this trade's
+    // worksite (or the houses) rather than wander off. Only Pips with no
+    // landmark at all fall through to the loose pacing below.
+    if (wantDir === 0) wantDir = this.folkHomeDir(x, y, this.material[i] as MaterialId);
     if (wantDir !== 0) {
       facing = wantDir;
     } else if (Math.random() < FOLK_WANDER_TURN) {
-      facing = Math.random() < 0.5 ? 1 : -1; // aimless meander, not a fixed pace
+      facing = Math.random() < 0.5 ? 1 : -1; // pace this patch, don't march
     }
     const idle = wantDir === 0;
+    // carry === 3 is the "walk solidly" marker (a mason closing on a wall gap):
+    // it treats houses as real walls this step instead of ghosting through.
+    const solidWalk = carry === 3;
+    if (solidWalk) carry = 0;
 
     const below = this.inBounds(x, y + 1) ? this.get(x, y + 1) : MaterialId.Stone;
+    // A finished deck — a plank with real support (deck or ground) on *both*
+    // sides at foot level — is just a road. Folk walk it and step off its ends
+    // normally; the single-file / no-scramble rules below are only for the
+    // precarious leading edge of a deck still being laid.
+    const onSpan = this.isDeck(x, y + 1);
+    const spanFooted = (cx: number): boolean => {
+      const c = this.inBounds(cx, y + 1) ? this.get(cx, y + 1) : MaterialId.Stone;
+      return c !== MaterialId.Empty && c !== MaterialId.Water &&
+        MATERIALS[c].category !== MaterialCategory.Liquid;
+    };
+    const onFinishedDeck = onSpan && spanFooted(x + 1) && spanFooted(x - 1);
+    // Right by the water, or out on a bridge deck, a folk keeps its feet — no
+    // climbing over a ledge or a fellow worker (scrambling up is what leaves a
+    // Pip stranded at a corner or a crew stacked crooked on a half-built deck).
+    const nearWater = !onFinishedDeck && below !== MaterialId.Water &&
+      (this.countNear(x, y, MaterialId.Water, 4) > 0 || this.isDeck(x, y + 1) || this.isDeck(x + facing, y + 1) || this.isDeck(x - facing, y + 1));
+
+    // In the water: forget the errand and get out. Step onto any dry footing
+    // adjacent; failing that, strike out along the surface toward the nearest
+    // shore; failing that, keep the head up. This is what stops a folk that's
+    // dropped in a river (or has a plank flood under it) from drowning in
+    // place or dithering at a corner.
+    if (below === MaterialId.Water || this.get(x, y) === MaterialId.Water) {
+      // Submerged (water overhead too): float up toward the surface first,
+      // where it's safe to swim.
+      if (this.inBounds(x, y - 1) && this.get(x, y - 1) === MaterialId.Water) {
+        this.moveCreature(x, y, x, y - 1, packCreature(facing, carry, fed));
+        return;
+      }
+      const shore = this.nearestShoreDir(x, y);
+      const order: [number, number][] = [
+        [shore || facing, 0], [-(shore || facing), 0],
+        [shore || facing, -1], [-(shore || facing), -1],
+        [shore || facing, 1], [-(shore || facing), 1],
+      ];
+      for (const [sx, sy] of order) {
+        const tx = x + sx;
+        const ty = y + sy;
+        if (!this.inBounds(tx, ty) || this.get(tx, ty) !== MaterialId.Empty) continue;
+        const foot = this.inBounds(tx, ty + 1) ? this.get(tx, ty + 1) : MaterialId.Stone;
+        if (foot === MaterialId.Empty || foot === MaterialId.Water) continue; // no footing there
+        this.moveCreature(x, y, tx, ty, packCreature(Math.sign(sx) || facing, carry, fed));
+        return;
+      }
+      if (shore !== 0) {
+        const tx = x + shore;
+        const t = this.inBounds(tx, y) ? this.get(tx, y) : MaterialId.Stone;
+        if (t === MaterialId.Water || t === MaterialId.Empty) {
+          this.moveCreature(x, y, tx, y, packCreature(shore, carry, fed)); // swim for it
+          return;
+        }
+      }
+      if (this.inBounds(x, y - 1) && this.get(x, y - 1) === MaterialId.Empty) {
+        this.moveCreature(x, y, x, y - 1, packCreature(-facing, carry, fed));
+        return;
+      }
+      // Wedged in a pocket under a bridge deck with water below — climb up
+      // through the plank onto the walkway rather than sit there.
+      if (this.isDeck(x, y - 1) && this.inBounds(x, y - 2) && this.get(x, y - 2) === MaterialId.Empty) {
+        this.moveCreature(x, y, x, y - 2, packCreature(-facing, carry, fed));
+        return;
+      }
+    }
+
+    // Houses are intangible to folk — they walk through the walls as if the
+    // building were on a plane behind them. Standing on a roof/wall cell (the
+    // sim put one under the folk) just means dropping straight through it to
+    // the first real footing below.
+    if (this.isGhost(x, y + 1)) {
+      for (let d = 1; d <= 24; d++) {
+        if (this.isGhost(x, y + d)) continue;
+        const t = this.inBounds(x, y + d) ? this.get(x, y + d) : MaterialId.Stone;
+        if (t === MaterialId.Empty) {
+          this.moveCreature(x, y, x, y + d, packCreature(facing, carry, fed));
+          return;
+        }
+        break;
+      }
+    }
+
+    // On a bridge deck with somewhere to be: follow the planks — up over the
+    // crown of the arch and down the far side. Each next plank may sit a row
+    // higher or lower than this one.
+    if (!idle && this.isDeck(x, y + 1)) {
+      const nx = x + facing;
+      if (this.isDeck(nx, y + 1) && this.get(nx, y) === MaterialId.Empty) {
+        this.moveCreature(x, y, nx, y, packCreature(facing, carry, fed));
+        return;
+      }
+      if (this.isDeck(nx, y) && this.inBounds(nx, y - 1) && this.get(nx, y - 1) === MaterialId.Empty) {
+        this.moveCreature(x, y, nx, y - 1, packCreature(facing, carry, fed));
+        return;
+      }
+      if (this.isDeck(nx, y + 2) && this.get(nx, y + 1) === MaterialId.Empty) {
+        this.moveCreature(x, y, nx, y + 1, packCreature(facing, carry, fed));
+        return;
+      }
+    }
+
+    if (below !== MaterialId.Empty && FOLK_WADEABLE.has(below)) {
+      // Perched on a crop stalk, not solid ground — sink on down through it.
+      this.moveCreature(x, y, x, y + 1, packCreature(facing, carry, fed));
+      return;
+    }
+
     if (below === MaterialId.Empty) {
+      // Already level with a house's ghosted wall/roof (or a tree) straight
+      // ahead: step through it right away rather than falling back down.
+      // This is what closes the loop where climbing the *solid* floor course
+      // below lands a folk exactly level with the wall course above it —
+      // that course is ghostable, so `wallAhead` below reads false there and
+      // the old code just dropped straight back onto the floor, to climb
+      // and drop the same way forever.
+      if (!nearWater && this.isGhost(x + facing, y) &&
+        this.folkThroughHouse(x, y, facing, fed, carry)) {
+        return;
+      }
       // Nothing underfoot. A folk on a job that's pressed against a wall
       // (ahead or behind) scales it — hauls itself up cell by cell rather
       // than dropping — so it can reach a roof or an upper-wall gap. It tops
       // out on its own once there's no more wall beside it. An idle folk, or
       // one in open air, just falls.
-      const braced =
-        this.isFolkWall(x + facing, y) || this.isFolkWall(x - facing, y);
-      if (!idle && braced && this.inBounds(x, y - 1) && this.get(x, y - 1) === MaterialId.Empty) {
-        this.moveCreature(x, y, x, y - 1, packCreature(facing, carry, fed));
-        return;
+      const wallAhead = this.isFolkWall(x + facing, y);
+      const wallBehind = this.isFolkWall(x - facing, y);
+      const braced = wallAhead || wallBehind;
+      // A house wall/roof (or a tree) directly overhead isn't really a cap —
+      // folk pass through those — so it doesn't stop the climb here either.
+      // Left uncorrected, a folk climbing the outside of a house's solid
+      // floor/anchor course reads "capped" the moment a wall cell sits right
+      // above it and just gives up, bouncing forever between that one climb
+      // and the drop back down (see the fall-back note below).
+      const aboveGhost = this.isGhost(x, y - 1);
+      const capped = !this.inBounds(x, y - 1) || (this.get(x, y - 1) !== MaterialId.Empty && !aboveGhost);
+      // Only haul upward if the wall actually keeps going up — climbing past
+      // the top of a lone ledge (a roof eave sticking out, say) just drops
+      // the folk straight back onto it, over and over.
+      const wallContinues =
+        this.isFolkWall(x + facing, y - 1) || this.isFolkWall(x - facing, y - 1);
+      if (!idle && !nearWater && braced && !capped && wallContinues) {
+        if (aboveGhost) {
+          // Hop clean over the ghosted run to the first open cell above it —
+          // the same way folk drop through a house from above — rather than
+          // trying to stand inside a wall cell's own slot.
+          for (let d = 1; d <= 24; d++) {
+            if (this.isGhost(x, y - d)) continue;
+            if (this.get(x, y - d) === MaterialId.Empty) {
+              this.moveCreature(x, y, x, y - d, packCreature(facing, carry, fed));
+              return;
+            }
+            break;
+          }
+        } else {
+          this.moveCreature(x, y, x, y - 1, packCreature(facing, carry, fed)); // haul up the face
+          return;
+        }
       }
-      this.moveCreature(x, y, x, y + 1, packCreature(facing, carry, fed));
+      // Braced against a wall with a roof or eave capping the climb: don't
+      // just drop and re-climb forever under the overhang. Duck through the
+      // wall (into the house, then out its doorway), or peel off it so the
+      // fall clears the eave.
+      if (braced && capped) {
+        if (this.folkPhase(x, y, wallAhead ? facing : -facing, fed, carry)) return;
+        const away = wallBehind ? facing : -facing;
+        if (this.inBounds(x + away, y) && this.get(x + away, y) === MaterialId.Empty) {
+          this.moveCreature(x, y, x + away, y, packCreature(away, carry, fed));
+          return;
+        }
+      }
+      // An idle folk falling back off a wall it had no reason to climb (open
+      // air above, so the haul-up above didn't fire) lands facing away from
+      // that wall instead of holding its old facing — otherwise it just walks
+      // straight back into the same wall next turn and hauls up again, a
+      // climb-then-drop loop that reads as a Pip bouncing forever in a corner.
+      const faceOut = idle && wallAhead && !wallBehind ? -facing : facing;
+      this.moveCreature(x, y, x, y + 1, packCreature(faceOut, carry, fed));
       return;
     }
 
     const fwd = x + facing;
     const fwdId = this.inBounds(fwd, y) ? this.get(fwd, y) : MaterialId.Stone;
+    // A house or a tree in the way is no obstacle — the folk step straight
+    // through (house walls / roof, or a tree trunk) to the first open cell on
+    // the far side.
+    if (!solidWalk && this.isGhost(fwd, y) &&
+      this.folkThroughHouse(x, y, facing, fed, carry)) return;
+    // Wade straight through a standing crop or a patch of plants — a folk
+    // never gets hung up in a wheat field; the stalk just parts around it.
+    if (FOLK_WADEABLE.has(fwdId)) {
+      const belowFwd = this.inBounds(fwd, y + 1) ? this.get(fwd, y + 1) : MaterialId.Stone;
+      if (belowFwd !== MaterialId.Empty && belowFwd !== MaterialId.Water) {
+        this.moveCreature(x, y, fwd, y, packCreature(facing, carry, fed));
+        return;
+      }
+    }
     if (fwdId === MaterialId.Empty) {
       const belowFwd = this.inBounds(fwd, y + 1) ? this.get(fwd, y + 1) : MaterialId.Stone;
       if (belowFwd !== MaterialId.Empty) {
+        // Won't step off dry land onto open deep water (that's how a folk
+        // drifts out and drowns) — but a shallow puddle, or a plank a mason
+        // laid there, is fine to walk on.
+        if (
+          belowFwd === MaterialId.Water && this.get(fwd, y + 2) === MaterialId.Water &&
+          below !== MaterialId.Water // already out over water? carry on, turning back is worse
+        ) {
+          this.folkRetreat(x, y, i, facing, carry, fed);
+          return;
+        }
         this.moveCreature(x, y, fwd, y, packCreature(facing, carry, fed)); // step forward, level
         return;
       }
@@ -3694,48 +4515,193 @@ export class SimGrid {
         this.moveCreature(x, y, ax, y, packCreature(facing, carry, fed));
         return;
       }
+      // Dropping off this ledge would land the folk in water at the bottom of
+      // the fall, or drop it into a channel it should be bridging, not wading
+      // — turn back.
+      if (nearWater || below !== MaterialId.Water) {
+        for (let d = 1; d <= 5; d++) {
+          const c = this.get(fwd, y + d);
+          if (c === MaterialId.Empty) continue;
+          if (c === MaterialId.Water) {
+            this.folkRetreat(x, y, i, facing, carry, fed);
+            return;
+          }
+          break; // solid footing down there — fine to drop in
+        }
+      }
       this.moveCreature(x, y, fwd, y + 1, packCreature(facing, carry, fed)); // step down / into the gap
       return;
     }
     if (fwdId === MaterialId.Water) {
-      // Can't wade — hold at the shore, only occasionally turn away. (Not a
-      // hard about-face, which is what paces a shoreline.)
-      this.meta[i] = packCreature(Math.random() < 0.7 ? facing : -facing, carry, fed);
+      // Can't wade — turn back off the shore rather than stand there dithering.
+      this.folkRetreat(x, y, i, facing, carry, fed);
       return;
     }
     if (MATERIALS[fwdId].category === MaterialCategory.Creature) {
-      // Another worker in the way — step over it if there's room, else hold
-      // (mostly keep facing) rather than turning the whole crew around.
-      if (this.inBounds(fwd, y - 1) && this.get(fwd, y - 1) === MaterialId.Empty && Math.random() < 0.6) {
+      // Near water it's single file — never clamber over the folk ahead (a
+      // crew stacking up at the wrong height is what lays a crooked deck).
+      // Just wait a beat, or drop back.
+      if (this.isDeck(x, y + 1) || this.countNear(x, y, MaterialId.Water, 4) > 0) {
+        this.meta[i] = packCreature(Math.random() < 0.5 ? -facing : facing, carry, fed);
+        return;
+      }
+      // An idle folk gives way rather than crowd in — this is what stops a
+      // knot of Pips packing solid at a shared worksite. A folk on a real
+      // errand tries to get past: over the top if there's room, else hold a
+      // beat (but turn back if it's wedged from behind too).
+      if (idle) {
+        this.meta[i] = packCreature(-facing, carry, fed);
+        return;
+      }
+      if (this.inBounds(fwd, y - 1) && this.get(fwd, y - 1) === MaterialId.Empty && Math.random() < 0.7) {
         this.moveCreature(x, y, fwd, y - 1, packCreature(facing, carry, fed));
         return;
       }
-      this.meta[i] = packCreature(Math.random() < 0.15 ? -facing : facing, carry, fed);
+      const backId = this.inBounds(x - facing, y) ? this.get(x - facing, y) : MaterialId.Stone;
+      const jammed = !this.inBounds(x - facing, y) || MATERIALS[backId].category === MaterialCategory.Creature;
+      this.meta[i] = packCreature(jammed || Math.random() < 0.25 ? -facing : facing, carry, fed);
       return;
     }
     // Blocked by a wall or step. Clamber over it (onto the ledge at fwd,
     // y-1), else straight up the face, else squeeze through it (`folkPhase`).
-    const overClear = this.inBounds(fwd, y - 1) && this.get(fwd, y - 1) === MaterialId.Empty;
+    // Not right by the water, though — turn back there instead of scrambling.
+    // The exception: stepping *off* a deck up onto the dry far bank (solid
+    // ground would be under our feet after the clamber). That's finishing the
+    // crossing, not scrambling into the drink, so the water rule doesn't apply.
+    const climbToLand =
+      this.inBounds(fwd, y - 1) && this.get(fwd, y - 1) === MaterialId.Empty &&
+      this.firmFooting(fwd, y - 1) && this.get(fwd, y + 1) !== MaterialId.Water;
+    const overClear = (!nearWater || climbToLand) && this.inBounds(fwd, y - 1) && this.get(fwd, y - 1) === MaterialId.Empty;
     if (overClear && Math.random() < 0.95) {
       this.moveCreature(x, y, fwd, y - 1, packCreature(facing, carry, fed));
       return;
     }
-    if (this.inBounds(x, y - 1) && this.get(x, y - 1) === MaterialId.Empty && Math.random() < 0.9) {
+    if ((!nearWater || climbToLand) && this.inBounds(x, y - 1) && this.get(x, y - 1) === MaterialId.Empty && Math.random() < 0.9) {
       this.moveCreature(x, y, x, y - 1, packCreature(facing, carry, fed));
       return;
     }
+    if (nearWater) {
+      this.folkRetreat(x, y, i, facing, carry, fed);
+      return;
+    }
     if (this.folkPhase(x, y, facing, fed, carry)) return;
-    // A genuine dead end: mostly stand and wait for it to open (powder
-    // settles, a worker moves, fire burns out), only now and then double
-    // back. An idle folk turns back a little more readily than one on a job.
-    const turnBack = idle ? 0.4 : 0.2;
-    this.meta[i] = packCreature(Math.random() < turnBack ? -facing : facing, carry, fed);
+    if (this.folkPhase(x, y, -facing, fed, carry)) return; // try squeezing the other way too
+    // Truly boxed in. Turn around, and if there's headroom haul up a cell so
+    // a folk can never sit dead-still forever wedged between two others.
+    if (this.inBounds(x, y - 1) && this.get(x, y - 1) === MaterialId.Empty) {
+      this.moveCreature(x, y, x, y - 1, packCreature(-facing, carry, fed));
+      return;
+    }
+    // Sealed in on every side, packed earth overhead too — a pit that
+    // slumped shut around it, say. Loose ground gives: dig out rather than
+    // sit there entombed forever with nothing left in the ordinary
+    // repertoire to try.
+    if (this.folkDigOut(x, y, i, facing, carry, fed)) return;
+    this.meta[i] = packCreature(-facing, carry, fed);
   }
 
-  /** A solid a folk can brace against to climb (a wall/step, not a powder pile it'd just sink into). */
+  /**
+   * Last resort for a folk with nowhere left to go (walls all round, no
+   * headroom): shoulder into whichever neighbor — straight up first, then
+   * ahead, then behind — is soft Powder (never real rock, metal, ice...)
+   * and climb into the gap it leaves. Returns whether it dug through.
+   */
+  private folkDigOut(x: number, y: number, i: number, facing: number, carry: number, fed: number): boolean {
+    for (const [dx, dy] of [[0, -1], [facing, 0], [-facing, 0]] as const) {
+      const tx = x + dx, ty = y + dy;
+      if (!this.inBounds(tx, ty)) continue;
+      if (MATERIALS[this.get(tx, ty)].category === MaterialCategory.Powder) {
+        this.set(tx, ty, MaterialId.Empty);
+        this.moveCreature(x, y, tx, ty, packCreature(dx !== 0 ? dx : -facing, carry, fed));
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * A folk backed up against water (or a ledge over water) that it can't
+   * cross: it turns around and steps back onto firm ground rather than
+   * standing at the corner flip-flopping its facing. If it's boxed in — water
+   * or wall behind too — it climbs up out of the pocket, or as a last
+   * resort digs through loose ground rather than flip its facing forever.
+   */
+  private folkRetreat(x: number, y: number, i: number, facing: number, carry: number, fed: number): void {
+    for (const [dx, dy] of [[-facing, 0], [-facing, -1], [-facing, 1]] as const) {
+      const tx = x + dx;
+      const ty = y + dy;
+      if (!this.inBounds(tx, ty) || this.get(tx, ty) !== MaterialId.Empty) continue;
+      const foot = this.inBounds(tx, ty + 1) ? this.get(tx, ty + 1) : MaterialId.Stone;
+      if (foot === MaterialId.Empty || foot === MaterialId.Water || MATERIALS[foot].category === MaterialCategory.Liquid) continue;
+      this.moveCreature(x, y, tx, ty, packCreature(-facing, carry, fed));
+      return;
+    }
+    if (this.inBounds(x, y - 1) && this.get(x, y - 1) === MaterialId.Empty) {
+      this.moveCreature(x, y, x, y - 1, packCreature(-facing, carry, fed));
+      return;
+    }
+    if (this.folkDigOut(x, y, i, facing, carry, fed)) return;
+    this.meta[i] = packCreature(-facing, carry, fed);
+  }
+
+  /** Whether a Pip takes its (slow, staggered) turn this tick — or is standing in water, in which case it acts every tick to get itself out. */
+  private folkActNow(x: number, y: number): boolean {
+    if ((this.tick + y) % FOLK_ACT_INTERVAL === 0) return true;
+    return this.get(x, y) === MaterialId.Water ||
+      (this.inBounds(x, y + 1) && this.get(x, y + 1) === MaterialId.Water);
+  }
+
+  /** Nearest horizontal direction (-1/1) to a dry standable shore at row y, or 0. */
+  private nearestShoreDir(x: number, y: number): number {
+    for (let d = 1; d <= 40; d++) {
+      for (const dir of [1, -1] as const) {
+        const cx = x + dir * d;
+        if (this.inBounds(cx, y) && this.get(cx, y) !== MaterialId.Water && this.firmFooting(cx, y)) return dir;
+      }
+    }
+    return 0;
+  }
+
+  /** A solid a folk can brace against to climb (a wall/step, not a powder pile it'd just sink into, and not a house — houses are intangible to folk). */
   private isFolkWall(x: number, y: number): boolean {
     if (!this.inBounds(x, y)) return true; // the world edge is a wall to lean on
+    if (this.isGhost(x, y)) return false; // houses, trees and open doors are intangible to folk
     return MATERIALS[this.get(x, y)].category === MaterialCategory.Solid;
+  }
+
+  /** Whether cell `i` is part of a house — a structural material carrying the house-wall meta bit. (The bit alone isn't enough: a ripe Trigo head's ripeness meta can happen to set it.) */
+  private isHouseCell(i: number): boolean {
+    return (this.meta[i] & HOUSE_WALL_META) !== 0 && HOUSE_WALLS.includes(this.material[i] as MaterialId);
+  }
+
+  /** A house cell folk pass straight through — walls, roof, windows, chimney. The floor course and mason-laid bridge decks (HOUSE_FLOOR) stay solid underfoot. */
+  private houseGhost(x: number, y: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    const i = this.index(x, y);
+    if (!this.isHouseCell(i)) return false;
+    if ((this.meta[i] & HOUSE_ANCHOR_META) !== 0) return true; // the doorway-sill anchor is a wall
+    return (this.meta[i] & HOUSE_KIND_MASK) !== HOUSE_FLOOR;
+  }
+
+  /**
+   * A folk walking through a house that's in its path: skips over the run of
+   * intangible house cells ahead and steps into the first open cell beyond
+   * them (interior air or the far side). Won't surface into open water.
+   * Returns whether it moved.
+   */
+  private folkThroughHouse(x: number, y: number, facing: number, fed: number, carry: number): boolean {
+    for (let step = 1; step <= 24; step++) {
+      const tx = x + facing * step;
+      if (!this.inBounds(tx, y)) return false;
+      // straight through a house wall, a tree trunk, an open door, or a crop / stored harvest
+      if (this.isGhost(tx, y) || FOLK_WADEABLE.has(this.get(tx, y))) continue;
+      if (this.get(tx, y) !== MaterialId.Empty) return false; // something solid that isn't ghostable
+      const below = this.inBounds(tx, y + 1) ? this.get(tx, y + 1) : MaterialId.Stone;
+      if (below === MaterialId.Water) return false;
+      this.moveCreature(x, y, tx, y, packCreature(facing, carry, fed));
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -3747,9 +4713,11 @@ export class SimGrid {
    * Returns whether it moved.
    */
   private folkPhase(x: number, y: number, facing: number, fed: number, carry: number): boolean {
-    for (let step = 2; step <= FOLK_PHASE_REACH + 1; step++) {
+    let reach = FOLK_PHASE_REACH + 1;
+    for (let step = 2; step <= reach; step++) {
       const tx = x + facing * step;
       if (!this.inBounds(tx, y)) return false;
+      if (this.isGhost(tx, y)) { reach = step + FOLK_PHASE_REACH + 1; continue; } // a house, a tree or an open door doesn't count against reach
       const t = this.get(tx, y);
       if (t === MaterialId.Empty) {
         const below = this.inBounds(tx, y + 1) ? this.get(tx, y + 1) : MaterialId.Stone;
@@ -3765,109 +4733,497 @@ export class SimGrid {
   }
 
   /**
-   * Pedreiro. A focused worker, not a wanderer: it heads straight for the
-   * nearest job — a damaged house to patch, else a stretch of ground to
-   * build on — and clambers over what's in the way instead of pacing back
-   * and forth off it. It always keeps its load topped up from whatever loose
-   * earth it passes, *levels the ground* under a prospective house (digging
-   * humps, filling hollows), and only then raises the whole frame in one go
-   * (size + material from `masonSurvey`). Building all at once keeps a crew
-   * from piling onto one spot, and a house never sits half-finished.
+   * Construtor. A focused worker that heads straight for the nearest job and
+   * clambers over what's in its way rather than pacing off it. It patches
+   * damaged houses, levels a patch of ground and founds a house on it (the
+   * whole frame at once, so a crew never piles onto one spot and no house
+   * sits half-built with an open roof), and lays a raised timber walkway
+   * across water it needs to get over. It doesn't mine the world for
+   * materials: what it builds is conjured, hills and beaches stay whole.
    */
-  private stepMason(x: number, y: number, i: number): void {
-    this.processed[i] = 1;
-    const facing = creatureFacing(this.meta[i]);
-    let load = creatureTimer(this.meta[i]); // 0-3 loads of building supply
-    const fed = this.folkUpkeep(x, y, creatureFed(this.meta[i]));
-    if (fed < 0) return;
-    if ((this.tick + y) % FOLK_ACT_INTERVAL !== 0) { // slow, deliberate labour
-      this.meta[i] = packCreature(facing, load, fed);
-      return;
-    }
-    if (this.folkWeather(x, y, i, facing, fed, load)) return;
-
-    // Dig one load at a time out of a loose heap beside it — a mound of
-    // Areia/Terra/Barro sitting at or above the mason's own level (three
-    // scoops to a full pack, so a mason plainly works a quarry face rather
-    // than teleporting a house's worth of stone in one tick). It never digs
-    // the flat walking ground (that strip-mines farmland and undermines
-    // whatever's on it): a mason needs a pit, dune or hillside, or the spoil
-    // it turns up while grading.
-    if (load < 3) {
-      const heap = this.adjacentOf(x, y, MASON_PICKUP).filter(([, ly]) => ly <= y);
-      if (heap.length > 0) {
-        this.set(heap[0][0], heap[0][1], MaterialId.Empty);
-        load = Math.min(3, load + 1); // one scoop; a full pack takes a few
+  /** Refresh the rolling census the trades throttle themselves against. */
+  private takeCensus(): void {
+    let houses = 0, folk = 0, crops = 0, farmers = 0, timber = 0, granaries = 0, woodsheds = 0, lumberjacks = 0;
+    for (let j = 0; j < this.material.length; j++) {
+      const m = this.material[j];
+      if (m === MaterialId.Brick && (this.meta[j] & HOUSE_ANCHOR_META) !== 0) {
+        const t = houseType(this.meta[j]);
+        if (t === PLAN_GRANARY) granaries++;
+        else if (t === PLAN_WOODSHED) woodsheds++;
+        else houses++;
+      } else if (m === MaterialId.Wheat) crops++;
+      else if (m === MaterialId.Wood && (this.meta[j] & (HOUSE_WALL_META | TREE_TRUNK_META)) === 0) {
+        timber++; // loose, cut timber — not a bridge plank, house wall, or living trunk
+      } else if (m === MaterialId.Mason || m === MaterialId.Lumberjack || m === MaterialId.Farmer || m === MaterialId.Warrior) {
+        folk++;
+        if (m === MaterialId.Farmer) farmers++;
+        else if (m === MaterialId.Lumberjack) lumberjacks++;
       }
     }
+    this.houseCensus = houses;
+    this.folkCensus = folk;
+    this.cropCensus = crops;
+    this.farmerCensus = farmers;
+    this.timberCensus = timber;
+    this.granaryCensus = granaries;
+    this.woodshedCensus = woodsheds;
+    this.lumberjackCensus = lumberjacks;
+  }
 
-    // Objective: the nearest damaged house wins; else work the ground here.
-    const repair = this.masonRepair(x, y);
-    if (repair.patched) {
-      this.meta[i] = packCreature(facing, Math.max(0, load - 1), fed);
-      return;
-    }
-    if (repair.busy) {
-      // Standing at a gap it couldn't set this tick — hold position and keep at it.
-      this.meta[i] = packCreature(facing, load, fed);
-      return;
-    }
-    let wantDir = repair.dir;
+  private lumberjackCensus = 0;
 
-    if (wantDir === 0) {
-      // No repair to run to. Grade the strip ahead flat, and once it's flat
-      // settle in and work the site for a good stretch of turns before the
-      // frame goes up. Both the grading and the site work are done standing
-      // still, so you watch a mason prepare a lot rather than a house just
-      // appearing.
-      const graded = this.gradeStrip(x, y, 8, load > 0);
-      if (graded > 0) load = Math.min(3, load + 1);
-      else if (graded < 0) load = Math.max(0, load - 1);
-      if (graded !== 0) {
-        this.meta[i] = packCreature(facing, load, fed);
-        return;
-      }
-      if (load >= 2) {
-        const spot = this.masonSurvey(x, y);
-        if (spot) {
-          if (Math.random() < MASON_FOUND_CHANCE) {
-            this.raiseHouse(x + 1, y, spot.style, spot.type);
-            load = 0;
-          } else {
-            this.meta[i] = packCreature(facing, load, fed); // keep working the site
-            return;
-          }
-        }
+  /** The Fazendeiro raises a celeiro once the field's big enough, about one per three farmers. */
+  private fieldWantsGranary(): boolean {
+    return this.cropCensus >= 24 && this.granaryCensus < Math.max(1, Math.round(this.farmerCensus / 3));
+  }
+  /** The Lenhador raises a galpão once the woodlot's producing, about one per three foresters. */
+  private woodlotWantsShed(): boolean {
+    return this.timberCensus >= 6 && this.woodshedCensus < Math.max(1, Math.round(this.lumberjackCensus / 3));
+  }
+
+  /** Position [ax, ay] of the nearest storehouse anchor of plan `type` within `range` of (x, y), or null. */
+  private nearestStore(x: number, y: number, type: number, range: number): [number, number] | null {
+    let best: [number, number] | null = null;
+    let bestD = Infinity;
+    for (let dy = -range; dy <= range; dy++) {
+      const ny = y + dy;
+      if (ny < 0 || ny >= this.height) continue;
+      for (let dx = -range; dx <= range; dx++) {
+        const nx = x + dx;
+        if (nx < 0 || nx >= this.width) continue;
+        const j = ny * this.width + nx;
+        if (this.material[j] !== MaterialId.Brick || (this.meta[j] & HOUSE_ANCHOR_META) === 0) continue;
+        if (houseType(this.meta[j]) !== type) continue;
+        const d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; best = [nx, ny]; }
       }
     }
-
-    // March on — toward a heap to quarry if short of supply, else keep heading.
-    if (wantDir === 0 && load < 3) wantDir = this.masonHeapDir(x, y);
-    this.folkWalk(x, y, i, facing, fed, load, wantDir);
+    return best;
   }
 
   /**
-   * Horizontal step toward the nearest loose earth *piled up to or above*
-   * the mason's own footing — a dune, a hillside, the lip of a pit — within
-   * FOLK_SCAN_RANGE. Deliberately ignores the flat ground underfoot (which
-   * is also Areia/Terra/Barro) so the mason heads for something it can
-   * actually quarry rather than milling about on a field it mustn't dig.
+   * A Fazendeiro / Lenhador raising its storehouse just right of (x, y): the
+   * ground under the footprint has to be soil, and the volume above clear of
+   * anything but its own crop (which it clears as it builds). Returns whether
+   * it built.
    */
-  private masonHeapDir(x: number, y: number): number {
-    let bestD = Infinity;
-    let bestDir = 0;
-    for (let dy = -FOLK_SCAN_RANGE; dy <= 0; dy++) {
-      for (let dx = -FOLK_SCAN_RANGE; dx <= FOLK_SCAN_RANGE; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        const nx = x + dx;
-        const ny = y + dy;
-        if (!this.inBounds(nx, ny)) continue;
-        if (!MASON_PICKUP.includes(this.material[this.index(nx, ny)] as MaterialId)) continue;
-        const d = dx * dx + dy * dy;
-        if (d < bestD) { bestD = d; bestDir = Math.sign(dx) || (Math.random() < 0.5 ? 1 : -1); }
+  private raiseStoreRight(x: number, y: number, type: number): boolean {
+    const ax = x + 1;
+    const { span } = HOUSE_PLANS[type];
+    const height = HOUSE_HEIGHTS[type];
+    if (!this.inBounds(ax + span, y + 1) || !this.inBounds(ax, y - height - 1)) return false;
+    const growth = new Set<MaterialId>([
+      MaterialId.Wheat, MaterialId.Sprout, MaterialId.Plant, MaterialId.Flor, MaterialId.Seed,
+    ]);
+    for (let s = 0; s <= span; s++) {
+      const fx = ax + s;
+      const under = this.get(fx, y + 1);
+      if (under === MaterialId.Empty || MATERIALS[under].category === MaterialCategory.Liquid) return false;
+      for (let up = 0; up <= height; up++) {
+        const c = this.get(fx, y - up);
+        if (c !== MaterialId.Empty && MATERIALS[c].category !== MaterialCategory.Powder && !growth.has(c) && !HOUSE_WALLS.includes(c)) {
+          return false; // something solid in the way
+        }
       }
     }
-    return bestDir;
+    // Clear the crop out of the footprint, then conjure the frame.
+    for (let s = 0; s <= span; s++) {
+      for (let up = 0; up <= height; up++) {
+        if (growth.has(this.get(ax + s, y - up))) this.set(ax + s, y - up, MaterialId.Empty);
+      }
+    }
+    this.raiseHouse(ax, y, type === PLAN_GRANARY ? HOUSE_WALL_BRICK : HOUSE_WALL_WOOD, type);
+    return true;
+  }
+
+  /** Whether any structure anchor (house or storehouse) sits within `r` of (x, y) — so a new storehouse isn't crammed against one. */
+  private nearStore(x: number, y: number, r: number): boolean {
+    for (let dy = -r; dy <= r; dy++) {
+      const ny = y + dy;
+      if (ny < 0 || ny >= this.height) continue;
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = x + dx;
+        if (nx < 0 || nx >= this.width) continue;
+        const j = ny * this.width + nx;
+        if (this.material[j] === MaterialId.Brick && (this.meta[j] & HOUSE_ANCHOR_META) !== 0) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * A slow job (harvest, fell) the unit at cell `i` works over `ticks` of its
+   * turns: it stands there, ticking the clock down, and this returns true the
+   * one turn the job finishes — then re-arms for the next.
+   */
+  private harvestReady(i: number, ticks: number): boolean {
+    const c = this.workCd[i];
+    if (c === 0) { this.workCd[i] = ticks; return false; }
+    if (c === 1) { this.workCd[i] = 0; return true; }
+    this.workCd[i] = c - 1;
+    return false;
+  }
+
+  /** Stack one cell of `material` into the lowest open spot inside the storehouse anchored at (ax, ay). Returns whether it fit. */
+  private stashInStore(ax: number, ay: number, type: number, material: MaterialId): boolean {
+    const { span, rise } = HOUSE_PLANS[type];
+    for (let dy = 0; dy > -rise; dy--) {
+      for (let dx = 1; dx < span; dx++) {
+        const cx = ax + dx;
+        const cy = ay + dy;
+        if (this.inBounds(cx, cy) && this.get(cx, cy) === MaterialId.Empty) {
+          this.set(cx, cy, material, material === MaterialId.Wheat ? WHEAT_RIPE : 0);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /** The masons stop founding once there's a house per Pip — a village, not a housing estate. */
+  private villageWantsHouse(): boolean {
+    return this.houseCensus < Math.max(1, this.folkCensus);
+  }
+
+  /** The farmers stop sowing once the field's big enough for the hands tending it. */
+  private fieldWantsMoreWheat(): boolean {
+    return this.cropCensus < Math.max(1, this.farmerCensus) * WHEAT_PER_FARMER;
+  }
+
+  /** The masons only start a bridge once the Lenhador has worked up a woodpile to build it from. */
+  private villageHasTimber(): boolean {
+    return this.timberCensus >= BRIDGE_TIMBER_MIN;
+  }
+
+  /** Take one cut Madeira cell (nearest, non-deck) off the map — a plank the Construtor just laid came from the woodpile. No-op if there's none in reach. */
+  private consumeTimber(x: number, y: number): void {
+    let bi = -1, bd = Infinity;
+    for (let dy = -80; dy <= 80; dy++) {
+      const ny = y + dy;
+      if (ny < 0 || ny >= this.height) continue;
+      for (let dx = -80; dx <= 80; dx++) {
+        const nx = x + dx;
+        if (nx < 0 || nx >= this.width) continue;
+        const j = ny * this.width + nx;
+        if (this.material[j] !== MaterialId.Wood || (this.meta[j] & (HOUSE_WALL_META | TREE_TRUNK_META)) !== 0) continue; // loose timber only
+        const d = dx * dx + dy * dy;
+        if (d < bd) { bd = d; bi = j; }
+      }
+    }
+    if (bi >= 0) {
+      this.material[bi] = MaterialId.Empty;
+      this.meta[bi] = 0;
+      this.hp[bi] = 0;
+      this.wake(bi % this.width, (bi / this.width) | 0);
+      if (this.timberCensus > 0) this.timberCensus--;
+    }
+  }
+
+  private stepMason(x: number, y: number, i: number): void {
+    this.processed[i] = 1;
+    const facing = creatureFacing(this.meta[i]);
+    const fed = this.folkUpkeep(x, y, creatureFed(this.meta[i]));
+    if (fed < 0) return;
+    if (!this.folkActNow(x, y)) { // slow, deliberate labour (but act every tick to swim clear of water)
+      this.meta[i] = packCreature(facing, 0, fed);
+      return;
+    }
+    const flee = this.fleeSkeletonDir(x, y);
+    if (flee !== 0) { this.folkWalk(x, y, i, flee, fed, 0, flee); return; }
+    if (this.folkWeather(x, y, i, facing, fed, 0)) return;
+
+    // Objective: the nearest damaged house wins; else work the ground here.
+    const repair = this.masonRepair(x, y);
+    if (repair.patched || repair.busy) {
+      this.meta[i] = packCreature(facing, 0, fed);
+      return;
+    }
+    let wantDir = repair.dir;
+    // The moment the woodpile's up to it, the Construtor makes straight for
+    // the nearest water to raise its bridge — it doesn't wait to stumble
+    // onto a crossing on its ordinary rounds. Repair still wins (a leaking
+    // roof doesn't wait on a bridge), and it stands down once a span
+    // already crosses this stretch.
+    if (wantDir === 0 && this.villageHasTimber() && !this.deckNear(x, y, 40)) {
+      wantDir = this.folkScanDir(x, y, WATER_ONLY);
+    }
+
+    // Bridging is in a Construtor's nature, like raising houses. It decks a
+    // real-shaped timber bridge across any water it walks up to, however wide:
+    // a short ramp off each bank, then one dead-level span the rest of the way,
+    // a touch above the water — so two headlands with water between them get
+    // joined, not just a flat ford. Guards: it builds from firm dry footing
+    // only (a body dropped in the water wades out via folkWalk below), and one
+    // bridge per crossing (`deckNear`). `bridgeScan` sorts lead from follower
+    // (a follower gets `walk` > 0 and queues single file) and returns null once
+    // the span is closed, so nobody keeps working — or pacing — a finished bridge.
+    // A new bridge also waits on the Lenhador: no woodpile, no span.
+    const startBridge = this.countNear(x, y, MaterialId.Water, 8) > 0 &&
+      !this.deckNear(x, y, 40) && this.villageHasTimber();
+    const onDeckNow = this.isDeck(x, y + 1);
+    if ((wantDir !== 0 || onDeckNow || startBridge) && this.firmFooting(x, y)) {
+      const dirs: readonly number[] = wantDir !== 0 ? [wantDir] : (facing >= 0 ? [1, -1] : [-1, 1]);
+      let anyPlan = false;
+      for (const d of dirs) {
+        const plan = this.bridgeScan(x, y, d);
+        if (!plan) continue;
+        anyPlan = true;
+        if (plan.walk > 0) {
+          this.folkWalk(x, y, i, facing, fed, 0, d);
+          return;
+        }
+        const px = x + d;
+        // Keep the plank within a single step of the builder's own feet, and
+        // never stack one on a plank already there.
+        const layRow = Math.max(y, Math.min(y + 2, plan.layRow));
+        const stand = layRow - 1;
+        if (
+          this.get(px, layRow) !== MaterialId.Empty ||
+          this.isDeck(px, layRow - 1) || this.isDeck(px, layRow + 1) ||
+          !this.inBounds(px, stand) || this.get(px, stand) !== MaterialId.Empty
+        ) {
+          // Can't place a clean plank + step onto it from here — walk and retry.
+          this.folkWalk(x, y, i, facing, fed, 0, d);
+          return;
+        }
+        this.set(px, layRow, MaterialId.Wood, HOUSE_WALL_META | HOUSE_FLOOR);
+        this.consumeTimber(x, y);   // a plank comes off the Lenhador's woodpile
+        this.moveCreature(x, y, px, stand, packCreature(d, 0, fed));
+        return;
+      }
+      // Standing on a finished bridge with no span to push on: walk off it the
+      // short way and get back to ordinary life rather than pacing the deck.
+      if (onDeckNow && !anyPlan) {
+        const off = this.offDeckDir(x, y);
+        this.folkWalk(x, y, i, facing, fed, 0, off !== 0 ? off : facing);
+        return;
+      }
+    }
+
+    if (wantDir === 0) {
+      // Level the strip (shifting a hump of earth into a hollow, never
+      // removing any) — but not next to a channel, where slumping the bank
+      // just floods the place.
+      if (this.countNear(x, y, MaterialId.Water, 3) === 0 && this.gradeStrip(x, y, 8)) {
+        this.meta[i] = packCreature(facing, 0, fed);
+        return;
+      }
+      // Found a house on flat ground, while the village still wants one.
+      const spot = this.villageWantsHouse() ? this.masonSurvey(x, y) : null;
+      if (spot) {
+        if (Math.random() < MASON_FOUND_CHANCE) {
+          this.raiseHouse(x + 1, y, spot.style, spot.type);
+        } else {
+          this.meta[i] = packCreature(facing, 0, fed); // keep working the site
+          return;
+        }
+      } else {
+        // Nothing to build here. Amble on to find fresh ground / patrol the
+        // street, reined back by folkHomeDir so it never marches off to starve.
+        const home = this.folkHomeDir(x, y, MaterialId.Mason);
+        this.folkWalk(x, y, i, facing, fed, 0, home !== 0 ? home : facing);
+        return;
+      }
+    }
+
+    // Closing on a gap in a wall: walk the last steps solidly (carry === 3),
+    // never phasing through the house — that would carry the mason clean past
+    // the hole it's trying to mend.
+    this.folkWalk(x, y, i, facing, fed, repair.near ? 3 : 0, wantDir);
+  }
+
+
+  /** From a folk standing on a bridge deck, the horizontal direction to its nearer end (where the planks meet dry ground). 0 if not on a deck. */
+  private offDeckDir(x: number, y: number): number {
+    if (!this.isDeck(x, y + 1)) return 0;
+    const reach = (dir: number): number => {
+      let cx = x, r = y + 1;
+      for (let k = 1; k <= 320; k++) {
+        if (this.isDeck(cx + dir, r)) cx += dir;
+        else if (this.isDeck(cx + dir, r + 1)) { cx += dir; r += 1; }
+        else if (this.isDeck(cx + dir, r - 1)) { cx += dir; r -= 1; }
+        else return k;
+      }
+      return 999;
+    };
+    return reach(1) <= reach(-1) ? 1 : -1;
+  }
+
+  /** Whether a bridge deck already runs within `r` cells of (x, y) — one crossing per stretch of water, so a crew doesn't lay deck after parallel deck. */
+  private deckNear(x: number, y: number, r: number): boolean {
+    for (let dy = -MASON_ARCH_MAX - 3; dy <= MASON_ARCH_MAX + 3; dy++) {
+      const ny = y + dy;
+      if (ny < 0 || ny >= this.height) continue;
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = x + dx;
+        if (nx >= 0 && nx < this.width && this.isDeck(nx, ny)) return true;
+      }
+    }
+    return false;
+  }
+
+  /** A deck plank a Construtor laid — Madeira flagged as house-floor, walkable, not a ghost. */
+  private isDeck(x: number, y: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    const i = this.index(x, y);
+    return this.material[i] === MaterialId.Wood &&
+      (this.meta[i] & HOUSE_WALL_META) !== 0 && (this.meta[i] & HOUSE_KIND_MASK) === HOUSE_FLOOR;
+  }
+
+  /**
+   * Solid, dry footing to stand on: the cell (x, y) itself isn't water, and
+   * the cell right under it is dry non-liquid solid — real ground, or a deck
+   * plank. A Construtor only ever lays a plank while it has this under it, so
+   * a bridge always grows out from a bank, never from a body dropped in the
+   * water.
+   */
+  private firmFooting(x: number, y: number): boolean {
+    if (!this.inBounds(x, y) || this.get(x, y) === MaterialId.Water) return false;
+    const b = this.inBounds(x, y + 1) ? this.get(x, y + 1) : MaterialId.Stone;
+    return b !== MaterialId.Empty && b !== MaterialId.Water && MATERIALS[b].category !== MaterialCategory.Liquid;
+  }
+
+  /** Row of the first solid, standable surface in a vertical window at column `cx` (lowest row number wins), or -1. "Standable" = firm non-liquid with clear headroom just above. */
+  private standTop(cx: number, from: number, to: number): number {
+    for (let r = from; r <= to; r++) {
+      if (!this.inBounds(cx, r)) continue;
+      const g = this.get(cx, r);
+      if (g === MaterialId.Water || g === MaterialId.Empty || this.isDeck(cx, r)) continue;
+      if (MATERIALS[g].category === MaterialCategory.Liquid) return -1;
+      const head = this.inBounds(cx, r - 1) ? this.get(cx, r - 1) : MaterialId.Empty;
+      if (head === MaterialId.Empty || FOLK_WADEABLE.has(head) || this.isDeck(cx, r - 1)) return r;
+      return -1; // solid with no headroom — a wall face, not a footing
+    }
+    return -1;
+  }
+
+  /**
+   * Survey a crossing from a Construtor at (x, y) heading `dir`. Follows any
+   * deck it has already laid out to the leading edge, then looks across open
+   * water for a bank to land on. Returns what to do next, or null — including
+   * when the span is already closed, so nobody keeps pacing a finished bridge.
+   *
+   *  - `walk`  > 0 : the lead edge is that many steps off; go there.
+   *  - `walk` === 0: lay the next plank now, at deck row `layRow`.
+   *
+   * The deck is shaped like a real bridge: short ramp off each bank, then one
+   * dead-level span the rest of the way (a touch above the water).
+   */
+  private bridgeScan(
+    x: number, y: number, dir: number,
+  ): { walk: number; layRow: number } | null {
+    const onDeck = this.isDeck(x, y + 1);
+    // Trace our deck back to its near anchor.
+    let ax = x, aRow = y + 1;
+    if (onDeck) {
+      for (let k = 0; k < 300; k++) {
+        if (this.isDeck(ax - dir, aRow)) ax -= dir;
+        else if (this.isDeck(ax - dir, aRow + 1)) { ax -= dir; aRow += 1; }
+        else if (this.isDeck(ax - dir, aRow - 1)) { ax -= dir; aRow -= 1; }
+        else break;
+      }
+    }
+    const nearRow = aRow;                       // deck row where it meets the near bank
+    // Trace forward to the leading edge of the deck, noting whether the span
+    // we've already laid crosses open water.
+    let lx = x, lRow = y + 1;
+    let spannedWater = false;
+    let waterTop = this.height;                 // highest (lowest row number) water seen
+    const noteWater = (cx: number, r0: number): void => {
+      for (let k = 0; k <= MASON_SPAN_DROP && this.inBounds(cx, r0 + k); k++) {
+        const c = this.get(cx, r0 + k);
+        if (c === MaterialId.Water) { spannedWater = true; waterTop = Math.min(waterTop, r0 + k); return; }
+        if (c !== MaterialId.Empty && !this.isDeck(cx, r0 + k)) return;
+      }
+    };
+    if (onDeck) {
+      noteWater(lx, lRow + 1);
+      for (let k = 0; k < 300; k++) {
+        if (this.isDeck(lx + dir, lRow)) lx += dir;
+        else if (this.isDeck(lx + dir, lRow + 1)) { lx += dir; lRow += 1; }
+        else if (this.isDeck(lx + dir, lRow - 1)) { lx += dir; lRow -= 1; }
+        else break;
+        noteWater(lx, lRow + 1);
+      }
+    }
+    const leadStep = Math.abs(lx - x);          // steps from here to the leading edge
+    const nearDist = Math.abs(lx - ax);         // deck laid so far
+
+    // From just past the leading edge, look for open water below the deck line
+    // and a bank on the far side. If the deck already crosses water, we're past
+    // the near bank — the next ground we meet is the far one.
+    let sawWater = spannedWater;
+    for (let s = 1; s <= MASON_BRIDGE_MAX; s++) {
+      const cx = lx + dir * s;
+      if (!this.inBounds(cx, lRow)) return null;
+      for (let k = 0; k <= MASON_SPAN_DROP && this.inBounds(cx, lRow + k); k++) {
+        const c = this.get(cx, lRow + k);
+        if (c === MaterialId.Water) { sawWater = true; waterTop = Math.min(waterTop, lRow + k); break; }
+        if (c !== MaterialId.Empty && !this.isDeck(cx, lRow + k)) break;
+      }
+      const top = this.standTop(cx, lRow - MASON_ARCH_MAX - 2, lRow + MASON_SPAN_DROP);
+      if (top < 0) {
+        if (!sawWater && s > MASON_APPROACH_MAX) return null;
+        continue;
+      }
+      if (!sawWater) {
+        // Ground before any water. Flat or dropping toward the shore: keep
+        // walking the near bank. Rising well above the deck line: blocked by
+        // terrain, not water — leave it to ordinary patrol.
+        if (top >= lRow - 1) continue;
+        return null;
+      }
+      // Ground past the water sitting well below the surface is the submerged
+      // bed, not a bank — keep scanning for a real shore.
+      if (top > waterTop + 2) continue;
+
+      // Far bank found. If the leading edge already reaches it (adjacent, within
+      // a single step up or down), the span is closed — return null so no one
+      // keeps working, or pacing, a finished bridge.
+      if (s === 1 && Math.abs(lRow - top) <= 1) return null;
+
+      // Shape: a short ramp off each bank, one dead-level span between. The
+      // level D sits at the higher of the two banks, but never below the water.
+      const farRow = top;
+      const span = nearDist + s;
+      let deckLevel = Math.min(nearRow, farRow);
+      if (deckLevel >= waterTop) deckLevel = waterTop - 1;
+      const p = nearDist + 1;                       // where the next plank goes, from the near anchor
+      const q = span - p;                           // ...and from the far anchor
+      const nearRamp = Math.abs(deckLevel - nearRow);
+      const farRamp = Math.abs(deckLevel - farRow);
+      let target: number;
+      if (p <= nearRamp) target = nearRow + Math.sign(deckLevel - nearRow) * p;
+      else if (q <= farRamp) target = farRow + Math.sign(deckLevel - farRow) * q;
+      else target = deckLevel;
+      // move at most a row at a time from the current leading edge, and never
+      // sink a plank below the water surface
+      let layRow = onDeck ? lRow + Math.sign(target - lRow) : y + 1;
+      while (layRow > waterTop && layRow > 1) layRow--;
+
+      if (leadStep > 0) return { walk: leadStep, layRow };
+      return { walk: 0, layRow };
+    }
+    return null;
+  }
+
+  /** Whether (x, y) has a house cell close overhead — i.e. digging it out would undermine a building. */
+  private underHouse(x: number, y: number): boolean {
+    for (let d = 1; d <= FOUNDATION_DEPTH + 2; d++) {
+      if (!this.inBounds(x, y - d)) break;
+      if (this.isHouseCell(this.index(x, y - d))) return true;
+    }
+    return false;
+  }
+
+  /** Whether (x, y) is inside a house's footprint — a wall/roof cell anywhere up to a tall house's height overhead. Farmers and foresters won't sow indoors. */
+  private roofedOver(x: number, y: number): boolean {
+    for (let d = 1; d <= 16; d++) {
+      const ny = y - d;
+      if (ny < 0) break;
+      if (this.isHouseCell(ny * this.width + x)) return true;
+    }
+    return false;
   }
 
   /**
@@ -3880,6 +5236,7 @@ export class SimGrid {
    * half-built with an open roof no one can reach to close.
    */
   private raiseHouse(ax: number, ay: number, style: number, type: number): void {
+    const wallMat = HOUSE_WALL_MATERIAL[style];
     this.set(ax, ay, MaterialId.Brick, packHouseAnchor(style, type));
     for (const [dx, dy, kind] of HOUSE_BLUEPRINTS[type]) {
       if (dx === 0 && dy === 0) continue;
@@ -3888,12 +5245,34 @@ export class SimGrid {
       if (!this.inBounds(wx, wy)) continue;
       const hi = this.index(wx, wy);
       const here = this.material[hi] as MaterialId;
-      if (
+      // Build into open space, or over a cell of this same house already
+      // stamped (so a window can claim a wall's spot). Never over the ground
+      // itself — the frame is conjured and sits on whatever's there, it
+      // doesn't eat the hillside for bricks. (A blueprint cell that lands in
+      // earth is just left buried; masonRepair knows that isn't damage.)
+      const overwritable =
         here === MaterialId.Empty ||
-        MATERIALS[here].category === MaterialCategory.Powder ||
-        ((this.meta[hi] & HOUSE_WALL_META) !== 0 && (this.meta[hi] & HOUSE_ANCHOR_META) === 0)
-      ) {
+        ((this.meta[hi] & HOUSE_WALL_META) !== 0 && (this.meta[hi] & HOUSE_ANCHOR_META) === 0);
+      if (overwritable) {
         this.set(wx, wy, houseCellMaterial(kind, style), HOUSE_WALL_META | kind);
+      }
+    }
+    // Underpin the footprint: wherever the ground under a column is missing
+    // (a hollow, or open water), sink a wall-material pier down to solid bed
+    // so the house has something to stand on. Where the ground is already
+    // there it's left alone — no earth is dug or converted.
+    const span = HOUSE_PLANS[type].span;
+    for (let dx = 0; dx <= span; dx++) {
+      const fx = ax + dx;
+      for (let d = 1; d <= FOUNDATION_DEPTH; d++) {
+        const fy = ay + d;
+        if (!this.inBounds(fx, fy)) break;
+        const b = this.get(fx, fy);
+        if (b === MaterialId.Empty || b === MaterialId.Water) {
+          this.set(fx, fy, wallMat, HOUSE_WALL_META | HOUSE_FLOOR);
+        } else {
+          break; // solid ground (or bedrock) — the pier is anchored
+        }
       }
     }
   }
@@ -3907,7 +5286,7 @@ export class SimGrid {
    * for part of its load. `dir` is a heading toward the damage, `busy` means
    * it's at the gap working, both 0/false if there's nothing to mend.
    */
-  private masonRepair(x: number, y: number): { patched: boolean; dir: number; busy: boolean } {
+  private masonRepair(x: number, y: number): { patched: boolean; dir: number; busy: boolean; near: boolean } {
     let anchorD = Infinity;
     let ai = -1;
     for (let dy = -MASON_REPAIR_RANGE; dy <= MASON_REPAIR_RANGE; dy++) {
@@ -3921,7 +5300,7 @@ export class SimGrid {
         if (d < anchorD) { anchorD = d; ai = ni; }
       }
     }
-    if (ai < 0) return { patched: false, dir: 0, busy: false }; // no house in sight
+    if (ai < 0) return { patched: false, dir: 0, busy: false, near: false }; // no house in sight
 
     const nx = ai % this.width;
     const ny = (ai / this.width) | 0;
@@ -3939,11 +5318,11 @@ export class SimGrid {
       const want = houseCellMaterial(kind, style);
       const h = this.get(wx, wy);
       if (h === want) continue; // intact
-      if (h !== MaterialId.Empty && MATERIALS[h].category !== MaterialCategory.Powder) continue; // blocked, not a gap
+      if (h !== MaterialId.Empty) continue; // a real gap is open air; earth/sand banked into a cell isn't damage to chase
       const d = (wx - x) * (wx - x) + (wy - y) * (wy - y);
       if (d < bestHoleD) { bestHoleD = d; holeX = wx; holeY = wy; holeMat = want; holeKind = kind; }
     }
-    if (bestHoleD === Infinity) return { patched: false, dir: 0, busy: false }; // nearest house is whole
+    if (bestHoleD === Infinity) return { patched: false, dir: 0, busy: false, near: false }; // nearest house is whole
 
     // Within reach of the gap: set a wall cell there. If the roll misses this
     // tick, stay put (busy) and try again — don't march off the job.
@@ -3952,12 +5331,12 @@ export class SimGrid {
         const cur = this.get(holeX, holeY);
         if (cur === MaterialId.Empty || MATERIALS[cur].category === MaterialCategory.Powder) {
           this.set(holeX, holeY, holeMat, HOUSE_WALL_META | holeKind);
-          return { patched: true, dir: 0, busy: true };
+          return { patched: true, dir: 0, busy: true, near: true };
         }
       }
-      return { patched: false, dir: 0, busy: true };
+      return { patched: false, dir: 0, busy: true, near: true };
     }
-    return { patched: false, dir: Math.sign(holeX - x) || 1, busy: false };
+    return { patched: false, dir: Math.sign(holeX - x) || 1, busy: false, near: Math.abs(holeX - x) + Math.abs(holeY - y) <= 4 };
   }
 
   /**
@@ -3991,6 +5370,11 @@ export class SimGrid {
         ) {
           return null; // too close to another house
         }
+        // Not on a waterline — water sloshing around a footprint traps folk
+        // between the new walls and the pool. Give it a wide berth.
+        if (id === MaterialId.Water && Math.abs(dx) <= HOUSE_MAX_DWELLING_SPAN && dy >= -2 && dy <= 4) {
+          return null;
+        }
         if (id === MaterialId.Wood) wood++;
         else if (id === MaterialId.Ice) ice++;
         else if (id === MaterialId.Sand || id === MaterialId.Dirt || id === MaterialId.Mud) earth++;
@@ -4009,7 +5393,7 @@ export class SimGrid {
     // half the time, when a bigger house would fit, the mason settles for the
     // next size down instead, so a well-stocked village still comes out a mix
     // of halls, cottages and huts rather than a row of identical blocks.
-    for (let type = HOUSE_PLANS.length - 1; type >= 0; type--) {
+    for (let type = MASON_MAX_PLAN; type >= 0; type--) {
       if (supply < HOUSE_PLANS[type].supply) continue;
       if (!this.houseFootprintClear(ax, ay, type)) continue;
       if (type > 0 && Math.random() < 0.45) continue;
@@ -4034,7 +5418,10 @@ export class SimGrid {
       const fx = ax + s;
       const under = this.get(fx, ay + 1);
       if (under === MaterialId.Empty || MATERIALS[under].category === MaterialCategory.Liquid) return false; // a pit
-      if (this.get(fx, ay) !== MaterialId.Empty) return false; // a bump — ground not level
+      // A stray cell of loose powder in the floor row is fine — raiseHouse
+      // builds straight over it. Anything solid there means the ground isn't level.
+      const atFloor = this.get(fx, ay);
+      if (atFloor !== MaterialId.Empty && MATERIALS[atFloor].category !== MaterialCategory.Powder) return false;
       for (let up = 1; up <= height; up++) {
         const c = this.get(fx, ay - up);
         if (c !== MaterialId.Empty && MATERIALS[c].category !== MaterialCategory.Powder && !HOUSE_WALLS.includes(c)) {
@@ -4046,20 +5433,19 @@ export class SimGrid {
   }
 
   /**
-   * A carrying Pedreiro grading the ground just ahead flat before it builds.
-   * Over a strip as wide as the largest house it looks for the nearest bump
-   * (a Powder cell standing in or one above the floor line) or shallow pit
-   * (a missing ground cell) and fixes one per call: digs the bump away
-   * (reclaiming a little supply), or — only with `canFill` — drops a cell of
-   * Terra into the pit (spending some). Returns +1 if it dug, -1 if it
-   * filled, 0 if the strip is already level or too broken to bother with.
-   * Shared by the Pedreiro (a house-wide strip) and the Plantador (a short
-   * furrow), both of whom flatten before they work.
+   * A Pip grading the ground just ahead level before it builds or sows. Over
+   * a strip it finds the nearest bump (loose powder standing in or above the
+   * floor line) and the nearest shallow pit, and *moves* a cell of earth
+   * from the bump into the pit — one per call, never adding or removing any
+   * material. If there's a bump but nowhere to put the spoil (no pit), or a
+   * pit but no loose earth to fill it with, it leaves the strip as it is and
+   * the Pip moves on to find a flatter spot. Returns whether it moved a cell.
+   * Shared by the Construtor (a house-wide strip) and the Plantador (a furrow).
    */
-  private gradeStrip(x: number, y: number, span: number, canFill: boolean): number {
+  private gradeStrip(x: number, y: number, span: number): boolean {
     const ax = x + 1;
     const ay = y;
-    if (!this.inBounds(ax + span, ay + 2) || !this.inBounds(ax, ay - 1)) return 0;
+    if (!this.inBounds(ax + span, ay + 2) || !this.inBounds(ax, ay - 1)) return false;
 
     let bumpX = -1;
     let bumpY = -1;
@@ -4069,21 +5455,27 @@ export class SimGrid {
     let rough = 0;
     for (let s = 0; s <= span; s++) {
       const cx = ax + s;
-      // a protrusion: loose powder at the floor row, or one above it
       for (let up = LEVEL_MAX_STEP - 1; up >= 0; up--) {
         const c = this.get(cx, ay - up);
-        if (MATERIALS[c].category === MaterialCategory.Powder) {
+        if (
+          (c === MaterialId.Sand || c === MaterialId.Dirt || c === MaterialId.Mud) &&
+          !this.underHouse(cx, ay - up)
+        ) {
           rough++;
           const d = s * s + up * up;
           if (d < bumpD) { bumpD = d; bumpX = cx; bumpY = ay - up; }
           break;
         }
-        if (c !== MaterialId.Empty) break; // solid/creature — leave it, masonSurvey handles it
+        if (c !== MaterialId.Empty) break; // solid/creature — leave it
       }
-      // a pit: no ground directly under this column, but ground not far below
-      if (this.get(cx, ay + 1) === MaterialId.Empty) {
-        const floorBelow = this.get(cx, ay + 2);
-        if (floorBelow !== MaterialId.Empty && MATERIALS[floorBelow].category !== MaterialCategory.Liquid) {
+      // a pit: no ground directly under this column, solid bed not far below
+      // (skipped right under a house, same as the bump check above — that
+      // headroom is the foundation, not a hole waiting to be filled, and
+      // trying to fill it just gets undone, leaving the grader parked here
+      // forever instead of moving on).
+      if (this.get(cx, ay + 1) === MaterialId.Empty && !this.underHouse(cx, ay + 1)) {
+        const bed = this.get(cx, ay + 2);
+        if (bed !== MaterialId.Empty && MATERIALS[bed].category !== MaterialCategory.Liquid) {
           rough++;
           const d = s * s;
           if (d < pitD) { pitD = d; pitX = cx; }
@@ -4092,24 +5484,23 @@ export class SimGrid {
         }
       }
     }
-    if (rough === 0) return 0;                    // already flat
-    if (rough > span + LEVEL_MAX_STEP) return 0;  // a cliff, not a lot — move on
+    if (rough === 0) return false;                    // already level
+    if (rough > span + LEVEL_MAX_STEP) return false;  // a cliff, not a lot
 
-    if (bumpX >= 0 && (bumpD <= pitD || !canFill)) {
+    // Only act when there's a place for the spoil to go: shift earth from the
+    // bump into the pit, conserving every cell.
+    if (bumpX >= 0 && pitX >= 0) {
       this.set(bumpX, bumpY, MaterialId.Empty);
-      return 1;
-    }
-    if (pitX >= 0 && canFill) {
       this.set(pitX, ay + 1, MaterialId.Dirt);
-      return -1;
+      return true;
     }
-    return 0;
+    return false;
   }
 
   /**
    * Whether the `span+1` cells of ground just right of (x, y) form a level
    * furrow: filled ground one cell under each, nothing protruding into the
-   * walking row. The gate the Pedreiro and Plantador grade toward before
+   * walking row. The gate the Construtor and Plantador grade toward before
    * building or sowing.
    */
   private groundLevel(x: number, y: number, span: number): boolean {
@@ -4123,83 +5514,326 @@ export class SimGrid {
     return true;
   }
 
-  /**
-   * Bombeiro: runs toward the nearest Fogo it can see. Scoops a load of Água
-   * when it passes some; carrying, next to flame, it throws the water —
-   * clearing every touching Fogo cell and leaving a splash of Água. With no
-   * water it beats at the flames bare-handed instead, slower and with a
-   * small chance of catching alight. Flees Lava.
-   */
-  private stepFirefighter(x: number, y: number, i: number): void {
-    this.processed[i] = 1;
-    let facing = creatureFacing(this.meta[i]);
-    let carrying = creatureTimer(this.meta[i]) === 1;
-    const fed = this.folkUpkeep(x, y, creatureFed(this.meta[i]));
-    if (fed < 0) return;
-    // Slow and deliberate like the rest of the Pips — but a fire right in
-    // front of it always gets acted on, every tick.
-    if (
-      this.adjacentOf(x, y, FIRE_ONLY).length === 0 &&
-      (this.tick + y) % FOLK_ACT_INTERVAL !== 0
-    ) {
-      this.meta[i] = packCreature(facing, carrying ? 1 : 0, fed);
-      return;
-    }
-
-    // A fire always trumps the weather; otherwise the weather response
-    // (shelter / head home) takes over.
-    if (
-      this.adjacentOf(x, y, FIRE_ONLY).length === 0 &&
-      this.folkScanDir(x, y, FIRE_ONLY) === 0 &&
-      this.folkWeather(x, y, i, facing, fed, carrying ? 1 : 0)
-    ) {
-      return;
-    }
-
-    if (!carrying) {
-      const water = this.adjacentOf(x, y, WATER_ONLY);
-      if (water.length > 0 && Math.random() < FIREFIGHTER_SCOOP_CHANCE) {
-        const [wx, wy] = water[Math.floor(Math.random() * water.length)];
-        this.set(wx, wy, MaterialId.Empty);
-        carrying = true;
+  /** How much crown a tree rooted near (tx, ty) carries — Broto/Planta/Flor in a tall box reaching up from the base. A seedling is a cell or two; a grown tree is a dozen-plus. */
+  private treeCrown(tx: number, ty: number): number {
+    let n = 0;
+    for (let dy = -9; dy <= 2; dy++) {
+      for (let dx = -4; dx <= 4; dx++) {
+        const g = this.get(tx + dx, ty + dy);
+        if (g === MaterialId.Sprout || g === MaterialId.Plant || g === MaterialId.Flor) n++;
       }
     }
+    return n;
+  }
 
-    let wantDir = 0;
-    const fires = this.adjacentOf(x, y, FIRE_ONLY);
-    if (fires.length > 0 && carrying) {
-      // Water in hand, flame in reach: throw it.
-      for (const [fx, fy] of fires) this.set(fx, fy, MaterialId.Empty);
-      const [sx, sy] = fires[0];
-      this.set(sx, sy, MaterialId.Water);
-      carrying = false;
-    } else if (fires.length > 0) {
-      // Caught up to a fire empty-handed — beat at it, but keep half an eye
-      // out for water to go fetch.
-      if (Math.random() < FIREFIGHTER_SMOTHER_CHANCE) {
-        const [fx, fy] = fires[Math.floor(Math.random() * fires.length)];
-        this.set(fx, fy, MaterialId.Empty);
-        if (Math.random() < 0.06) {
-          this.igniteAt(x, y);
-          return;
-        }
-      }
-      wantDir = this.folkScanDir(x, y, WATER_ONLY);
-    } else if (!carrying) {
-      // No water in hand: fetch some first, and only head for the fire once
-      // there's no water to be found — running in bare-handed is a last
-      // resort, not the plan.
-      const waterDir = this.folkScanDir(x, y, WATER_ONLY);
-      wantDir = waterDir !== 0 ? waterDir : this.folkScanDir(x, y, FIRE_ONLY);
-    } else {
-      // Carrying, no fire adjacent — go find one.
-      wantDir = this.folkScanDir(x, y, FIRE_ONLY);
-    }
-    this.folkWalk(x, y, i, facing, fed, carrying ? 1 : 0, wantDir);
+  /** Whether (x, y) is a living tree trunk cell — Madeira flagged TREE_TRUNK. */
+  private isTrunk(x: number, y: number): boolean {
+    return this.inBounds(x, y) && this.material[this.index(x, y)] === MaterialId.Wood &&
+      (this.meta[this.index(x, y)] & TREE_TRUNK_META) !== 0;
+  }
+
+  /** Whether (x, y) is a Porta currently powered open. */
+  private isOpenDoor(x: number, y: number): boolean {
+    return this.inBounds(x, y) && this.material[this.index(x, y)] === MaterialId.Door &&
+      (this.meta[this.index(x, y)] & CIRCUIT_ON_META) !== 0;
   }
 
   /**
-   * Plantador. Like the Pedreiro, a focused worker that *levels before it
+   * Whichever kind of "there, but not really" cell a folk simply walks
+   * through: a house wall/roof, a living tree trunk, or a powered-open
+   * Porta. Every obstacle check in folkWalk treats all three identically —
+   * this is the one place that says so.
+   */
+  private isGhost(x: number, y: number): boolean {
+    return this.houseGhost(x, y) || this.isTrunk(x, y) || this.isOpenDoor(x, y);
+  }
+
+  /**
+   * Whether (x, y) — a Fio deciding its own state, or a Porta checking
+   * what's feeding it — is fed power this tick. Touching an on Alavanca
+   * directly is enough on its own; failing that, it traces outward through
+   * connected Fio (never through another Porta or Alavanca — those don't
+   * conduct past themselves) looking for one. The whole run this search
+   * touches is settled at once (see `circuitCache`), and every trace starts
+   * fresh from the actual switches each tick, so a loop of Fio (or a run an
+   * Alavanca just switched off) can never light itself by "confirming" its
+   * neighbor's bit the way a plain adjacency check would.
+   */
+  private circuitPowered(x: number, y: number): boolean {
+    const startI = this.index(x, y);
+    for (const [dx, dy] of NEIGHBORS_8) {
+      const nx = x + dx, ny = y + dy;
+      if (!this.inBounds(nx, ny)) continue;
+      const j = this.index(nx, ny);
+      if (this.material[j] === MaterialId.Lever && (this.meta[j] & CIRCUIT_ON_META) !== 0) return true;
+    }
+    const cached = this.circuitCache.get(startI);
+    if (cached !== undefined) return cached;
+    const visited = new Set<number>([startI]);
+    const stack = [startI];
+    let found = false;
+    let budget = CIRCUIT_FLOOD_CAP;
+    while (stack.length > 0 && budget-- > 0 && !found) {
+      const i = stack.pop()!;
+      const cx = i % this.width, cy = (i / this.width) | 0;
+      for (const [dx, dy] of NEIGHBORS_8) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!this.inBounds(nx, ny)) continue;
+        const j = this.index(nx, ny);
+        const m = this.material[j];
+        if (m === MaterialId.Lever && (this.meta[j] & CIRCUIT_ON_META) !== 0) { found = true; break; }
+        if (m !== MaterialId.Wire || visited.has(j)) continue;
+        visited.add(j);
+        stack.push(j);
+      }
+    }
+    for (const v of visited) this.circuitCache.set(v, found);
+    return found;
+  }
+
+  /** A Fio lights up the instant it touches power, and goes dark the instant nothing feeds it — no lingering charge. */
+  private stepWire(x: number, y: number, i: number): void {
+    this.processed[i] = 1;
+    const powered = this.circuitPowered(x, y);
+    if (((this.meta[i] & CIRCUIT_ON_META) !== 0) !== powered) this.wake(x, y);
+    this.meta[i] = powered ? CIRCUIT_ON_META : 0;
+  }
+
+  /**
+   * A connected slab of Porta is one body, not a grid of independent cells:
+   * open the instant *any* cell of it is individually fed (`circuitPowered`
+   * — touching an Alavanca/Fio directly), not just the cells actually
+   * touching one. Traces outward through connected Porta only (a Fio's own
+   * reach through Porta stops dead — see circuitPowered — so a door doesn't
+   * accidentally wire two separate doors together through a shared Fio;
+   * this walk is the one that unions a single door's own cells). Settled
+   * once per connected slab per tick (see `doorCache`).
+   */
+  private doorPowered(x: number, y: number): boolean {
+    const startI = this.index(x, y);
+    const cached = this.doorCache.get(startI);
+    if (cached !== undefined) return cached;
+    const visited = new Set<number>([startI]);
+    const stack = [startI];
+    let found = false;
+    let budget = CIRCUIT_FLOOD_CAP;
+    while (stack.length > 0 && budget-- > 0) {
+      const i = stack.pop()!;
+      const cx = i % this.width, cy = (i / this.width) | 0;
+      if (this.circuitPowered(cx, cy)) found = true;
+      for (const [dx, dy] of NEIGHBORS_8) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!this.inBounds(nx, ny)) continue;
+        const j = this.index(nx, ny);
+        if (this.material[j] !== MaterialId.Door || visited.has(j)) continue;
+        visited.add(j);
+        stack.push(j);
+      }
+    }
+    for (const v of visited) this.doorCache.set(v, found);
+    return found;
+  }
+
+  /**
+   * A Porta goes intangible (see `isGhost`) and lights a shade brighter —
+   * the renderer reads the same bit — for as long as it's powered by a
+   * touching Alavanca or Fio, and shuts the instant that power's gone. It
+   * doesn't animate open; that recolor and the change in what can walk
+   * through it are the only tells.
+   */
+  private stepDoor(x: number, y: number, i: number): void {
+    this.processed[i] = 1;
+    const open = this.doorPowered(x, y);
+    if (((this.meta[i] & CIRCUIT_ON_META) !== 0) !== open) this.wake(x, y);
+    this.meta[i] = open ? CIRCUIT_ON_META : 0;
+  }
+
+  /** Loose (cut, not trunk / not structural) Madeira within `r` of (x, y). */
+  private looseWoodNear(x: number, y: number, r: number): number {
+    let n = 0;
+    for (let dy = -r; dy <= r; dy++) {
+      const ny = y + dy;
+      if (ny < 0 || ny >= this.height) continue;
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = x + dx;
+        if (nx < 0 || nx >= this.width) continue;
+        const j = ny * this.width + nx;
+        if (this.material[j] === MaterialId.Wood && (this.meta[j] & (HOUSE_WALL_META | TREE_TRUNK_META)) === 0) n++;
+      }
+    }
+    return n;
+  }
+
+  /**
+   * Lenhador: a forester. Sows a Semente on bare Terra/Barro and then *leaves
+   * it be* — the shoot grows a bare trunk that lignifies to Madeira under a
+   * spreading green crown. Only once the tree has really filled out does the
+   * Lenhador fell it: the crown drops away and the trunk becomes a stack of
+   * cut logs. It stops once the woodlot's stocked. That growing woodpile is
+   * what a Construtor needs before it will bridge a river.
+   */
+  private stepLumberjack(x: number, y: number, i: number): void {
+    this.processed[i] = 1;
+    const facing = creatureFacing(this.meta[i]);
+    const fed = this.folkUpkeep(x, y, creatureFed(this.meta[i]));
+    if (fed < 0) return;
+    if (!this.folkActNow(x, y)) { // slow, deliberate labour (but act every tick to swim clear of water)
+      this.meta[i] = packCreature(facing, 0, fed);
+      return;
+    }
+    const flee = this.fleeSkeletonDir(x, y);
+    if (flee !== 0) { this.folkWalk(x, y, i, flee, fed, 0, flee); return; }
+    if (this.folkWeather(x, y, i, facing, fed, 0)) return;
+
+    // Fell a fully-grown tree it's touching — one with a lignified trunk under
+    // a finished crown — while the woodlot still has room for the timber. A
+    // sapling (no woody trunk yet) or a bare shoot is left alone to grow.
+    const targets: [number, number][] = [];
+    for (const [dx, dy] of NEIGHBORS_8) {
+      const tx = x + dx, ty = y + dy;
+      if (this.isTrunk(tx, ty)) targets.push([tx, ty]);
+    }
+    if (targets.length > 0 && this.looseWoodNear(x, y, 16) < LUMBERJACK_STOCK) {
+      targets.sort((a, b) => b[1] - a[1]); // lowest first
+      for (const [tx, ty] of targets) {
+        // Find the foot of this tree's trunk (walk down through trunk / stem).
+        let by = ty;
+        for (let d = 0; d < 10; d++) {
+          const n = by + 1;
+          if (this.isTrunk(tx, n) || this.get(tx, n) === MaterialId.Sprout || this.get(tx, n) === MaterialId.Plant) by = n;
+          else break;
+        }
+        const under = this.get(tx, by + 1);
+        if (under === MaterialId.Empty || MATERIALS[under].category === MaterialCategory.Liquid) continue;
+        if (this.treeCrown(tx, by) < LUMBERJACK_MIN_TREE) continue; // still a seedling — let it grow
+
+        // Felling is slow work — it stands and swings the axe for a while first.
+        if (!this.harvestReady(i, HARVEST_WORK)) {
+          this.meta[i] = packCreature(facing, 0, fed);
+          return;
+        }
+
+        // Timber it: the *whole* tree comes down — trunk and crown, both sides
+        // — leaving the ground clear for the next sapling.
+        for (let dy = -16; dy <= 1; dy++) {
+          for (let dx = -3; dx <= 3; dx++) {
+            const cx = tx + dx, cy = by + dy;
+            const g = this.get(cx, cy);
+            if (this.isTrunk(cx, cy) || g === MaterialId.Sprout || g === MaterialId.Plant || g === MaterialId.Flor) {
+              this.set(cx, cy, MaterialId.Empty);
+            }
+          }
+        }
+        // The cut wood goes into the galpão if there's one in reach; otherwise
+        // it drops as loose logs on the ground beside the stump (never in the
+        // stump column, so that spot's free for the next seed).
+        const shed = this.nearestStore(x, y, PLAN_WOODSHED, STORE_REACH);
+        let dropped = 0;
+        for (let n = 0; n < LUMBERJACK_LOG_YIELD; n++) {
+          if (shed && this.stashInStore(shed[0], shed[1], PLAN_WOODSHED, MaterialId.Wood)) { dropped++; continue; }
+          for (let r = 1; r <= 6 && dropped === n; r++) {
+            for (const cx of [tx - r, tx + r]) {
+              if (dropped > n || !this.inBounds(cx, by)) continue;
+              const floor = this.get(cx, by + 1);
+              if (this.get(cx, by) === MaterialId.Empty && floor !== MaterialId.Empty &&
+                MATERIALS[floor].category !== MaterialCategory.Liquid) {
+                this.set(cx, by, MaterialId.Wood, 0);
+                dropped++;
+              }
+            }
+          }
+        }
+        this.meta[i] = packCreature(facing, 0, fed);
+        return;
+      }
+    }
+
+    // Raise a galpão once the woodlot's producing and the village wants one.
+    {
+      const gb = this.inBounds(x, y + 1) ? this.get(x, y + 1) : MaterialId.Stone;
+      if (this.woodlotWantsShed() && (gb === MaterialId.Dirt || gb === MaterialId.Mud) &&
+        this.countNear(x, y, MaterialId.Water, 3) === 0 && !this.nearStore(x, y, HOUSE_SPACING)) {
+        if (this.gradeStrip(x, y, HOUSE_PLANS[PLAN_WOODSHED].span + 1)) {
+          this.meta[i] = packCreature(facing, 0, fed);
+          return;
+        }
+        if (Math.random() < MASON_FOUND_CHANCE && this.raiseStoreRight(x, y, PLAN_WOODSHED)) {
+          this.meta[i] = packCreature(facing, 0, fed);
+          return;
+        }
+      }
+    }
+
+    // Prepare the plot before planting, like the other trades: level the
+    // strip flat first (never next to water, where slumping the bank floods
+    // the place), then sow a seedling on the level ground.
+    const below = this.inBounds(x, y + 1) ? this.get(x, y + 1) : MaterialId.Stone;
+    if (below === MaterialId.Dirt || below === MaterialId.Mud) {
+      if (this.countNear(x, y, MaterialId.Water, 3) === 0 && this.gradeStrip(x, y, LUMBERJACK_PLOT + 1)) {
+        this.meta[i] = packCreature(facing, 0, fed);
+        return;
+      }
+      const f = x + 1;
+      const belowF = this.get(f, y + 1);
+      if (
+        this.get(f, y) === MaterialId.Empty &&
+        (belowF === MaterialId.Dirt || belowF === MaterialId.Mud) &&
+        this.groundLevel(x, y, LUMBERJACK_PLOT) &&
+        this.clearOfGrowth(x, y, LUMBERJACK_SPACING) &&
+        !this.roofedOver(f, y) && !this.roofedOver(x, y) &&
+        Math.random() < LUMBERJACK_SOW_CHANCE
+      ) {
+        this.set(f, y, MaterialId.Seed, FOREST_SEED_META);
+        this.meta[i] = packCreature(facing, 0, fed);
+        return;
+      }
+    }
+
+    // Head for the nearest fully-grown tree (a lignified trunk) to fell. With
+    // none ready, folkWalk drifts it back to the woodlot (Madeira / houses)
+    // where it plants and paces while the saplings fill out.
+    let wantDir = 0;
+    let bestD = Infinity;
+    for (let dy = -FOLK_SCAN_RANGE; dy <= FOLK_SCAN_RANGE; dy++) {
+      for (let dx = -FOLK_SCAN_RANGE; dx <= FOLK_SCAN_RANGE; dx++) {
+        if (dx === 0 && dy === 0 || !this.isTrunk(x + dx, y + dy)) continue;
+        const d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; wantDir = Math.sign(dx) || (Math.random() < 0.5 ? 1 : -1); }
+      }
+    }
+    this.folkWalk(x, y, i, facing, fed, 0, wantDir);
+  }
+
+  /** How many cells of material `id` sit within `r` of (x, y). */
+  private countNear(x: number, y: number, id: MaterialId, r: number): number {
+    let n = 0;
+    for (let dy = -r; dy <= r; dy++) {
+      const ny = y + dy;
+      if (ny < 0 || ny >= this.height) continue;
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = x + dx;
+        if (nx >= 0 && nx < this.width && this.material[ny * this.width + nx] === id) n++;
+      }
+    }
+    return n;
+  }
+
+  /** Whether a square of `r` around (x, y) is free of growing things and cut timber — so a Lenhador won't crowd a new sapling onto a field or an existing stand. */
+  private clearOfGrowth(x: number, y: number, r: number): boolean {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const g = this.get(x + dx, y + dy);
+        if (
+          g === MaterialId.Seed || g === MaterialId.Sprout || g === MaterialId.Plant ||
+          g === MaterialId.Flor || g === MaterialId.Wheat || g === MaterialId.Wood
+        ) return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Plantador. Like the Construtor, a focused worker that *levels before it
    * sows*: it carries Água from a pool to dry Terra to make Barro, grades
    * the furrow ahead flat, and only then plants Trigo on it — Trigo takes
    * only on level ground. A sown row grows and self-seeds into a field.
@@ -4213,7 +5847,7 @@ export class SimGrid {
     let carrying = creatureTimer(this.meta[i]) === 1;
     let fed = this.folkUpkeep(x, y, creatureFed(this.meta[i]));
     if (fed < 0) return;
-    if ((this.tick + y) % FOLK_ACT_INTERVAL !== 0) { // slow, deliberate labour
+    if (!this.folkActNow(x, y)) { // slow, deliberate labour (but act every tick to swim clear of water)
       this.meta[i] = packCreature(facing, carrying ? 1 : 0, fed);
       return;
     }
@@ -4221,18 +5855,45 @@ export class SimGrid {
 
     const below = this.inBounds(x, y + 1) ? this.get(x, y + 1) : MaterialId.Stone;
 
-    // Harvest a ripe wheat head it's touching, or a stray mature Planta/Flor.
+    // Raise a celeiro once the field's established and the village wants one —
+    // before working the field, so a farmer standing in a mature crop still
+    // gets round to putting up the storehouse.
+    if (!carrying && this.fieldWantsGranary() && (below === MaterialId.Dirt || below === MaterialId.Mud) &&
+      !this.nearStore(x, y, HOUSE_SPACING) && this.countNear(x, y, MaterialId.Water, 3) === 0) {
+      if (this.gradeStrip(x, y, HOUSE_PLANS[PLAN_GRANARY].span + 1)) {
+        this.meta[i] = packCreature(facing, 0, fed);
+        return;
+      }
+      if (Math.random() < MASON_FOUND_CHANCE && this.raiseStoreRight(x, y, PLAN_GRANARY)) {
+        this.meta[i] = packCreature(facing, 0, fed);
+        return;
+      }
+    }
+
+    // Harvest a ripe head it's standing beside — a slow job it works at over
+    // several turns. Hungry, it eats the head; otherwise, if there's a celeiro
+    // in reach and the field's already big enough, the grain goes into store.
+    let ripeAt: [number, number] | null = null;
     for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx;
-      const ny = y + dy;
+      const nx = x + dx, ny = y + dy;
       if (!this.inBounds(nx, ny)) continue;
       const ni = this.index(nx, ny);
       const nId = this.material[ni] as MaterialId;
-      const ripeWheat = nId === MaterialId.Wheat && this.meta[ni] >= WHEAT_RIPE;
-      if ((ripeWheat || FARMER_CROPS.includes(nId)) && Math.random() < FARMER_WORK_CHANCE * 0.15) {
-        this.set(nx, ny, MaterialId.Empty);
-        fed = CREATURE_FED_MAX;
-        break;
+      if ((nId === MaterialId.Wheat && this.meta[ni] >= WHEAT_RIPE) || FARMER_CROPS.includes(nId)) { ripeAt = [nx, ny]; break; }
+    }
+    if (ripeAt && !carrying) {
+      const hungry = fed <= FOLK_FORAGE_HUNGER;
+      // Once the field's got going, spare ripe heads go into the celeiro.
+      const store = hungry || this.cropCensus < 30 ? null : this.nearestStore(x, y, PLAN_GRANARY, STORE_REACH);
+      if (hungry || store) {
+        if (this.harvestReady(i, HARVEST_WORK)) {
+          if (hungry) { this.set(ripeAt[0], ripeAt[1], MaterialId.Empty); fed = CREATURE_FED_MAX; }
+          else if (store && this.stashInStore(store[0], store[1], PLAN_GRANARY, MaterialId.Wheat)) {
+            this.set(ripeAt[0], ripeAt[1], MaterialId.Empty);
+          }
+        }
+        this.meta[i] = packCreature(facing, 0, fed);
+        return; // stood at the work
       }
     }
 
@@ -4252,8 +5913,7 @@ export class SimGrid {
     } else if (!carrying && (below === MaterialId.Dirt || below === MaterialId.Mud)) {
       // Grade the furrow flat, then sow one shoot on it. Standing to grade is
       // the "level first" beat; Trigo only takes on level ground.
-      const graded = this.gradeStrip(x, y, WHEAT_FURROW + 1, false);
-      if (graded !== 0 && Math.random() < 0.7) {
+      if (this.gradeStrip(x, y, WHEAT_FURROW + 1) && Math.random() < 0.7) {
         this.meta[i] = packCreature(facing, 0, fed);
         return;
       }
@@ -4263,6 +5923,8 @@ export class SimGrid {
         this.get(f, y) === MaterialId.Empty &&
         (belowF === MaterialId.Dirt || belowF === MaterialId.Mud) &&
         this.groundLevel(x, y, WHEAT_FURROW) &&
+        this.fieldWantsMoreWheat() &&
+        !this.roofedOver(f, y) && !this.roofedOver(x, y) && // never sow indoors
         Math.random() < FARMER_WORK_CHANCE
       ) {
         this.set(f, y, MaterialId.Wheat, 0);
@@ -4270,69 +5932,197 @@ export class SimGrid {
     }
 
     if (wantDir === 0) {
+      // Carrying with no dry soil underfoot -> go find some. Empty-handed ->
+      // go find water. Otherwise there's nothing to travel to (soil is right
+      // here) and folkWalk keeps it working this patch.
       wantDir = carrying
-        ? this.folkScanDir(x, y, DRY_SOIL)
-        : this.folkScanDir(x, y, WATER_ONLY) || this.folkScanDir(x, y, DRY_SOIL);
+        ? (below === MaterialId.Dirt ? 0 : this.folkScanDir(x, y, DRY_SOIL))
+        : this.folkScanDir(x, y, WATER_ONLY);
     }
     this.folkWalk(x, y, i, facing, fed, carrying ? 1 : 0, wantDir);
   }
 
   /**
-   * Saqueador: the wrecker. Kills and eats a touching Formiga/Peixe or a
-   * member of the other three trades; smashes touching Madeira/Vidro and
-   * chips at Pedra; and sets fires — lighting a touching flammable, or
-   * dropping a flame into an empty cell beside it. Roams toward the nearest
-   * of any of that. Walks through its own fires (barely flammable) and only
-   * flees Lava.
+   * A working Pip that sees a Esqueleto close by drops what it's doing and
+   * backs off — it outpaces the undead, so running works. Returns the away
+   * direction (-1/1), or 0 if there's nothing to run from. The Guerreiro
+   * never calls this — it closes in.
    */
-  private stepRaider(x: number, y: number, i: number): void {
+  private fleeSkeletonDir(x: number, y: number): number {
+    const foe = this.nearestOf(x, y, SimGrid.SKELETON_ONLY, SKELETON_FLEE_RANGE);
+    if (!foe) return 0;
+    return foe[0] > 0 ? -1 : foe[0] < 0 ? 1 : (Math.random() < 0.5 ? 1 : -1);
+  }
+
+  /** Nearest cell of any id in `ids` within `range` of (x, y) — returns its [dx, dy] offset, or null. */
+  private nearestOf(x: number, y: number, ids: readonly MaterialId[], range: number): [number, number] | null {
+    let best: [number, number] | null = null;
+    let bestD = Infinity;
+    for (let dy = -range; dy <= range; dy++) {
+      const ny = y + dy;
+      if (ny < 0 || ny >= this.height) continue;
+      for (let dx = -range; dx <= range; dx++) {
+        const nx = x + dx;
+        if (nx < 0 || nx >= this.width) continue;
+        if ((dx === 0 && dy === 0) || !ids.includes(this.material[ny * this.width + nx] as MaterialId)) continue;
+        const d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; best = [dx, dy]; }
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Land `dmg` on whatever unit is at cell `i`, struck from (fromX, fromY).
+   * The cell flashes red; a survivor is knocked a step back, away from the
+   * blow. Returns true if it finished the target — a Esqueleto crumbles to
+   * nothing, a Pip falls.
+   */
+  private strike(i: number, dmg: number, fromX: number, fromY: number): boolean {
+    if (i < 0 || i >= this.hp.length) return false;
+    const raw = this.hp[i];
+    const cur = raw & HP_POINTS_MASK;
+    if (cur === 0) return false;
+    const x = i % this.width;
+    const y = (i / this.width) | 0;
+    this.hits.push({ x, y, life: HIT_FLASH_LIFE, maxLife: HIT_FLASH_LIFE });
+    if (cur <= dmg) {
+      this.set(x, y, MaterialId.Empty);
+      return true;
+    }
+    this.hp[i] = (raw & HP_EMPOWERED) | (cur - dmg);
+    // Recoil: often shove the victim a step back, away from the blow, if the
+    // cell that way is clear. Not every time — a fight should still be a fight,
+    // not two units pinballing apart on every hit.
+    if (Math.random() < 0.55) {
+      const kx = Math.sign(x - fromX) || (Math.random() < 0.5 ? 1 : -1);
+      if (this.inBounds(x + kx, y) && this.get(x + kx, y) === MaterialId.Empty) {
+        this.moveCreature(x, y, x + kx, y, packCreature(-kx, 0, creatureFed(this.meta[i])));
+      }
+    }
+    return false;
+  }
+
+  /**
+   * The attack clock for the fighter at cell `i`. Called once a turn while it's
+   * in a fight: ticks the cooldown down, and when it's run out (and the unit is
+   * `readyToHit`) resets it to ATTACK_PERIOD and returns true. A unit stood toe
+   * to toe lands about one blow a second; the cooldown rides along through a
+   * knockback since it lives in `workCd`, swapped with the unit.
+   */
+  private strikeClock(i: number, readyToHit: boolean): boolean {
+    if (this.workCd[i] > 0) { this.workCd[i]--; return false; }
+    if (!readyToHit) return false;
+    this.workCd[i] = ATTACK_PERIOD;
+    return true;
+  }
+
+  private static readonly SKELETON_ONLY: readonly MaterialId[] = [MaterialId.Skeleton];
+
+  /**
+   * Guerreiro: one of o povo, but it guards instead of building. It patrols
+   * among the houses; the moment a Esqueleto comes within WARRIOR_SIGHT it
+   * *charges* — it drops the unhurried folk pace and takes a step every tick
+   * to close the distance — and trades blows (one point a strike, about once
+   * a second). It carries 10 hit points to a working Pip's 5.
+   */
+  private stepWarrior(x: number, y: number, i: number): void {
     this.processed[i] = 1;
     const facing = creatureFacing(this.meta[i]);
-    const carrying = creatureTimer(this.meta[i]) === 1;
-    let fed = this.folkUpkeep(x, y, creatureFed(this.meta[i]));
-    if (fed < 0) return;
-    if ((this.tick + y) % FOLK_ACT_INTERVAL !== 0) { // as slow and deliberate as the rest
-      this.meta[i] = packCreature(facing, carrying ? 1 : 0, fed);
+    const fed = this.folkUpkeep(x, y, creatureFed(this.meta[i]));
+    if (fed < 0 || this.material[i] !== MaterialId.Warrior) return;
+
+    // Look for a fight first — a Guerreiro that's spotted a Esqueleto acts
+    // every tick (it's running), not on the slow labour cadence. The full
+    // WARRIOR_SIGHT sweep for spotting a threat from afar only runs on the
+    // ordinary cadence (see COMBAT_MELEE_CHECK); a fight already underway is
+    // always caught by the cheap short-range check every tick regardless.
+    const foe = this.nearestOf(x, y, SimGrid.SKELETON_ONLY, COMBAT_MELEE_CHECK) ||
+      (this.folkActNow(x, y) ? this.nearestOf(x, y, SimGrid.SKELETON_ONLY, WARRIOR_SIGHT) : null);
+    if (foe) {
+      const [fdx, fdy] = foe;
+      const nf = Math.sign(fdx) || facing;
+      const adj = Math.abs(fdx) <= 1 && Math.abs(fdy) <= 1;
+      if (this.strikeClock(i, adj)) {
+        const dmg = (this.hp[i] & HP_EMPOWERED) ? ATTACK_DAMAGE * 2 : ATTACK_DAMAGE;
+        this.strike(this.index(x + fdx, y + fdy), dmg, x, y);
+      }
+      if (adj) {
+        this.meta[i] = packCreature(nf, 0, fed);
+        return;
+      }
+      this.folkWalk(x, y, i, nf, fed, 0, nf); // charge, every tick
       return;
     }
 
-    const prey = this.adjacentOf(x, y, RAIDER_PREY);
-    if (prey.length > 0 && Math.random() < RAIDER_KILL_CHANCE) {
-      const [tx, ty] = prey[Math.floor(Math.random() * prey.length)];
-      this.set(tx, ty, MaterialId.Empty);
-      fed = CREATURE_FED_MAX;
+    // Nothing to fight: back to the unhurried pace.
+    if (!this.folkActNow(x, y)) {
+      this.meta[i] = packCreature(facing, 0, fed);
+      return;
     }
-
-    const wreck = this.adjacentOf(x, y, RAIDER_WRECKABLE);
-    if (wreck.length > 0 && Math.random() < RAIDER_WRECK_CHANCE) {
-      const [wx, wy] = wreck[Math.floor(Math.random() * wreck.length)];
-      const wId = this.get(wx, wy);
-      if (wId === MaterialId.Stone || wId === MaterialId.Metal) {
-        if (Math.random() < 0.35) this.set(wx, wy, MaterialId.Sand);
-      } else {
-        this.set(wx, wy, wId === MaterialId.Glass ? MaterialId.Sand : MaterialId.Empty);
-      }
-    }
-
-    if (Math.random() < RAIDER_ARSON_CHANCE) {
-      const flam: [number, number][] = [];
-      for (const [dx, dy] of NEIGHBORS_8) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (!this.inBounds(nx, ny)) continue;
-        const nDef = MATERIALS[this.get(nx, ny)];
-        if (nDef.flammable && nDef.category !== MaterialCategory.Creature) flam.push([nx, ny]);
-      }
-      if (flam.length > 0) {
-        const [fx, fy] = flam[Math.floor(Math.random() * flam.length)];
-        this.igniteAt(fx, fy);
-      } else {
-        const spot = this.randomEmptyNeighbor(x, y);
-        if (spot) this.set(spot[0], spot[1], MaterialId.Fire, 40);
-      }
-    }
-
-    const wantDir = this.folkScanDir(x, y, RAIDER_HUNT);
-    this.folkWalk(x, y, i, facing, fed, carrying ? 1 : 0, wantDir);
+    if (this.folkWeather(x, y, i, facing, fed, 0)) return;
+    const home = this.folkHomeDir(x, y, MaterialId.Warrior);
+    this.folkWalk(x, y, i, facing, fed, 0, home);
   }
+
+  /**
+   * Esqueleto: a slow undead that hunts o povo. It shambles toward the
+   * nearest Pip it can see and, toe to toe, strikes it once a second for one
+   * point. It has 5 hit points; a Guerreiro's blows, Fogo, Lava, Ácido or
+   * deep Água end it. It takes a turn only every SKELETON_ACT_INTERVAL ticks,
+   * so the folk outpace it.
+   */
+  private stepSkeleton(x: number, y: number, i: number): void {
+    this.processed[i] = 1;
+    const facing = creatureFacing(this.meta[i]);
+
+    // Lethal ground: Lava on contact, or dragged under deep water.
+    let waterBelow = false, waterAround = 0;
+    for (const [dx, dy] of NEIGHBORS_8) {
+      const nx = x + dx, ny = y + dy;
+      if (!this.inBounds(nx, ny)) continue;
+      const nId = this.material[this.index(nx, ny)] as MaterialId;
+      if (nId === MaterialId.Lava) { this.igniteAt(x, y); this.set(x, y, MaterialId.Empty); return; }
+      if (nId === MaterialId.Water) { waterAround++; if (dx === 0 && dy === 1) waterBelow = true; }
+    }
+    if (waterBelow && waterAround >= 6 && Math.random() < 0.14) {
+      this.set(x, y, MaterialId.Empty);
+      return;
+    }
+
+    // Slow and lurching — takes a turn only every SKELETON_ACT_INTERVAL ticks,
+    // so the folk always outpace it, but it acts every tick while it's actually
+    // toe to toe with a Pip so a single shove can't break off the fight. The
+    // cheap short-range check settles that every tick; the full SKELETON_SIGHT
+    // sweep for spotting a Pip from afar only runs on the ordinary cadence
+    // (see COMBAT_MELEE_CHECK) — anything adjacent is always inside it too,
+    // so a fight already underway never has to wait on the slow cadence.
+    const nearPrey = this.nearestOf(x, y, PIP_IDS, COMBAT_MELEE_CHECK);
+    const adjacentNow = nearPrey !== null && Math.abs(nearPrey[0]) <= 1 && Math.abs(nearPrey[1]) <= 1;
+    if (!adjacentNow && (this.tick + x) % SKELETON_ACT_INTERVAL !== 0) {
+      this.meta[i] = packCreature(facing, 0, CREATURE_FED_MAX);
+      return;
+    }
+    const prey = adjacentNow ? nearPrey : this.nearestOf(x, y, PIP_IDS, SKELETON_SIGHT);
+    let wantDir = 0;
+    if (prey) {
+      const [pdx, pdy] = prey;
+      wantDir = Math.sign(pdx) || facing;
+      const adj = Math.abs(pdx) <= 1 && Math.abs(pdy) <= 1;
+      if (this.strikeClock(i, adj)) {
+        const dmg = (this.hp[i] & HP_EMPOWERED) ? ATTACK_DAMAGE * 2 : ATTACK_DAMAGE;
+        this.strike(this.index(x + pdx, y + pdy), dmg, x, y);
+      }
+      if (adj) {
+        this.meta[i] = packCreature(wantDir, 0, CREATURE_FED_MAX);
+        return;
+      }
+    } else if (Math.random() < SKELETON_WANDER_CHANCE) {
+      wantDir = Math.random() < 0.5 ? -facing : facing;
+    }
+    // Reuse the folk surface walk (well fed, so it never forages) — it climbs,
+    // steps down, and phases through house walls to get at the folk inside.
+    this.folkWalk(x, y, i, wantDir || facing, CREATURE_FED_MAX, 0, wantDir);
+  }
+
 }

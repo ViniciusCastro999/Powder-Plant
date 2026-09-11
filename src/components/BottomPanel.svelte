@@ -41,9 +41,10 @@
     [MaterialId.Fish]: "fish",
     [MaterialId.Magic]: "magic",
     [MaterialId.Mason]: "mason",
-    [MaterialId.Firefighter]: "firefighter",
+    [MaterialId.Lumberjack]: "lumberjack",
     [MaterialId.Farmer]: "farmer",
-    [MaterialId.Raider]: "raider",
+    [MaterialId.Warrior]: "warrior",
+    [MaterialId.Skeleton]: "skeleton",
     [MaterialId.Brick]: "brick",
     // Sprout and Flor only ever appear by germinating from a Semente —
     // neither has a palette button, but the type still needs an entry for
@@ -51,6 +52,9 @@
     [MaterialId.Wheat]: "wheat",
     [MaterialId.Sprout]: "plant",
     [MaterialId.Flor]: "plant",
+    [MaterialId.Lever]: "lever",
+    [MaterialId.Wire]: "wire",
+    [MaterialId.Door]: "door",
   };
 
   const SHAPES: { id: BrushShape; icon: string; labelKey: keyof UIStrings }[] = [
@@ -65,6 +69,7 @@
     brushSize: number;
     brushShape: BrushShape;
     paused: boolean;
+    gravityOn: boolean;
     pixelCount: number;
     temperature: number;
     onclear: () => void;
@@ -76,6 +81,7 @@
     brushSize = $bindable(),
     brushShape = $bindable(),
     paused = $bindable(),
+    gravityOn = $bindable(),
     pixelCount,
     temperature,
     onclear,
@@ -90,8 +96,27 @@
   let expandedCategory = $state(categoryOf(selected));
   const expandedMaterials = $derived(PALETTE_CATEGORIES.find((c) => c.id === expandedCategory)?.materials ?? []);
 
+  // The three tools (erase / drag / gravity) and painting a material are all
+  // one "what does a click do" choice — picking one drops the others, so the
+  // eraser and the drag brush can never both look active at once.
+  let lastMaterial = $state(selected === MaterialId.Empty ? MaterialId.Sand : selected);
+
   function pick(id: MaterialId): void {
     selected = id;
+    if (id !== MaterialId.Empty) {
+      lastMaterial = id;
+      if (brushShape === BrushShape.Drag) brushShape = BrushShape.Point;
+    }
+  }
+
+  function selectErase(): void {
+    selected = MaterialId.Empty;
+    if (brushShape === BrushShape.Drag) brushShape = BrushShape.Point;
+  }
+
+  function selectDrag(): void {
+    brushShape = BrushShape.Drag;
+    if (selected === MaterialId.Empty) selected = lastMaterial;
   }
 
   function swatchStyle(id: MaterialId): string {
@@ -156,10 +181,6 @@
           {categoryLabel(cat.id)}
         </button>
       {/each}
-      <button class="category-tab eraser-tab" class:active={selected === MaterialId.Empty} onclick={() => pick(MaterialId.Empty)}>
-        <Icon name="eraser" size={13} />
-        {t("erase")}
-      </button>
     </div>
     <div class="material-grid">
       {#each expandedMaterials as id (id)}
@@ -173,17 +194,22 @@
     </div>
   </div>
 
-  <div class="controls-col">
-    <div class="shape-list">
-      {#each SHAPES as shape (shape.id)}
-        <button class="shape" class:active={brushShape === shape.id} onclick={() => (brushShape = shape.id)} title={t(shape.labelKey)} aria-label={t(shape.labelKey)}>
-          <Icon name={shape.icon} size={16} />
-        </button>
-      {/each}
-    </div>
-    <div class="brush-size">
-      <input type="range" min="1" max="10" step="1" bind:value={brushSize} />
-      <span class="size-value">{brushSize}px</span>
+  <!-- Ferramentas — apagar, arrastar, gravidade, e as ações do app. Sempre aqui,
+       entre os elementos e os pincéis. -->
+  <div class="tools-col">
+    <div class="tools" role="group" aria-label={t("tools")}>
+      <button class="tool" class:active={selected === MaterialId.Empty} onclick={selectErase}>
+        <Icon name="eraser" size={15} />
+        <span>{t("erase")}</span>
+      </button>
+      <button class="tool" class:active={brushShape === BrushShape.Drag} onclick={selectDrag}>
+        <Icon name="drag" size={15} />
+        <span>{t("shapeDrag")}</span>
+      </button>
+      <button class="tool" class:active={!gravityOn} onclick={() => (gravityOn = !gravityOn)} aria-pressed={!gravityOn}>
+        <Icon name={gravityOn ? "gravity" : "gravity-off"} size={15} />
+        <span>{t("gravity")}</span>
+      </button>
     </div>
     <div class="button-row">
       <button
@@ -194,17 +220,32 @@
         aria-label={paused ? t("play") : t("pause")}
         aria-pressed={paused}
       >
-        <Icon name={paused ? "play" : "pause"} size={16} />
+        <Icon name={paused ? "play" : "pause"} size={15} />
       </button>
       <button class="icon-btn" onclick={onhints} title={t("hints")} aria-label={t("hints")}>
-        <Icon name="help" size={16} />
+        <Icon name="help" size={15} />
       </button>
       <button class="icon-btn" onclick={onmaps} title={t("maps")} aria-label={t("maps")}>
-        <Icon name="save" size={16} />
+        <Icon name="save" size={15} />
       </button>
       <button class="icon-btn danger" onclick={onclear} title={t("clearAll")} aria-label={t("clearAll")}>
-        <Icon name="trash" size={16} />
+        <Icon name="trash" size={15} />
       </button>
+    </div>
+  </div>
+
+  <!-- Pincéis — formato e tamanho. -->
+  <div class="brush-col">
+    <div class="shape-list">
+      {#each SHAPES as shape (shape.id)}
+        <button class="shape" class:active={brushShape === shape.id} onclick={() => (brushShape = shape.id)} title={t(shape.labelKey)} aria-label={t(shape.labelKey)}>
+          <Icon name={shape.icon} size={15} />
+        </button>
+      {/each}
+    </div>
+    <div class="brush-size">
+      <input type="range" min="1" max="10" step="1" bind:value={brushSize} aria-label="brush size" />
+      <span class="size-value">{brushSize}</span>
     </div>
   </div>
 </footer>
@@ -328,21 +369,14 @@
     color: #fff;
   }
 
-  .eraser-tab {
-    margin-left: auto;
-  }
-
-  .eraser-tab.active {
-    background: rgba(255, 99, 71, 0.18);
-    border-color: rgba(255, 99, 71, 0.45);
-    color: #fff;
-  }
-
   .material-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(66px, 1fr));
     gap: 6px;
     min-width: 0;
+    max-height: 128px;
+    overflow-y: auto;
+    align-content: start;
   }
 
   .tile {
@@ -392,29 +426,75 @@
     max-width: 100%;
   }
 
-  .controls-col {
+  .tools-col {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+    flex: none;
+    width: 176px;
+    padding-left: 16px;
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .brush-col {
     display: flex;
     flex-direction: column;
     justify-content: center;
     gap: 10px;
     flex: none;
-    width: 190px;
+    width: 148px;
     padding-left: 16px;
     border-left: 1px solid rgba(255, 255, 255, 0.08);
   }
 
+  .tools {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+
+  .tool {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 7px 2px;
+    border-radius: 9px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 9.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  }
+
+  .tool:hover {
+    background: rgba(255, 255, 255, 0.09);
+    color: #fff;
+  }
+
+  .tool.active {
+    background: rgba(106, 160, 255, 0.2);
+    border-color: rgba(106, 160, 255, 0.5);
+    color: #fff;
+  }
+
   .shape-list {
     display: flex;
-    gap: 6px;
+    gap: 5px;
+    justify-content: space-between;
   }
 
   .shape {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
-    height: 34px;
-    border-radius: 9px;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     background: rgba(255, 255, 255, 0.04);
     color: rgba(255, 255, 255, 0.7);
@@ -435,19 +515,20 @@
   .brush-size {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
   }
 
   .brush-size input[type="range"] {
     flex: 1;
+    min-width: 0;
     accent-color: #6aa0ff;
   }
 
   .size-value {
-    font-size: 11.5px;
+    font-size: 11px;
     color: rgba(255, 255, 255, 0.55);
     font-variant-numeric: tabular-nums;
-    width: 30px;
+    width: 16px;
     text-align: right;
   }
 
@@ -462,8 +543,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 34px;
-    border-radius: 9px;
+    height: 32px;
+    border-radius: 8px;
     border: 1px solid rgba(255, 255, 255, 0.12);
     background: rgba(255, 255, 255, 0.05);
     color: rgba(255, 255, 255, 0.82);

@@ -48,16 +48,24 @@ spontaneous combustion, freezing, boiling and plant growth.
   to hunt ants and surfacing fish, and scatter seeds; **Fish** school and dive deep
   from a hovering bird. They feed, breed and thin out when the food runs low.
 - **Pip**: little upright figures, not dots, each working a trade and heading
-  straight for the nearest job rather than milling about. The **Mason** quarries
-  loose earth from a hillside, levels the ground, then raises a whole house at
-  once. Six shapes and sizes, with peaked, hipped, mono-pitch or battlemented
-  roofs, lit windows and a chimney (brick, timber or ice, by what's nearby). It
-  keeps houses patched when a Raider or a blast knocks a hole in one; the folk
-  shelter inside, up to each house's capacity, when the climate turns hostile.
-  The **Firefighter** fetches water and douses flames. The **Farmer** grades a
-  furrow and sows **wheat**, the village's staple crop that every hungry Pip heads
-  for. The **Raider** torches, smashes and hunts everything else. Set a Raider
-  loose and watch the other three answer it.
+  straight for the nearest job rather than milling about. The **Builder** levels a
+  patch of ground and raises a whole house on it at once (the frame is conjured,
+  so hillsides and beaches stay whole). Six shapes and sizes, with peaked, hipped,
+  mono-pitch or battlemented roofs, lit windows and a chimney (brick, timber or
+  ice, by what's nearby). It keeps houses patched when a fire or a blast knocks a
+  hole in one; the folk walk straight through house walls and shelter inside, up
+  to each house's capacity, when the climate turns hostile. Once the village has
+  a woodpile it also decks a real-shaped timber bridge across water in its way:
+  a short ramp off each bank, then one dead-level span, a touch above the water.
+  The **Lumberjack** sows a seed on open soil, *leaves it to grow*, and fells the
+  mature tree into a block of timber, the woodpile a Builder needs before it will
+  bridge. The **Farmer** grades a furrow and sows **wheat**, the village's staple
+  crop that every hungry Pip heads for. The **Warrior** guards the village, sword
+  in one hand and shield in the other: it charges any **Skeleton** it sees and
+  trades blows (one point a strike, about once a second; a working Pip has 5 hit
+  points, a Warrior 10, a Skeleton 5). A Skeleton hunts the folk; it's slower
+  than they are, so a working Pip backs away when one gets close. **Magic**
+  landing on a Warrior or Skeleton empowers it: twice the size, twice the bite.
 - **Painting Pip** drops one figure per click, whatever the brush size, so a
   crowd is something you place deliberately rather than flood the map with.
 - **Magic**: a drifting mote that transmutes its surroundings toward life and
@@ -122,8 +130,8 @@ npm run check     # Svelte + TypeScript type-check
 | Heat | Fire · Lava · Heat |
 | Cold | Ice · Cold |
 | Explosives | Gunpowder · C4 · Gas |
-| Creatures | Ant · Bird · Fish |
-| Pip | Mason · Firefighter · Farmer · Raider |
+| Creatures | Ant · Bird · Fish · Skeleton |
+| Pip | Builder · Lumberjack · Farmer · Warrior |
 | Special | Electricity · Clone · Magic |
 
 Some materials only appear as reactions: **Sprout** and **Flower** (from
@@ -162,5 +170,5 @@ The core is [src/sim/grid.ts](src/sim/grid.ts): the grid stores `material` and
 `meta` (one byte per cell) in flat `Uint8Array`s, and `step()` walks the grid
 bottom-to-top each frame applying movement (powders, liquids, gases), fire, acid,
 electricity (pulses), explosions (impulse + flying debris), creature behaviour
-(ants, birds, fish; and the Pips. Mason, firefighter, farmer, raider), magic transmutation, Conway's Game of Life (the "Vida"
+(ants, birds, fish, skeletons; and the Pips: builder, lumberjack, farmer, warrior), magic transmutation, Conway's Game of Life (the "Vida"
 material) and the ambient-temperature effects.

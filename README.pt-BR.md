@@ -50,16 +50,25 @@ plantas.
   na superfície, além de espalhar sementes; **Peixes** formam cardumes e mergulham
   fundo fugindo do pássaro. Comem, se reproduzem e diminuem quando falta comida.
 - **Pip**: figurinhas em pé, não pontos, cada uma com um ofício e indo direto pro
-  serviço mais próximo em vez de ficar andando à toa. O **Pedreiro** extrai terra
-  de uma encosta, aplaina o chão e então levanta uma casa inteira de uma vez.
-  Seis formas e tamanhos, com telhados de duas águas, tacaniço, de uma água ou
-  ameado, janelas acesas e chaminé (tijolo, madeira ou gelo, conforme o que há
-  por perto). Ele faz manutenção quando um Saqueador ou explosão abre um buraco;
-  o povo se abriga dentro, até a lotação de cada casa, quando o clima fica
-  hostil. O **Bombeiro** busca água e apaga o fogo. O **Fazendeiro** aplaina um
-  sulco e semeia **trigo**, o sustento da vila, pro qual todo Pip com fome vai. O
-  **Saqueador** incendeia, quebra tudo e caça o resto. Solte um Saqueador e veja
-  os outros três responderem.
+  serviço mais próximo em vez de ficar andando à toa. O **Construtor** aplaina um
+  trecho de chão e levanta uma casa inteira de uma vez sobre ele (a estrutura é
+  conjurada, então encostas e praias ficam intactas). Seis formas e tamanhos, com
+  telhados de duas águas, tacaniço, de uma água ou ameado, janelas acesas e
+  chaminé (tijolo, madeira ou gelo, conforme o que há por perto). Ele faz
+  manutenção quando um fogo ou explosão abre um buraco; o povo atravessa as
+  paredes das casas e se abriga dentro, até a lotação de cada uma, quando o
+  clima fica hostil. Quando a vila tem um monte de madeira, ele também assoalha
+  uma ponte de verdade sobre a água no caminho: uma rampinha em cada margem e um
+  vão reto e nivelado no meio, logo acima da água. O **Lenhador** semeia uma
+  semente em solo aberto, *deixa ela crescer*, e só então derruba a árvore madura
+  num bloco de madeira, o monte que o Construtor precisa antes de fazer ponte. O
+  **Fazendeiro** aplaina um sulco e semeia **trigo**, o sustento da vila, pro
+  qual todo Pip com fome vai. O **Guerreiro** guarda a vila, espada numa mão e
+  escudo na outra: parte pra cima de qualquer **Esqueleto** que vê e troca golpes
+  (um ponto por ataque, mais ou menos uma vez por segundo; um Pip comum tem 5 de
+  vida, um Guerreiro 10, um Esqueleto 5). O Esqueleto caça o povo; é mais lento
+  que eles, então um Pip trabalhando se afasta quando um chega perto. **Magia**
+  em cima de um Guerreiro ou Esqueleto o fortalece: o dobro do tamanho e do dano.
 - **Pintar Pip** solta uma figura por clique, seja qual for o tamanho do pincel,
   então uma multidão é algo que você posiciona de propósito, não que inunda o mapa.
 - **Magia**: uma centelha que vagueia transmutando o entorno rumo à vida e à
@@ -126,8 +135,8 @@ npm run check     # type-check do Svelte + TypeScript
 | Calor | Fogo · Lava · Calor |
 | Frio | Gelo · Frio |
 | Explosivos | Pólvora · C4 · Gás |
-| Criaturas | Formiga · Pássaro · Peixe |
-| Pip | Pedreiro · Bombeiro · Fazendeiro · Saqueador |
+| Criaturas | Formiga · Pássaro · Peixe · Esqueleto |
+| Pip | Construtor · Lenhador · Fazendeiro · Guerreiro |
 | Especiais | Eletricidade · Clone · Magia |
 
 Alguns materiais só aparecem como reação: **Broto** e **Flor** (de sementes que

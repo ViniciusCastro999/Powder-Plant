@@ -21,6 +21,7 @@
   let hintsOpen = $state(false);
   let mapsOpen = $state(false);
   let paused = $state(false);
+  let gravityOn = $state(true);
   let canvasRef: ReturnType<typeof Canvas> | undefined;
 
   // Spacebar toggles pause/play — the usual shortcut for it — but not while
@@ -45,6 +46,7 @@
         {brushSize}
         {brushShape}
         {paused}
+        {gravityOn}
         onCount={(n) => (pixelCount = n)}
         onTemperature={(c) => (temperature = c)}
       />
@@ -56,6 +58,7 @@
     bind:brushSize
     bind:brushShape
     bind:paused
+    bind:gravityOn
     {pixelCount}
     {temperature}
     onclear={() => canvasRef?.clear()}

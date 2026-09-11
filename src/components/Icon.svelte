@@ -73,6 +73,17 @@
     <path d="M5 5 H19 V19 H5 Z" />
   {:else if name === "circle"}
     <circle cx="12" cy="12" r="7.2" />
+  {:else if name === "drag"}
+    <path d="M12 3 V21 M3 12 H21" />
+    <path d="M9 6 L12 3 L15 6 M9 18 L12 21 L15 18 M6 9 L3 12 L6 15 M18 9 L21 12 L18 15" stroke-width="1.2" />
+  {:else if name === "gravity"}
+    <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" />
+    <ellipse cx="12" cy="12" rx="9" ry="4.4" transform="rotate(-28 12 12)" opacity="0.8" />
+    <circle cx="19.2" cy="7.6" r="1.7" fill="currentColor" stroke="none" />
+  {:else if name === "gravity-off"}
+    <circle cx="12" cy="12" r="3" />
+    <ellipse cx="12" cy="12" rx="9" ry="4.4" transform="rotate(-28 12 12)" opacity="0.4" />
+    <path d="M4 20 L20 4" stroke-width="1.7" />
   {:else if name === "lava"}
     <path d="M12 3 C8 8 5 12.5 5 15.5 A7 7 0 0 0 19 15.5 C19 12.5 16 8 12 3 Z" fill="currentColor" fill-opacity="0.25" />
     <path d="M9 15.5 A3 3 0 0 0 12 18.5 A3 3 0 0 0 15 15.5 C15 14 13.5 13.5 12 15 C11 12.5 13 11.5 12 9.5 C10 12 9 13.5 9 15.5 Z" fill="currentColor" stroke="none" />
@@ -169,20 +180,37 @@
     <circle cx="10" cy="5" r="2.2" />
     <path d="M10 7.2 V14 M10 9 L6.5 12 M10 14 L7 20 M10 14 L13 20" />
     <path d="M13 8 L20 8 M18 8 V4 L21 4" stroke-width="1.4" />
-  {:else if name === "firefighter"}
-    <circle cx="10" cy="5" r="2.2" />
-    <path d="M10 7.2 V14 M10 9 L6.5 12 M10 14 L7 20 M10 14 L13 20" />
-    <path d="M14.5 8 C13.5 9.6 12.8 10.6 12.8 11.8 A1.8 1.8 0 0 0 16.2 11.8 C16.2 10.8 15.5 10.4 15.5 11.1 C15.5 9.6 15 9.2 14.5 8 Z" fill="currentColor" stroke="none" />
+  {:else if name === "lumberjack"}
+    <circle cx="9" cy="5" r="2.2" />
+    <path d="M9 7.2 V14 M9 9 L6 11 M9 14 L6.5 20 M9 14 L12 20" />
+    <path d="M12.5 20 L17 5" stroke-width="1.4" />
+    <path d="M15.5 5 C18.2 4 20 6 19.2 8.6 L15 7.5 Z" fill="currentColor" stroke="none" />
   {:else if name === "farmer"}
     <circle cx="10" cy="5" r="2.2" />
     <path d="M10 7.2 V14 M10 9 L6.5 12 M10 14 L7 20 M10 14 L13 20" />
     <path d="M15 20 V11 M15 11 C15 11 12.5 11 12 8 C14 7.5 15 9 15 11 Z M15 12 C15 12 17.5 12 18 9 C16 8.5 15 10 15 12 Z" stroke-width="1.3" />
-  {:else if name === "raider"}
+  {:else if name === "warrior"}
     <circle cx="10" cy="5" r="2.2" />
-    <path d="M10 7.2 V14 M10 9 L6 11 M10 14 L7 20 M10 14 L13 20" />
-    <path d="M13.5 13 L20 6 M20 6 L18.6 6.2 M20 6 L19.8 7.4 M15 8 L13 6" stroke-width="1.4" />
+    <path d="M10 7.2 V14 M10 14 L7 20 M10 14 L13 20" />
+    <path d="M6 8 C4.5 8 4 10 4 11.5 C4 13.5 5 15 6.5 15.5 C8 15 9 13.5 9 11.5 C9 10 8.5 8 7 8 Z" stroke-width="1.2" />
+    <path d="M14 15 L18 4 M12.5 6.5 H17 M18 3 V6" stroke-width="1.4" />
+  {:else if name === "skeleton"}
+    <circle cx="12" cy="5.5" r="2.6" />
+    <path d="M10.7 5 h0.01 M13.3 5 h0.01" stroke-width="1.6" />
+    <path d="M12 8 V16 M12 10 H8.5 M12 10 H15.5 M12 12.5 H9 M12 12.5 H15 M12 16 L9 21 M12 16 L15 21" />
   {:else if name === "brick"}
     <path d="M3 6 H21 M3 12 H21 M3 18 H21 M3 6 V18 M21 6 V18" />
     <path d="M12 6 V12 M7 12 V18 M17 12 V18 M9 6 V6" stroke-width="1.4" />
+  {:else if name === "lever"}
+    <path d="M5 19 H19" />
+    <path d="M12 19 V7" />
+    <circle cx="12" cy="6" r="2.2" fill="currentColor" stroke="none" />
+  {:else if name === "wire"}
+    <path d="M3 12 H7 L9 7 L13 17 L15 12 H21" />
+    <circle cx="3" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="21" cy="12" r="1.4" fill="currentColor" stroke="none" />
+  {:else if name === "door"}
+    <path d="M6 21 V4 A2 2 0 0 1 8 2 H16 A2 2 0 0 1 18 4 V21 Z" />
+    <circle cx="14.5" cy="12.5" r="1" fill="currentColor" stroke="none" />
   {/if}
 </svg>

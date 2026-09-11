@@ -79,20 +79,23 @@ export const enum MaterialId {
   Magic = 32,
   /**
    * One of "o povo" — little upright folk that walk surfaces like a Formiga
-   * but each carry out a trade. The Pedreiro gathers loose Areia/Terra/Barro
-   * and, on a clear patch of ground, *builds a house* — walls and a roof,
-   * with a doorway — choosing the material from what's abundant nearby
-   * (loose earth → Tijolo, a forest → a Madeira cabin, a glacier → an Gelo
-   * hut). The folk shelter in those houses when the climate turns against
-   * them. See grid.ts stepMason.
+   * but each carry out a trade. The Construtor levels a clear patch of ground
+   * and *conjures a whole house* on it — walls and a roof with a doorway,
+   * the wall material by what's abundant nearby (loose earth → Tijolo, a
+   * forest → a Madeira cabin, a glacier → a Gelo hut) — founding one only
+   * until there's a house per Pip. It also decks a raised Madeira bridge
+   * across a river in its way. The folk shelter in the houses (walking
+   * straight through the walls) when the climate turns. See grid.ts stepMason.
    */
   Mason = 33,
   /**
-   * People-folk: the Bombeiro runs toward Fogo, scoops Água when it passes
-   * some, and throws it to douse flames (smothering them bare-handed too,
-   * more slowly and at some risk). Flees Lava. See grid.ts stepFirefighter.
+   * People-folk: the Lenhador sows a Semente onto bare soil to start a tree
+   * and then *leaves it to grow*. Only once a sapling has filled out into a
+   * proper tree does it fell it — one low block of Madeira per trunk — and it
+   * stops felling once the woodlot's stocked. The stacked timber is what the
+   * Construtor needs before it will bridge a river. See grid.ts stepLumberjack.
    */
-  Firefighter = 34,
+  Lumberjack = 34,
   /**
    * People-folk: the Plantador sows Semente into soil, carries Água to dry
    * Terra to make Barro, and harvests mature growth — turning barren ground
@@ -100,14 +103,15 @@ export const enum MaterialId {
    */
   Farmer = 35,
   /**
-   * People-folk gone wrong: the Saqueador sets fires, smashes Madeira/Vidro/
-   * Tijolo and chips at Pedra, and hunts Formigas, Peixes and the other
-   * folk. The chaos agent the Bombeiro and Pedreiro exist to answer. See
-   * grid.ts stepRaider.
+   * People-folk: the Guerreiro guards the village. It patrols among the
+   * houses, and when a Esqueleto comes within sight it closes on it and
+   * trades blows — sword in its facing hand, shield in the other. Tougher
+   * than the working folk (10 hit points to their 5), it deals one point a
+   * strike, about once a second. See grid.ts stepWarrior.
    */
-  Raider = 36,
+  Warrior = 36,
   /**
-   * Fired masonry — a sturdy, inert Solid the Pedreiro produces (and the
+   * Fired masonry — a sturdy, inert Solid the Construtor produces (and the
    * player can paint). A `meta` of HOUSE_ANCHOR_META marks one brick as a
    * house's doorway-sill origin, the reference every other brick of that
    * house's blueprint is placed against, and the point folk walk to when
@@ -124,6 +128,38 @@ export const enum MaterialId {
    * frost. See grid.ts stepWheat / stepFarmer.
    */
   Wheat = 38,
+  /**
+   * A shambling undead that hunts o povo. Slower than the folk, it makes for
+   * the nearest Pip it can see and strikes it for one point about once a
+   * second (a working Pip has 5 hit points, a Guerreiro 10). It has 5 of its
+   * own, and a Guerreiro's blows — or Fogo, Lava, Ácido, deep Água — put it
+   * down. See grid.ts stepSkeleton.
+   */
+  Skeleton = 39,
+  /**
+   * A static switch, always placed one at a time regardless of brush size
+   * (see SINGLE_DROP_MATERIALS) — right-clicking an existing Alavanca flips
+   * it on/off (its `meta` low bit); it starts off. On, it feeds power
+   * straight into a touching Fio or Porta, exactly like a powered wire — no
+   * wire needed for something it's already touching. See grid.ts
+   * toggleLever / circuitPowered.
+   */
+  Lever = 40,
+  /**
+   * A conductor: powered the tick after any neighbor is powered (an on
+   * Alavanca, or another powered Fio), unpowered the very next tick once
+   * nothing feeds it any more — no lingering charge. Purely a carrier; it
+   * has no effect on its own; see grid.ts circuitPowered.
+   */
+  Wire = 41,
+  /**
+   * A Solid wall that goes intangible to folk and creatures — walked
+   * through exactly like a house wall — for as long as it's powered by a
+   * touching Alavanca or Fio, and lights a shade brighter while it is. It
+   * doesn't animate open; the color shift and the change in what can pass
+   * through it are the only tells. See grid.ts circuitPowered / isGhost.
+   */
+  Door = 42,
 }
 
 export const enum BrushShape {
@@ -131,6 +167,18 @@ export const enum BrushShape {
   Line = "line",
   Square = "square",
   Circle = "circle",
+  /** Hold and drag a clump of non-solid matter (powder, liquid, gas, plants, creatures) from one place to another. */
+  Drag = "drag",
+}
+
+/** A clump of cells lifted off the grid by the drag tool, mid-move. See SimGrid.pickUpBlob. */
+export interface DragBlob {
+  cells: { dx: number; dy: number; mat: MaterialId; meta: number }[];
+  /** Grid anchor the cells are currently placed around. */
+  ax: number;
+  ay: number;
+  /** The exact grid indices the blob currently occupies, so a move clears precisely those. */
+  placed: number[];
 }
 
 export const enum MaterialCategory {
