@@ -18,6 +18,11 @@ const WHEAT_RIPE = 120;
 const CIRCUIT_ON_META = 0x01;
 /** Marks an Alavanca cell as the handle/knob rather than the base plate — kept in sync with LEVER_ARM_META in grid.ts. */
 const LEVER_ARM_META = 0x02;
+/** Marks a Bloco de Calor/Frio as wired into a circuit at all — kept in sync with CIRCUIT_LINKED_META in grid.ts. Same bit value as LEVER_ARM_META but never the same cell, so no clash. */
+const CIRCUIT_LINKED_META = 0x02;
+/** Clone's locked-material id lives in the low 6 bits, wired/on state in the top two — kept in sync with CLONE_LINKED_META/CLONE_ON_META in grid.ts. */
+const CLONE_LINKED_META = 0x40;
+const CLONE_ON_META = 0x80;
 /** Meta bits a mason stamps on a house cell — kept in sync with grid.ts. Used to style walls, light windows, cap chimneys and shade the room inside. */
 const HOUSE_WALL_META = 0x40;
 const HOUSE_ANCHOR_META = 0x80;
@@ -26,6 +31,10 @@ const HOUSE_WALL = 0;
 const HOUSE_WINDOW = 2;
 const HOUSE_CHIMNEY = 3;
 const HOUSE_FLOOR = 4;
+/** A mason-laid bridge plank — its own kind (not HOUSE_FLOOR) in grid.ts so deckNear can't mistake an ordinary house/storehouse floor tile for a finished crossing, but it renders exactly like one — see grid.ts's HOUSE_DECK. */
+const HOUSE_DECK = 5;
+/** A mason-laid staircase tread — same idea as HOUSE_DECK, its own kind so stairNear can't mistake a floor or bridge plank for a finished climb, but it renders exactly like one too — see grid.ts's HOUSE_STAIR. */
+const HOUSE_STAIR = 6;
 /** Warm, dim tone an empty cell enclosed by a house is tinted toward, so a house reads as a room with an inside rather than a hollow outline. */
 const HOUSE_INTERIOR: readonly [number, number, number] = [58, 44, 38];
 /** Cool glaze the transparent body of Vidro is tinted toward, over whatever ambient background shows through it. */
@@ -442,8 +451,12 @@ export class PixiStage {
           // Soot-darkened masonry, darkest at the very top (the flue mouth).
           const cap = material[i - width] !== id ? -34 : -14;
           r += cap; g += cap; b += cap;
-        } else if (kind === HOUSE_FLOOR) {
+        } else if (kind === HOUSE_FLOOR || kind === HOUSE_DECK || kind === HOUSE_STAIR) {
           // Flagstone floor: darker than the walls, with a flag-joint fleck.
+          // A bridge plank or staircase tread is styled identically — each
+          // is a different kind internally (see grid.ts's HOUSE_DECK /
+          // HOUSE_STAIR) purely so deckNear/stairNear can tell them apart
+          // from a house floor, not because any of them looks different.
           const joint = (hash(i) % 5 === 0) ? -22 : -30;
           r += joint; g += joint; b += joint;
         } else {
@@ -470,6 +483,22 @@ export class PixiStage {
         // Doesn't animate open — this lighter cast is the only visual sign
         // it's currently passable.
         if ((meta[i] & CIRCUIT_ON_META) !== 0) { r += 70; g += 55; b += 45; }
+      } else if (id === MaterialId.HeatBlock || id === MaterialId.ColdBlock) {
+        // Standalone (never touched a Fio/Alavanca) it renders exactly as
+        // it always has — full-strength, no tell needed since it's simply
+        // always on. Wired up, it's dimmed dead while switched off and
+        // brightened while on, so a lever controlling it actually reads.
+        if ((meta[i] & CIRCUIT_LINKED_META) !== 0) {
+          if ((meta[i] & CIRCUIT_ON_META) !== 0) { r += 60; g += 60; b += 60; } else { r *= 0.35; g *= 0.35; b *= 0.35; }
+        }
+      } else if (id === MaterialId.Clone) {
+        // Same idea as Bloco de Calor/Frio: standalone (or not locked onto
+        // anything yet) it's the plain Clone color, no tell needed. Wired
+        // up and locked, it dims dead while switched off and brightens
+        // while on.
+        if ((meta[i] & CLONE_LINKED_META) !== 0) {
+          if ((meta[i] & CLONE_ON_META) !== 0) { r += 60; g += 60; b += 60; } else { r *= 0.35; g *= 0.35; b *= 0.35; }
+        }
       }
       // Liquids and moving creatures constantly swap cells, so grain keyed
       // on grid position (not particle identity) would flicker as they

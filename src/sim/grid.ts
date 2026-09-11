@@ -504,25 +504,45 @@ const COMBAT_MELEE_CHECK = 6;
 const CIRCUIT_ON_META = 0x01;
 /** Marks a stamped Alavanca cell as the knob rather than the housing frame — see LEVER_FRAME/LEVER_KNOB_* and PixiStage's Alavanca render, which shades the two apart so the fixture reads as an actual switch instead of a flat block. Independent of CIRCUIT_ON_META (bit 0). */
 const LEVER_ARM_META = 0x02;
+/** Marks a Bloco de Calor/Frio as wired into a circuit at all (touching a Fio/Alavanca) — see `stepCircuitBlock`. Only meaningful together with CIRCUIT_ON_META: unset entirely, the block is standalone and always active (its original behavior, and how the renderer leaves it alone); set, the render dims it dark when CIRCUIT_ON_META is also clear and lights it when both bits are set. */
+const CIRCUIT_LINKED_META = 0x02;
+/**
+ * Clone's `meta` already means something else — the locked material id
+ * (0 = not locked yet, the same value as MaterialId.Empty) — so it can't
+ * share CIRCUIT_ON_META/CIRCUIT_LINKED_META's low bits the way Fio/Porta/
+ * Bloco de Calor-Frio do without corrupting that lock (Areia is 1, Água is
+ * 2 — the exact bit values in use). Every MaterialId fits comfortably under
+ * 64, so the lock lives in the low 6 bits and the wired/on state moves up
+ * to the top two, same meaning as CIRCUIT_LINKED_META/CIRCUIT_ON_META
+ * elsewhere, just shifted clear of the material id.
+ */
+const CLONE_LOCK_MASK = 0x3f;
+const CLONE_LINKED_META = 0x40;
+const CLONE_ON_META = 0x80;
 /** Cap on how many connected Fio cells one circuitPowered trace visits — a perf budget for a pathological loop of wire, not a limit anyone wiring up a door will ever bump into. */
 const CIRCUIT_FLOOD_CAP = 4000;
 /**
- * A single click of Alavanca stamps a narrow housing (LEVER_FRAME, offsets
- * from its anchor at the top-left) with a knob sitting inside it — down at
- * LEVER_KNOB_OFF to start. Flipping it (`toggleLever`) doesn't just recolor:
- * the knob cell itself moves, to LEVER_KNOB_ON up top, an actual switch
- * thrown, not a paint job — so the housing has to be tall enough to hold
- * both slots with a gap between them.
+ * A single click of Alavanca stamps a housing (LEVER_FRAME, offsets from
+ * its anchor at the top-left) with a two-cell-wide knob sitting inside it
+ * — down at LEVER_KNOB_OFF to start, filling the housing's full interior
+ * width so it actually reads at this size instead of getting lost as one
+ * lone pixel. Flipping it (`toggleLever`) doesn't just recolor: the knob
+ * cells themselves move, to LEVER_KNOB_ON up top, an actual switch thrown,
+ * not a paint job. The top/bottom bars come in a cell narrower than the
+ * sides to round off the corners instead of a flat rectangle.
  */
 const LEVER_FRAME: readonly [number, number][] = [
-  [0, 0], [1, 0], [2, 0],
-  [0, 1], [2, 1],
-  [0, 2], [2, 2],
-  [0, 3], [2, 3],
-  [0, 4], [1, 4], [2, 4],
+  [1, 0], [2, 0],
+  [0, 1], [1, 1], [2, 1], [3, 1],
+  [0, 2], [3, 2],
+  [0, 3], [3, 3],
+  [0, 4], [3, 4],
+  [0, 5], [3, 5],
+  [0, 6], [1, 6], [2, 6], [3, 6],
+  [1, 7], [2, 7],
 ];
-const LEVER_KNOB_ON: readonly [number, number] = [1, 1];
-const LEVER_KNOB_OFF: readonly [number, number] = [1, 3];
+const LEVER_KNOB_ON: readonly [number, number][] = [[1, 2], [2, 2]];
+const LEVER_KNOB_OFF: readonly [number, number][] = [[1, 5], [2, 5]];
 /** Cap on how many connected Alavanca cells one toggleLever flip visits — a perf budget, well past the size of any lever fixture actually placed. */
 const LEVER_FLOOD_CAP = 64;
 /** Per-tick chance a Esqueleto with nothing in sight shuffles a step / turns. */
@@ -641,6 +661,17 @@ const HOUSE_ROOF = 1;
 const HOUSE_WINDOW = 2;
 const HOUSE_CHIMNEY = 3;
 const HOUSE_FLOOR = 4;
+/**
+ * A Construtor-laid bridge plank. Kept as its own kind rather than reusing
+ * HOUSE_FLOOR (a real house's floor tile) even though the two behave
+ * identically underfoot (see `isDeck`, which matches both) — `deckNear`
+ * needs to tell them apart, so a stray floor tile (a storehouse, a house
+ * whose plan happens to fall within range) can never be mistaken for an
+ * already-built bridge and silently veto a real crossing forever.
+ */
+const HOUSE_DECK = 5;
+/** A Construtor-laid staircase tread — same idea as HOUSE_DECK (its own kind so `stairNear` can't mistake an ordinary floor for a finished climb), but stepping diagonally upward instead of running level. See `stairScan`. */
+const HOUSE_STAIR = 6;
 const HOUSE_KIND_MASK = 0b111;
 type HouseCell = readonly [number, number, number]; // dx, dy, kind
 
@@ -762,6 +793,12 @@ const MASON_APPROACH_MAX = 48;
 const MASON_ARCH_MAX = 7;
 /** How deep a gap between two banks still counts as "water to bridge" — a deep gorge with a stream at the bottom still gets a span. */
 const MASON_SPAN_DROP = 40;
+/** Shortest clear rise a Construtor will bother building a staircase for — anything lower than this, a folk just steps or climbs it on its own (see folkWalk's wall-hauling), so a whole built structure would be overkill. */
+const STAIR_MIN_RISE = 6;
+/** Tallest ledge a Construtor will still climb toward — generous, so a proper multi-storey "vertical village" stays reachable. */
+const STAIR_MAX_RISE = 80;
+/** Radius (both directions) a Construtor checks for an existing staircase before starting a new one — one climb per ledge, same idea as `deckNear` for bridges. */
+const STAIR_NEAR_RANGE = 60;
 /** How far below its floor a house sinks a pier through any hollow or open water, so it always has solid footing. */
 const FOUNDATION_DEPTH = 5;
 /**
@@ -846,6 +883,10 @@ const TREE_CROWN_SHAPE: readonly (readonly [number, number])[] = [
   [-1, -3], [0, -3], [1, -3],
   [0, -4],
 ];
+/** How far sideways TREE_CROWN_SHAPE ever reaches from the trunk tip it's stamped around — the crown only ever lands cells actually in bounds (see stepSprout), so a tree whose tip ends up this close to the map's left/right edge stamps permanently short and can never fill out past LUMBERJACK_MIN_TREE. Used to keep a Lenhador from sowing a seed doomed to grow into one. */
+const TREE_CROWN_DX_MAX = Math.max(...TREE_CROWN_SHAPE.map(([dx]) => Math.abs(dx)));
+/** How far above the trunk tip TREE_CROWN_SHAPE reaches — combined with the bare-trunk climb (TREE_CROWN_START) below, the total headroom a tended tree needs above where it's sown. */
+const TREE_CROWN_DY_MAX = Math.max(...TREE_CROWN_SHAPE.map(([, dy]) => -dy));
 
 /**
  * Tiny stamped shapes a Semente becomes when it germinates on Barro — a
@@ -1070,6 +1111,10 @@ export class SimGrid {
   private circuitCache = new Map<number, boolean>();
   /** This tick's open/shut verdict for every Porta cell doorPowered has already traced, keyed by grid index — see doorPowered: a connected slab of Porta is one body, open if *any* cell of it is individually fed, not just the cells actually touching a Fio/Alavanca. Cleared at the top of every `step()`. */
   private doorCache = new Map<number, boolean>();
+  /** This tick's linked/active verdict for every locked Clone cell cloneCircuitState has already traced, keyed by grid index — see cloneCircuitState: a connected clump of Clone is one body, exactly like a Porta slab, not a grid of independent cells. Packs both booleans into one int (bit 0 = linked, bit 1 = active) to avoid an object per cell. Cleared at the top of every `step()`. */
+  private cloneCache = new Map<number, number>();
+  /** Same as `cloneCache`, but for connected clumps of Bloco de Calor/Frio (see bodyCircuitState) — HeatBlock and ColdBlock never share a cell so one cache safely serves both. Cleared at the top of every `step()`. */
+  private blockCache = new Map<number, number>();
   private tick = 0;
   /** Rolling census (refreshed every CENSUS_INTERVAL ticks) the trades use to cap themselves: houses to the head count, crops to the farmer count. */
   private houseCensus = 0;
@@ -1079,6 +1124,8 @@ export class SimGrid {
   private timberCensus = 0;
   private granaryCensus = 0;
   private woodshedCensus = 0;
+  /** Flips every plank any Construtor lays across the whole village — see the plank-laying site in stepMason, which only spends a real log on every *other* flip, halving what a bridge actually costs off the woodpile. A single shared counter (not one per mason/bridge) is enough: it doesn't matter which plank of which span skips the cost, only that on average half of them do. */
+  private bridgePlankFree = false;
 
   constructor(width: number, height: number) {
     this.width = width;
@@ -1453,11 +1500,14 @@ export class SimGrid {
           for (const [ox, oy] of LEVER_FRAME) {
             if (!this.inBounds(ax + ox, ay + oy) || this.get(ax + ox, ay + oy) !== MaterialId.Empty) { clear = false; break; }
           }
-          const [kox, koy] = LEVER_KNOB_OFF;
-          if (clear && (!this.inBounds(ax + kox, ay + koy) || this.get(ax + kox, ay + koy) !== MaterialId.Empty)) clear = false;
+          if (clear) {
+            for (const [kox, koy] of LEVER_KNOB_OFF) {
+              if (!this.inBounds(ax + kox, ay + koy) || this.get(ax + kox, ay + koy) !== MaterialId.Empty) { clear = false; break; }
+            }
+          }
           if (!clear) continue;
           for (const [ox, oy] of LEVER_FRAME) this.set(ax + ox, ay + oy, MaterialId.Lever, 0);
-          this.set(ax + kox, ay + koy, MaterialId.Lever, LEVER_ARM_META); // starts off
+          for (const [kox, koy] of LEVER_KNOB_OFF) this.set(ax + kox, ay + koy, MaterialId.Lever, LEVER_ARM_META); // starts off
           return;
         }
       }
@@ -1510,24 +1560,46 @@ export class SimGrid {
    * to LEVER_KNOB_ON (or back), and every housing cell physically touching
    * it updates its on/off bit to match, so the whole fixture (or however
    * many lone Alavancas happen to be stuck together) switches as one unit
-   * regardless of which cell the cursor landed on. A no-op anywhere else
-   * (empty ground, a different material, out of bounds).
+   * regardless of which cell the cursor landed on. If (x, y) itself isn't
+   * an Alavanca cell — LEVER_FRAME's rounded corners leave a couple of its
+   * own bounding-box cells empty, so a right-click smack on the anchor
+   * pixel a placement click just landed on can otherwise miss the fixture
+   * entirely — it nudges to the nearest Alavanca within 2 cells first. A
+   * no-op past that (empty ground, a different material, out of bounds) —
+   * returns whether it actually found and flipped one, so a caller (the
+   * right-click handler, which works no matter what tool is selected)
+   * knows whether to treat the click as "handled" or fall through to its
+   * usual behavior.
    */
-  toggleLever(x: number, y: number): void {
-    if (!this.inBounds(x, y) || this.get(x, y) !== MaterialId.Lever) return;
+  toggleLever(x: number, y: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    if (this.get(x, y) !== MaterialId.Lever) {
+      let nx0 = -1, ny0 = -1;
+      outer: for (let r = 1; r <= 2; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+            const cx = x + dx, cy = y + dy;
+            if (this.inBounds(cx, cy) && this.get(cx, cy) === MaterialId.Lever) { nx0 = cx; ny0 = cy; break outer; }
+          }
+        }
+      }
+      if (nx0 < 0) return false;
+      x = nx0; y = ny0;
+    }
     const startI = this.index(x, y);
     const next = (this.meta[startI] & CIRCUIT_ON_META) === 0 ? CIRCUIT_ON_META : 0;
     const visited = new Set<number>([startI]);
     const stack = [startI];
     let minX = x, minY = y;
-    let knobI = (this.meta[startI] & LEVER_ARM_META) !== 0 ? startI : -1;
+    const knobIs: number[] = (this.meta[startI] & LEVER_ARM_META) !== 0 ? [startI] : [];
     let budget = LEVER_FLOOD_CAP;
     while (stack.length > 0 && budget-- > 0) {
       const i = stack.pop()!;
       const cx = i % this.width, cy = (i / this.width) | 0;
       if (cx < minX) minX = cx;
       if (cy < minY) minY = cy;
-      if ((this.meta[i] & LEVER_ARM_META) !== 0) knobI = i;
+      if (i !== startI && (this.meta[i] & LEVER_ARM_META) !== 0) knobIs.push(i);
       for (const [dx, dy] of NEIGHBORS_8) {
         const nx = cx + dx, ny = cy + dy;
         if (!this.inBounds(nx, ny)) continue;
@@ -1539,20 +1611,25 @@ export class SimGrid {
     }
     // The frame's own top-left is always the anchor LEVER_FRAME was stamped
     // from — true whichever slot the knob is currently sitting in.
-    const [kox, koy] = next !== 0 ? LEVER_KNOB_ON : LEVER_KNOB_OFF;
-    const newKnobX = minX + kox, newKnobY = minY + koy;
-    if (knobI >= 0 && this.inBounds(newKnobX, newKnobY)) {
-      const oldX = knobI % this.width, oldY = (knobI / this.width) | 0;
-      this.material[knobI] = MaterialId.Empty;
-      this.meta[knobI] = 0;
+    const knobOffsets = next !== 0 ? LEVER_KNOB_ON : LEVER_KNOB_OFF;
+    const knobSet = new Set(knobIs);
+    for (const oldI of knobIs) {
+      const oldX = oldI % this.width, oldY = (oldI / this.width) | 0;
+      this.material[oldI] = MaterialId.Empty;
+      this.meta[oldI] = 0;
       this.wake(oldX, oldY);
+    }
+    for (const [kox, koy] of knobOffsets) {
+      const newKnobX = minX + kox, newKnobY = minY + koy;
+      if (!this.inBounds(newKnobX, newKnobY)) continue;
       this.set(newKnobX, newKnobY, MaterialId.Lever, LEVER_ARM_META | next);
     }
     for (const i of visited) {
-      if (i === knobI) continue; // already moved/reset above
+      if (knobSet.has(i)) continue; // already moved/reset above
       this.meta[i] = next; // frame cells: never LEVER_ARM_META, just the on/off bit
       this.wake(i % this.width, (i / this.width) | 0);
     }
+    return true;
   }
 
   private swap(ax: number, ay: number, bx: number, by: number): void {
@@ -1594,6 +1671,8 @@ export class SimGrid {
     this.detonationBudget = DETONATIONS_PER_TICK_CAP;
     if (this.circuitCache.size > 0) this.circuitCache.clear();
     if (this.doorCache.size > 0) this.doorCache.clear();
+    if (this.cloneCache.size > 0) this.cloneCache.clear();
+    if (this.blockCache.size > 0) this.blockCache.clear();
     if (this.tick % CENSUS_INTERVAL === 1) this.takeCensus();
 
     // Bottom-to-top so a cell that falls this tick isn't immediately
@@ -1607,8 +1686,13 @@ export class SimGrid {
         const id = this.material[i] as MaterialId;
         if (id === MaterialId.Empty) continue;
         if (id === MaterialId.Fire) this.hotAccum++;
-        else if (id === MaterialId.Lava || id === MaterialId.HeatBlock) this.hotAccum += 2;
-        else if (id === MaterialId.Ice || id === MaterialId.ColdBlock) this.coldAccum++;
+        else if (id === MaterialId.Lava) this.hotAccum += 2;
+        else if (id === MaterialId.HeatBlock) {
+          if (this.stepCircuitBlock(x, y, i, MaterialId.HeatBlock)) this.hotAccum += 2;
+        } else if (id === MaterialId.Ice) this.coldAccum++;
+        else if (id === MaterialId.ColdBlock) {
+          if (this.stepCircuitBlock(x, y, i, MaterialId.ColdBlock)) this.coldAccum++;
+        }
 
         const def = MATERIALS[id];
         switch (def.category) {
@@ -3074,7 +3158,7 @@ export class SimGrid {
    * spring of whatever it first tasted.
    */
   private stepClone(x: number, y: number, i: number): void {
-    if (this.meta[i] === MaterialId.Empty) {
+    if ((this.meta[i] & CLONE_LOCK_MASK) === MaterialId.Empty) {
       const candidates: MaterialId[] = [];
       const lockedCloneNeighbors: MaterialId[] = [];
       for (const [dx, dy] of NEIGHBORS_4) {
@@ -3084,8 +3168,14 @@ export class SimGrid {
         const ni = this.index(nx, ny);
         const nId = this.material[ni] as MaterialId;
         if (nId === MaterialId.Clone) {
-          if (this.meta[ni] !== MaterialId.Empty) lockedCloneNeighbors.push(this.meta[ni] as MaterialId);
-        } else if (nId !== MaterialId.Empty) {
+          const nLock = this.meta[ni] & CLONE_LOCK_MASK;
+          if (nLock !== MaterialId.Empty) lockedCloneNeighbors.push(nLock as MaterialId);
+        } else if (nId !== MaterialId.Empty && nId !== MaterialId.Wire && nId !== MaterialId.Lever) {
+          // Fio/Alavanca wire a Clone into a circuit — they're control
+          // cells, not something to clone, so they never count as a
+          // touch (a Clone hooked up to a switch would otherwise have a
+          // chance to lock onto "Fio" itself instead of the material it's
+          // actually sitting next to).
           candidates.push(nId);
         }
       }
@@ -3097,15 +3187,28 @@ export class SimGrid {
         candidates.push(MaterialId.Electricity);
       }
       if (candidates.length > 0) {
-        this.meta[i] = candidates[Math.floor(Math.random() * candidates.length)];
+        this.meta[i] = (this.meta[i] & ~CLONE_LOCK_MASK) | candidates[Math.floor(Math.random() * candidates.length)];
         return;
       }
       if (lockedCloneNeighbors.length > 0 && Math.random() < CLONE_PROPAGATE_CHANCE) {
-        this.meta[i] = lockedCloneNeighbors[Math.floor(Math.random() * lockedCloneNeighbors.length)];
+        this.meta[i] = (this.meta[i] & ~CLONE_LOCK_MASK) | lockedCloneNeighbors[Math.floor(Math.random() * lockedCloneNeighbors.length)];
       }
       return;
     }
 
+    // Wired to a Fio/Alavanca, it only spawns while that circuit is on;
+    // left alone (touching neither), it just runs as always. A connected
+    // clump of Clone is one body for this, exactly like a Porta slab (see
+    // bodyCircuitState) — linked and switched together even for the cells
+    // that aren't themselves touching the wire, not each cell independently
+    // deciding for itself. Either way, CLONE_LINKED_META / CLONE_ON_META
+    // (above the locked-material bits — see the mask) get set to match so
+    // the renderer can show the same verdict (see PixiStage) instead of it
+    // just silently stopping with no visible tell.
+    const { linked, active } = this.bodyCircuitState(x, y, MaterialId.Clone, this.cloneCache);
+    const next = (this.meta[i] & CLONE_LOCK_MASK) | (linked ? CLONE_LINKED_META : 0) | (active ? CLONE_ON_META : 0);
+    if (this.meta[i] !== next) { this.meta[i] = next; this.wake(x, y); }
+    if (!active) return;
     if (Math.random() >= CLONE_CHANCE) return;
     const emptyNeighbors: [number, number][] = [];
     for (const [dx, dy] of NEIGHBORS_4) {
@@ -3115,7 +3218,7 @@ export class SimGrid {
     }
     if (emptyNeighbors.length === 0) return;
     const [gx, gy] = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
-    const clonedId = this.meta[i] as MaterialId;
+    const clonedId = (this.meta[i] & CLONE_LOCK_MASK) as MaterialId;
     if (clonedId === MaterialId.Electricity) {
       // Same as the Eletricidade brush (see paintCell): drops a fresh
       // free-falling charge rather than writing into `material`.
@@ -4674,13 +4777,14 @@ export class SimGrid {
     return (this.meta[i] & HOUSE_WALL_META) !== 0 && HOUSE_WALLS.includes(this.material[i] as MaterialId);
   }
 
-  /** A house cell folk pass straight through — walls, roof, windows, chimney. The floor course and mason-laid bridge decks (HOUSE_FLOOR) stay solid underfoot. */
+  /** A house cell folk pass straight through — walls, roof, windows, chimney. The floor course, mason-laid bridge decks and staircase treads (HOUSE_FLOOR / HOUSE_DECK / HOUSE_STAIR) stay solid underfoot. */
   private houseGhost(x: number, y: number): boolean {
     if (!this.inBounds(x, y)) return false;
     const i = this.index(x, y);
     if (!this.isHouseCell(i)) return false;
     if ((this.meta[i] & HOUSE_ANCHOR_META) !== 0) return true; // the doorway-sill anchor is a wall
-    return (this.meta[i] & HOUSE_KIND_MASK) !== HOUSE_FLOOR;
+    const kind = this.meta[i] & HOUSE_KIND_MASK;
+    return kind !== HOUSE_FLOOR && kind !== HOUSE_DECK && kind !== HOUSE_STAIR;
   }
 
   /**
@@ -4960,7 +5064,7 @@ export class SimGrid {
     // A new bridge also waits on the Lenhador: no woodpile, no span.
     const startBridge = this.countNear(x, y, MaterialId.Water, 8) > 0 &&
       !this.deckNear(x, y, 40) && this.villageHasTimber();
-    const onDeckNow = this.isDeck(x, y + 1);
+    const onDeckNow = this.isBridgeDeck(x, y + 1);
     if ((wantDir !== 0 || onDeckNow || startBridge) && this.firmFooting(x, y)) {
       const dirs: readonly number[] = wantDir !== 0 ? [wantDir] : (facing >= 0 ? [1, -1] : [-1, 1]);
       let anyPlan = false;
@@ -4979,15 +5083,18 @@ export class SimGrid {
         const stand = layRow - 1;
         if (
           this.get(px, layRow) !== MaterialId.Empty ||
-          this.isDeck(px, layRow - 1) || this.isDeck(px, layRow + 1) ||
+          this.isBridgeDeck(px, layRow - 1) || this.isBridgeDeck(px, layRow + 1) ||
           !this.inBounds(px, stand) || this.get(px, stand) !== MaterialId.Empty
         ) {
           // Can't place a clean plank + step onto it from here — walk and retry.
           this.folkWalk(x, y, i, facing, fed, 0, d);
           return;
         }
-        this.set(px, layRow, MaterialId.Wood, HOUSE_WALL_META | HOUSE_FLOOR);
-        this.consumeTimber(x, y);   // a plank comes off the Lenhador's woodpile
+        this.set(px, layRow, MaterialId.Wood, HOUSE_WALL_META | HOUSE_DECK);
+        // Half price: only every other plank actually spends a log off the
+        // woodpile (see bridgePlankFree) — a bridge costs half what it used to.
+        this.bridgePlankFree = !this.bridgePlankFree;
+        if (!this.bridgePlankFree) this.consumeTimber(x, y);
         this.moveCreature(x, y, px, stand, packCreature(d, 0, fed));
         return;
       }
@@ -4996,6 +5103,31 @@ export class SimGrid {
       if (onDeckNow && !anyPlan) {
         const off = this.offDeckDir(x, y);
         this.folkWalk(x, y, i, facing, fed, 0, off !== 0 ? off : facing);
+        return;
+      }
+    }
+
+    // Staircases: same idea as a bridge, but climbing to a ledge instead of
+    // spanning water — a permanent, built structure any Pip can walk (see
+    // isDeck), not just something the one purposeful folk free-climbs past
+    // (see folkWalk's wall-hauling) and leaves no trace of. Tries either
+    // direction, already-leaning one first, same as the bridge above.
+    const onStairNow = this.isStair(x, y + 1);
+    if (this.villageHasTimber() && this.firmFooting(x, y) && (onStairNow || !this.stairNear(x, y, STAIR_NEAR_RANGE))) {
+      const dirs: readonly number[] = facing >= 0 ? [1, -1] : [-1, 1];
+      for (const d of dirs) {
+        const plan = this.stairScan(x, y, d);
+        if (!plan) continue;
+        const px = x + d;
+        const layRow = plan.layRow;
+        const stand = layRow - 1;
+        if (
+          this.get(px, layRow) !== MaterialId.Empty ||
+          !this.inBounds(px, stand) || this.get(px, stand) !== MaterialId.Empty
+        ) continue; // can't place a clean tread + step onto it from here — try the other side
+        this.set(px, layRow, MaterialId.Wood, HOUSE_WALL_META | HOUSE_STAIR);
+        this.consumeTimber(x, y); // full price — the half-off only applies to bridge planks, see bridgePlankFree
+        this.moveCreature(x, y, px, stand, packCreature(d, 0, fed));
         return;
       }
     }
@@ -5035,13 +5167,13 @@ export class SimGrid {
 
   /** From a folk standing on a bridge deck, the horizontal direction to its nearer end (where the planks meet dry ground). 0 if not on a deck. */
   private offDeckDir(x: number, y: number): number {
-    if (!this.isDeck(x, y + 1)) return 0;
+    if (!this.isBridgeDeck(x, y + 1)) return 0;
     const reach = (dir: number): number => {
       let cx = x, r = y + 1;
       for (let k = 1; k <= 320; k++) {
-        if (this.isDeck(cx + dir, r)) cx += dir;
-        else if (this.isDeck(cx + dir, r + 1)) { cx += dir; r += 1; }
-        else if (this.isDeck(cx + dir, r - 1)) { cx += dir; r -= 1; }
+        if (this.isBridgeDeck(cx + dir, r)) cx += dir;
+        else if (this.isBridgeDeck(cx + dir, r + 1)) { cx += dir; r += 1; }
+        else if (this.isBridgeDeck(cx + dir, r - 1)) { cx += dir; r -= 1; }
         else return k;
       }
       return 999;
@@ -5049,25 +5181,97 @@ export class SimGrid {
     return reach(1) <= reach(-1) ? 1 : -1;
   }
 
-  /** Whether a bridge deck already runs within `r` cells of (x, y) — one crossing per stretch of water, so a crew doesn't lay deck after parallel deck. */
+  /** Whether a bridge deck already runs within `r` cells of (x, y) — one crossing per stretch of water, so a crew doesn't lay deck after parallel deck. Checks `isBridgeDeck`, not the broader `isDeck` — an ordinary house or storehouse floor tile that happens to fall in range is not a bridge and must never veto a real crossing. */
   private deckNear(x: number, y: number, r: number): boolean {
     for (let dy = -MASON_ARCH_MAX - 3; dy <= MASON_ARCH_MAX + 3; dy++) {
       const ny = y + dy;
       if (ny < 0 || ny >= this.height) continue;
       for (let dx = -r; dx <= r; dx++) {
         const nx = x + dx;
-        if (nx >= 0 && nx < this.width && this.isDeck(nx, ny)) return true;
+        if (nx >= 0 && nx < this.width && this.isBridgeDeck(nx, ny)) return true;
       }
     }
     return false;
   }
 
-  /** A deck plank a Construtor laid — Madeira flagged as house-floor, walkable, not a ghost. */
+  /**
+   * Something a folk can walk on like solid ground: Madeira flagged as
+   * house-floor (a real house/storehouse floor course), an actual
+   * mason-laid bridge plank (HOUSE_DECK), or a staircase tread (HOUSE_STAIR)
+   * — all three are walkable, not a ghost, for the movement/pathing code
+   * that just cares about standing on *something* firm, one row higher or
+   * lower than the last (see the deck/stair-following branch of folkWalk,
+   * which already handles either without knowing which it's on). `deckNear`
+   * / `stairNear` need to tell them apart (see `isBridgeDeck` / `isStair`),
+   * so they don't use this.
+   */
   private isDeck(x: number, y: number): boolean {
     if (!this.inBounds(x, y)) return false;
     const i = this.index(x, y);
+    if (this.material[i] !== MaterialId.Wood || (this.meta[i] & HOUSE_WALL_META) === 0) return false;
+    const kind = this.meta[i] & HOUSE_KIND_MASK;
+    return kind === HOUSE_FLOOR || kind === HOUSE_DECK || kind === HOUSE_STAIR;
+  }
+
+  /** Specifically a plank the Construtor laid while bridging water — unlike `isDeck`, an ordinary house or storehouse floor tile (or a staircase tread) never counts, so `deckNear` can't mistake one for a finished crossing. */
+  private isBridgeDeck(x: number, y: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    const i = this.index(x, y);
     return this.material[i] === MaterialId.Wood &&
-      (this.meta[i] & HOUSE_WALL_META) !== 0 && (this.meta[i] & HOUSE_KIND_MASK) === HOUSE_FLOOR;
+      (this.meta[i] & HOUSE_WALL_META) !== 0 && (this.meta[i] & HOUSE_KIND_MASK) === HOUSE_DECK;
+  }
+
+  /** Specifically a tread the Construtor laid while climbing to a ledge — unlike `isDeck`, an ordinary floor tile or bridge plank never counts, so `stairNear` can't mistake one for a finished climb. */
+  private isStair(x: number, y: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    const i = this.index(x, y);
+    return this.material[i] === MaterialId.Wood &&
+      (this.meta[i] & HOUSE_WALL_META) !== 0 && (this.meta[i] & HOUSE_KIND_MASK) === HOUSE_STAIR;
+  }
+
+  /** Whether a staircase already climbs within `r` cells of (x, y) — one climb per ledge, same idea as `deckNear` for bridges. Checked well above (x, y) too, since a climb runs vertically, not sideways. */
+  private stairNear(x: number, y: number, r: number): boolean {
+    for (let dy = -STAIR_MAX_RISE - 3; dy <= 3; dy++) {
+      const ny = y + dy;
+      if (ny < 0 || ny >= this.height) continue;
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = x + dx;
+        if (nx >= 0 && nx < this.width && this.isStair(nx, ny)) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Survey a climb from a Construtor at (x, y) leaning `dir`. Already partway
+   * up a staircase it (or another Construtor) started, it just keeps
+   * extending it one tread at a time — a straight 1-cell-per-step diagonal,
+   * one column over and one row up from wherever it's standing now. Not on
+   * one yet, it first traces that same diagonal outward looking for solid,
+   * standable ground actually worth climbing to (see `standTop`) — no ledge
+   * out there, no staircase starts. Returns `{ walk: 0, layRow }` (lay the
+   * next tread now, at (x + dir, layRow)) or null: nothing worth climbing,
+   * or the run already reaches the ledge (the next tread's spot is already
+   * solid ground rather than open air).
+   */
+  private stairScan(x: number, y: number, dir: number): { walk: number; layRow: number } | null {
+    if (!this.isStair(x, y + 1)) {
+      let foundLedge = false;
+      for (let s = STAIR_MIN_RISE; s <= STAIR_MAX_RISE; s++) {
+        const cx = x + dir * s;
+        const cy = y - s;
+        if (!this.inBounds(cx, cy)) break;
+        if (this.standTop(cx, cy - 1, cy + 1) >= 0) { foundLedge = true; break; }
+      }
+      if (!foundLedge) return null;
+    }
+    // One row higher than the tread currently underfoot (at y + 1): the new
+    // tread goes at row y itself, landing the Construtor at y - 1 once it
+    // steps onto it (see the stand/layRow convention shared with bridges).
+    const px = x + dir;
+    const layRow = y;
+    if (!this.inBounds(px, layRow) || this.get(px, layRow) !== MaterialId.Empty) return null; // arrived, or nowhere to go
+    return { walk: 0, layRow };
   }
 
   /**
@@ -5112,14 +5316,14 @@ export class SimGrid {
   private bridgeScan(
     x: number, y: number, dir: number,
   ): { walk: number; layRow: number } | null {
-    const onDeck = this.isDeck(x, y + 1);
+    const onDeck = this.isBridgeDeck(x, y + 1);
     // Trace our deck back to its near anchor.
     let ax = x, aRow = y + 1;
     if (onDeck) {
       for (let k = 0; k < 300; k++) {
-        if (this.isDeck(ax - dir, aRow)) ax -= dir;
-        else if (this.isDeck(ax - dir, aRow + 1)) { ax -= dir; aRow += 1; }
-        else if (this.isDeck(ax - dir, aRow - 1)) { ax -= dir; aRow -= 1; }
+        if (this.isBridgeDeck(ax - dir, aRow)) ax -= dir;
+        else if (this.isBridgeDeck(ax - dir, aRow + 1)) { ax -= dir; aRow += 1; }
+        else if (this.isBridgeDeck(ax - dir, aRow - 1)) { ax -= dir; aRow -= 1; }
         else break;
       }
     }
@@ -5133,15 +5337,15 @@ export class SimGrid {
       for (let k = 0; k <= MASON_SPAN_DROP && this.inBounds(cx, r0 + k); k++) {
         const c = this.get(cx, r0 + k);
         if (c === MaterialId.Water) { spannedWater = true; waterTop = Math.min(waterTop, r0 + k); return; }
-        if (c !== MaterialId.Empty && !this.isDeck(cx, r0 + k)) return;
+        if (c !== MaterialId.Empty && !this.isBridgeDeck(cx, r0 + k)) return;
       }
     };
     if (onDeck) {
       noteWater(lx, lRow + 1);
       for (let k = 0; k < 300; k++) {
-        if (this.isDeck(lx + dir, lRow)) lx += dir;
-        else if (this.isDeck(lx + dir, lRow + 1)) { lx += dir; lRow += 1; }
-        else if (this.isDeck(lx + dir, lRow - 1)) { lx += dir; lRow -= 1; }
+        if (this.isBridgeDeck(lx + dir, lRow)) lx += dir;
+        else if (this.isBridgeDeck(lx + dir, lRow + 1)) { lx += dir; lRow += 1; }
+        else if (this.isBridgeDeck(lx + dir, lRow - 1)) { lx += dir; lRow -= 1; }
         else break;
         noteWater(lx, lRow + 1);
       }
@@ -5159,7 +5363,7 @@ export class SimGrid {
       for (let k = 0; k <= MASON_SPAN_DROP && this.inBounds(cx, lRow + k); k++) {
         const c = this.get(cx, lRow + k);
         if (c === MaterialId.Water) { sawWater = true; waterTop = Math.min(waterTop, lRow + k); break; }
-        if (c !== MaterialId.Empty && !this.isDeck(cx, lRow + k)) break;
+        if (c !== MaterialId.Empty && !this.isBridgeDeck(cx, lRow + k)) break;
       }
       const top = this.standTop(cx, lRow - MASON_ARCH_MAX - 2, lRow + MASON_SPAN_DROP);
       if (top < 0) {
@@ -5532,6 +5736,22 @@ export class SimGrid {
       (this.meta[this.index(x, y)] & TREE_TRUNK_META) !== 0;
   }
 
+  /** The foot of the tree trunk/stem passing through (tx, ty) — walks on down through more trunk or its still-soft stem (Broto/Planta) to find where it actually roots. */
+  private treeBase(tx: number, ty: number): number {
+    let by = ty;
+    for (let d = 0; d < 10; d++) {
+      const n = by + 1;
+      if (this.isTrunk(tx, n) || this.get(tx, n) === MaterialId.Sprout || this.get(tx, n) === MaterialId.Plant) by = n;
+      else break;
+    }
+    return by;
+  }
+
+  /** Whether the tree trunk/stem passing through (tx, ty) has filled out enough of a crown to be worth felling — a bare or half-grown sapling reports false, so a Lenhador never treats one as "a tree to work" and paces at its foot forever waiting on it. */
+  private isMatureTree(tx: number, ty: number): boolean {
+    return this.treeCrown(tx, this.treeBase(tx, ty)) >= LUMBERJACK_MIN_TREE;
+  }
+
   /** Whether (x, y) is a Porta currently powered open. */
   private isOpenDoor(x: number, y: number): boolean {
     return this.inBounds(x, y) && this.material[this.index(x, y)] === MaterialId.Door &&
@@ -5549,23 +5769,75 @@ export class SimGrid {
   }
 
   /**
+   * Whether (x, y) touches a Fio or Alavanca directly — i.e. whether it's
+   * wired into a circuit at all, as opposed to standing alone. Clone/Bloco
+   * de Calor/Bloco de Frio check this first: touching nothing conductive,
+   * they just run as always (their original, circuit-free behavior);
+   * touching a Fio or Alavanca opts them into `circuitPowered` instead, on
+   * only while that circuit actually is.
+   */
+  private circuitConnected(x: number, y: number): boolean {
+    for (const [dx, dy] of NEIGHBORS_8) {
+      const nx = x + dx, ny = y + dy;
+      if (!this.inBounds(nx, ny)) continue;
+      const m = this.material[this.index(nx, ny)];
+      if (m === MaterialId.Wire || m === MaterialId.Lever) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Shared by Bloco de Calor / Bloco de Frio: works out whether this tick's
+   * heat/cold contribution should count, and leaves CIRCUIT_LINKED_META /
+   * CIRCUIT_ON_META set to match so the renderer can show the same verdict
+   * (see PixiStage) instead of the block just silently stopping with no
+   * visible tell. A connected clump of the same block is one body for this,
+   * exactly like a Porta slab (see bodyCircuitState) — switched together
+   * even for cells that aren't themselves touching the wire, not each cell
+   * independently deciding for itself. Returns whether it's active this
+   * tick.
+   */
+  private stepCircuitBlock(x: number, y: number, i: number, matId: MaterialId): boolean {
+    const { linked, active } = this.bodyCircuitState(x, y, matId, this.blockCache);
+    const next = (linked ? CIRCUIT_LINKED_META : 0) | (active ? CIRCUIT_ON_META : 0);
+    if (this.meta[i] !== next) { this.meta[i] = next; this.wake(x, y); }
+    return active;
+  }
+
+  /**
    * Whether (x, y) — a Fio deciding its own state, or a Porta checking
-   * what's feeding it — is fed power this tick. Touching an on Alavanca
-   * directly is enough on its own; failing that, it traces outward through
-   * connected Fio (never through another Porta or Alavanca — those don't
-   * conduct past themselves) looking for one. The whole run this search
-   * touches is settled at once (see `circuitCache`), and every trace starts
-   * fresh from the actual switches each tick, so a loop of Fio (or a run an
-   * Alavanca just switched off) can never light itself by "confirming" its
-   * neighbor's bit the way a plain adjacency check would.
+   * what's feeding it — is fed power this tick. Touching an on Alavanca, or
+   * a live Eletricidade charge riding this very cell or sitting right beside
+   * it, is enough on its own — "beside" matters because a free-falling
+   * charge can never actually land *inside* a Fio's cell (Fio is solid, so
+   * the charge just stops dead in the empty cell touching it, the same way
+   * it'd stop against any other solid); requiring an exact overlap would
+   * mean only a charge painted directly on top of a Fio ever lit it up, and
+   * one that fell onto it from above never would. Failing that direct
+   * touch, it traces outward through connected Fio (never through another
+   * Porta or Alavanca — those don't conduct past themselves) looking for an
+   * on Alavanca or a charge touching any cell of that run — a charge
+   * landing anywhere along a run of Fio powers the *whole* run, exactly
+   * like an on Alavanca would, even though the physical spark itself
+   * doesn't travel any further than the one cell it's stopped against (Fio
+   * isn't `conductive`). The whole run this search touches is settled at
+   * once (see `circuitCache`), and every trace starts fresh from the actual
+   * switches and charges each tick — so a loop of Fio (or a run an Alavanca
+   * just switched off, or a charge that's since moved on or dissipated)
+   * can never light itself by "confirming" its neighbor's bit the way a
+   * plain adjacency check would, and power drops the instant nothing's
+   * actually touching any more.
    */
   private circuitPowered(x: number, y: number): boolean {
+    if (this.pulseAt(x, y)) return true; // a charge riding this very cell is its own live source
     const startI = this.index(x, y);
     for (const [dx, dy] of NEIGHBORS_8) {
       const nx = x + dx, ny = y + dy;
       if (!this.inBounds(nx, ny)) continue;
       const j = this.index(nx, ny);
-      if (this.material[j] === MaterialId.Lever && (this.meta[j] & CIRCUIT_ON_META) !== 0) return true;
+      const m = this.material[j];
+      if (m === MaterialId.Lever && (this.meta[j] & CIRCUIT_ON_META) !== 0) return true;
+      if (this.pulseAt(nx, ny)) return true; // a charge touching us from any side — whether riding a neighboring Fio or just stopped dead against us — counts same as landing square on us
     }
     const cached = this.circuitCache.get(startI);
     if (cached !== undefined) return cached;
@@ -5582,6 +5854,7 @@ export class SimGrid {
         const j = this.index(nx, ny);
         const m = this.material[j];
         if (m === MaterialId.Lever && (this.meta[j] & CIRCUIT_ON_META) !== 0) { found = true; break; }
+        if (this.pulseAt(nx, ny)) { found = true; break; } // a charge touching any cell of this run, from any side, powers the whole run
         if (m !== MaterialId.Wire || visited.has(j)) continue;
         visited.add(j);
         stack.push(j);
@@ -5589,6 +5862,12 @@ export class SimGrid {
     }
     for (const v of visited) this.circuitCache.set(v, found);
     return found;
+  }
+
+  /** Whether a live Eletricidade charge is sitting at (x, y) right now — Eletricidade has no physical form (see paintCell), so this is the only way to "see" it touching a cell. */
+  private pulseAt(x: number, y: number): boolean {
+    for (const p of this.pulses) if (p.x === x && p.y === y) return true;
+    return false;
   }
 
   /** A Fio lights up the instant it touches power, and goes dark the instant nothing feeds it — no lingering charge. */
@@ -5632,6 +5911,55 @@ export class SimGrid {
     }
     for (const v of visited) this.doorCache.set(v, found);
     return found;
+  }
+
+  /**
+   * Generic body-union power state for a connected clump of same-material
+   * cells that only gate on a circuit when actually touched (Bloco de
+   * Calor/Frio, Clone) — one body, exactly like a Porta slab (see
+   * doorPowered), not a grid of cells each independently deciding for
+   * itself whether it happens to be the one touching a Fio/Alavanca. Traces
+   * outward through connected `matId` cells: linked the moment *any* cell
+   * of the clump touches a Fio/Alavanca (circuitConnected), and — only once
+   * linked — active if *any* cell of it is individually fed
+   * (circuitPowered), not just the cells actually touching the wire. A
+   * clump nobody's wired up at all just runs as always (linked false,
+   * active true). Settled once per connected clump per tick in whichever
+   * `cache` the caller passes (each material kind gets its own, since a
+   * given grid index only ever holds one at a time but different callers
+   * shouldn't stomp each other's memoized verdicts); packs both booleans
+   * into one int since a Map of plain objects would mean an allocation per
+   * cell every tick.
+   */
+  private bodyCircuitState(x: number, y: number, matId: MaterialId, cache: Map<number, number>): { linked: boolean; active: boolean } {
+    const startI = this.index(x, y);
+    const cached = cache.get(startI);
+    if (cached !== undefined) return { linked: (cached & 1) !== 0, active: (cached & 2) !== 0 };
+    const visited = new Set<number>([startI]);
+    const stack = [startI];
+    let linked = false;
+    let active = false;
+    let budget = CIRCUIT_FLOOD_CAP;
+    while (stack.length > 0 && budget-- > 0) {
+      const i = stack.pop()!;
+      const cx = i % this.width, cy = (i / this.width) | 0;
+      if (this.circuitConnected(cx, cy)) {
+        linked = true;
+        if (this.circuitPowered(cx, cy)) active = true;
+      }
+      for (const [dx, dy] of NEIGHBORS_8) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!this.inBounds(nx, ny)) continue;
+        const j = this.index(nx, ny);
+        if (this.material[j] !== matId || visited.has(j)) continue;
+        visited.add(j);
+        stack.push(j);
+      }
+    }
+    if (!linked) active = true; // untouched by any Fio/Alavanca: runs unconditionally, same as always
+    const packed = (linked ? 1 : 0) | (active ? 2 : 0);
+    for (const v of visited) cache.set(v, packed);
+    return { linked, active };
   }
 
   /**
@@ -5696,13 +6024,7 @@ export class SimGrid {
     if (targets.length > 0 && this.looseWoodNear(x, y, 16) < LUMBERJACK_STOCK) {
       targets.sort((a, b) => b[1] - a[1]); // lowest first
       for (const [tx, ty] of targets) {
-        // Find the foot of this tree's trunk (walk down through trunk / stem).
-        let by = ty;
-        for (let d = 0; d < 10; d++) {
-          const n = by + 1;
-          if (this.isTrunk(tx, n) || this.get(tx, n) === MaterialId.Sprout || this.get(tx, n) === MaterialId.Plant) by = n;
-          else break;
-        }
+        const by = this.treeBase(tx, ty);
         const under = this.get(tx, by + 1);
         if (under === MaterialId.Empty || MATERIALS[under].category === MaterialCategory.Liquid) continue;
         if (this.treeCrown(tx, by) < LUMBERJACK_MIN_TREE) continue; // still a seedling — let it grow
@@ -5775,7 +6097,15 @@ export class SimGrid {
       }
       const f = x + 1;
       const belowF = this.get(f, y + 1);
+      // A tended tree's crown is stamped in one shot once it's grown (see
+      // stepSprout) and only ever lands cells actually on the grid — sown
+      // too close to the left/right edge or the top, it comes out clipped
+      // and permanently short of LUMBERJACK_MIN_TREE, a "tree" no Lenhador
+      // can ever fell and the seed that grew it a dead loss.
+      const hasRoom = f - TREE_CROWN_DX_MAX >= 0 && f + TREE_CROWN_DX_MAX < this.width &&
+        y - (TREE_CROWN_START + TREE_CROWN_DY_MAX) >= 0;
       if (
+        hasRoom &&
         this.get(f, y) === MaterialId.Empty &&
         (belowF === MaterialId.Dirt || belowF === MaterialId.Mud) &&
         this.groundLevel(x, y, LUMBERJACK_PLOT) &&
@@ -5789,16 +6119,20 @@ export class SimGrid {
       }
     }
 
-    // Head for the nearest fully-grown tree (a lignified trunk) to fell. With
-    // none ready, folkWalk drifts it back to the woodlot (Madeira / houses)
-    // where it plants and paces while the saplings fill out.
+    // Head for the nearest fully-grown tree (a lignified trunk with a full
+    // crown — isMatureTree, not just isTrunk) to fell. A still-growing
+    // sapling already has trunk material, but heading for one and camping at
+    // its foot doesn't make it grow any faster — it only reads as the
+    // Lenhador stuck pacing the same seedling forever. With no tree actually
+    // ready, folkWalk drifts it back to the woodlot (Madeira / houses) where
+    // it plants and paces while the saplings fill out.
     let wantDir = 0;
     let bestD = Infinity;
     for (let dy = -FOLK_SCAN_RANGE; dy <= FOLK_SCAN_RANGE; dy++) {
       for (let dx = -FOLK_SCAN_RANGE; dx <= FOLK_SCAN_RANGE; dx++) {
         if (dx === 0 && dy === 0 || !this.isTrunk(x + dx, y + dy)) continue;
         const d = dx * dx + dy * dy;
-        if (d < bestD) { bestD = d; wantDir = Math.sign(dx) || (Math.random() < 0.5 ? 1 : -1); }
+        if (d < bestD && this.isMatureTree(x + dx, y + dy)) { bestD = d; wantDir = Math.sign(dx) || (Math.random() < 0.5 ? 1 : -1); }
       }
     }
     this.folkWalk(x, y, i, facing, fed, 0, wantDir);

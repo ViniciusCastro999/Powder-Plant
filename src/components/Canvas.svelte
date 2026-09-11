@@ -28,10 +28,12 @@
   let pointerDown = false;
   let startCell: [number, number] | null = null;
   let lastCell: [number, number] | null = null;
-  // The Line brush is a two-click tool: the first click drops this anchor,
-  // the second paints the segment from it. Held between clicks (not while a
-  // button is down), so a hovering cursor previews where the line will land.
-  let lineAnchor = $state<[number, number] | null>(null);
+  // Line, Square and Circle are all two-click tools: the first click drops
+  // this anchor, the second commits the shape from it (a segment, a
+  // rectangle, a circle). Held between clicks (not while a button is down),
+  // so a hovering cursor previews where the shape will land.
+  let shapeAnchor = $state<[number, number] | null>(null);
+  const isShapeTool = (s: BrushShape) => s === BrushShape.Line || s === BrushShape.Square || s === BrushShape.Circle;
 
   // Screen-space (relative to container) points driving the dashed preview
   // guide for the line/square/circle brushes — kept separate from the grid
@@ -61,13 +63,13 @@
     };
   });
 
-  // Switching away from the Line brush drops any pending anchor.
+  // Switching away from a two-click shape tool drops any pending anchor.
   $effect(() => {
-    if (brushShape !== BrushShape.Line) cancelLine();
+    if (!isShapeTool(brushShape)) cancelShape();
   });
 
-  function cancelLine(): void {
-    lineAnchor = null;
+  function cancelShape(): void {
+    shapeAnchor = null;
     previewStart = null;
     previewCurrent = null;
   }
@@ -155,30 +157,60 @@
     return { x: clientX - rect.left, y: clientY - rect.top };
   }
 
+  /** Read-only echo of toggleLever's own "nudge to the nearest Alavanca within 2 cells" search, so the context-menu handler can tell whether a right-click will land on one without actually flipping it (that happens in onPointerDown, once, via toggleLever itself). */
+  function nearLever(x: number, y: number): boolean {
+    if (!grid) return false;
+    for (let r = 0; r <= 2; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          if (grid.get(x + dx, y + dy) === MaterialId.Lever) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /** Commits the shape brush currently selected from `anchor` to `end` — a segment, a filled rectangle, or a circle (anchor/end sit on opposite ends of its diameter, so it grows toward the cursor instead of ballooning out behind the first click). */
+  function commitShape(anchor: [number, number], end: [number, number]): void {
+    if (!grid) return;
+    if (brushShape === BrushShape.Line) {
+      grid.paintLine(anchor[0], anchor[1], end[0], end[1], radiusFromSize(brushSize), selectedMaterial);
+    } else if (brushShape === BrushShape.Square) {
+      grid.paintRect(anchor[0], anchor[1], end[0], end[1], selectedMaterial);
+    } else if (brushShape === BrushShape.Circle) {
+      const cx = (anchor[0] + end[0]) / 2;
+      const cy = (anchor[1] + end[1]) / 2;
+      const radius = Math.max(1, Math.round(Math.hypot(end[0] - anchor[0], end[1] - anchor[1]) / 2));
+      grid.paint(Math.round(cx), Math.round(cy), radius, selectedMaterial);
+    }
+  }
+
   function onPointerDown(e: PointerEvent): void {
     const cell = cellAt(e.clientX, e.clientY);
     if (!cell || !grid) return;
 
-    // Right-click with the Alavanca tool flips whatever's under the cursor
-    // on/off instead of painting — never places or erases anything, so it's
-    // a no-op over empty ground or any other material.
-    if (e.button === 2 && selectedMaterial === MaterialId.Lever) {
-      grid.toggleLever(cell[0], cell[1]);
-      return;
-    }
+    // Right-click on a placed Alavanca flips it on/off, whatever tool is
+    // currently selected — a switch anyone can reach without first
+    // swapping back to the Alavanca brush. Over empty ground or any other
+    // material it's a no-op, and the click falls through to its usual
+    // meaning for whatever tool is selected (a shape tool's right-click
+    // abort, mainly).
+    if (e.button === 2 && grid.toggleLever(cell[0], cell[1])) return;
 
     const p = localPoint(e.clientX, e.clientY);
 
-    // Line: two clicks. First sets the anchor, second draws the segment.
-    if (brushShape === BrushShape.Line) {
-      if (e.button === 2) { cancelLine(); return; } // right-click aborts
-      if (!lineAnchor) {
-        lineAnchor = cell;
+    // Line/Square/Circle: two clicks. First sets the anchor, second commits
+    // the shape from it.
+    if (isShapeTool(brushShape)) {
+      if (e.button === 2) { cancelShape(); return; } // right-click aborts
+      if (!shapeAnchor) {
+        shapeAnchor = cell;
         previewStart = p;
         previewCurrent = p;
       } else {
-        grid.paintLine(lineAnchor[0], lineAnchor[1], cell[0], cell[1], radiusFromSize(brushSize), selectedMaterial);
-        cancelLine();
+        commitShape(shapeAnchor, cell);
+        cancelShape();
       }
       return;
     }
@@ -190,18 +222,16 @@
       grid.paint(cell[0], cell[1], radiusFromSize(brushSize), selectedMaterial);
     } else if (brushShape === BrushShape.Drag) {
       dragBlob = grid.pickUpBlob(cell[0], cell[1], radiusFromSize(brushSize));
-    } else {
-      previewStart = p;
-      previewCurrent = p;
     }
   }
 
   function onPointerMove(e: PointerEvent): void {
     if (!grid) return;
     hoverCell = cellAt(e.clientX, e.clientY);
-    // Line: preview follows the hovering cursor between the two clicks.
-    if (brushShape === BrushShape.Line) {
-      if (lineAnchor) previewCurrent = localPoint(e.clientX, e.clientY);
+    // Line/Square/Circle: preview follows the hovering cursor between the
+    // two clicks.
+    if (isShapeTool(brushShape)) {
+      if (shapeAnchor) previewCurrent = localPoint(e.clientX, e.clientY);
       return;
     }
     if (!pointerDown) return;
@@ -212,14 +242,12 @@
       if (cell && lastCell && !singleDrop) {
         grid.paintLine(lastCell[0], lastCell[1], cell[0], cell[1], radiusFromSize(brushSize), selectedMaterial);
       }
-    } else {
-      previewCurrent = localPoint(e.clientX, e.clientY);
     }
     if (cell) lastCell = cell;
   }
 
   function onPointerUp(e: PointerEvent): void {
-    if (brushShape === BrushShape.Line) return; // two-click tool, handled in onPointerDown
+    if (isShapeTool(brushShape)) return; // two-click tool, handled in onPointerDown
     if (brushShape === BrushShape.Drag) {
       if (dragBlob && grid) {
         const end = cellAt(e.clientX, e.clientY) ?? lastCell;
@@ -231,23 +259,6 @@
       lastCell = null;
       return;
     }
-    if (pointerDown && grid && startCell) {
-      const end = cellAt(e.clientX, e.clientY) ?? lastCell;
-      if (end) {
-        if (brushShape === BrushShape.Square) {
-          grid.paintRect(startCell[0], startCell[1], end[0], end[1], selectedMaterial);
-        } else if (brushShape === BrushShape.Circle) {
-          // Drag a bounding box, same as the square brush — the circle fills
-          // it (start and end sit on opposite ends of a diameter), so it
-          // grows toward the cursor instead of ballooning out behind the
-          // press point.
-          const cx = (startCell[0] + end[0]) / 2;
-          const cy = (startCell[1] + end[1]) / 2;
-          const radius = Math.max(1, Math.round(Math.hypot(end[0] - startCell[0], end[1] - startCell[1]) / 2));
-          grid.paint(Math.round(cx), Math.round(cy), radius, selectedMaterial);
-        }
-      }
-    }
     pointerDown = false;
     startCell = null;
     lastCell = null;
@@ -258,7 +269,7 @@
 
 <svelte:window
   onkeydown={(e) => {
-    if (e.key === "Escape") cancelLine();
+    if (e.key === "Escape") cancelShape();
   }}
 />
 
@@ -272,7 +283,9 @@
   onpointerup={onPointerUp}
   onpointerleave={(e) => { hoverCell = null; onPointerUp(e); }}
   oncontextmenu={(e) => {
-    if (brushShape === BrushShape.Line || selectedMaterial === MaterialId.Lever) e.preventDefault();
+    const cell = cellAt(e.clientX, e.clientY);
+    const onLever = !!(cell && nearLever(cell[0], cell[1]));
+    if (brushShape === BrushShape.Line || onLever) e.preventDefault();
   }}
 >
   {#if cursorRing || (showsPreview && previewStart && previewCurrent)}

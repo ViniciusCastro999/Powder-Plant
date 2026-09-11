@@ -621,6 +621,11 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     ignitionChance: 0,
     explosive: false,
     acidResistance: 4,
+    // Not a conductor for Eletricidade's own pulse physics (a charge
+    // doesn't travel through it the way it does Metal) — but it still
+    // reacts to one touching it: see grid.ts circuitPowered, which checks
+    // for a live charge on or beside a Fio the same way it checks for an
+    // on Alavanca.
     conductive: false,
     spontaneousIgniteTemp: NEVER_SPONTANEOUS,
   },

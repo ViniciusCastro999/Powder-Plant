@@ -27,11 +27,11 @@ export const enum MaterialId {
   Ice = 20,
   /** Very acid-resistant but fragile — Estilhaço and Eletricidade shatter it into Areia on contact — see grid.ts shatterGlass. */
   Glass = 21,
-  /** A static block that locks onto the first material to touch it, then spawns a steady trickle of that same material into its empty neighbors forever — see grid.ts stepClone. */
+  /** A static block that locks onto the first material to touch it, then spawns a steady trickle of that same material into its empty neighbors forever — see grid.ts stepClone. Left untouched by any Fio/Alavanca it runs unconditionally, same as always; touching one, it only spawns while that circuit is actually on (see circuitConnected). */
   Clone = 22,
-  /** A static, inert heat source — pushes the ambient temperature up like Lava/Fogo do, but never moves, melts, ignites anything, or is affected by anything itself. A clean tool for steering the climate. */
+  /** A static, inert heat source — pushes the ambient temperature up like Lava/Fogo do, but never moves, melts, ignites anything, or is affected by anything itself. A clean tool for steering the climate. Left untouched by any Fio/Alavanca it's always on; touching one, it only heats while that circuit is (see circuitConnected). */
   HeatBlock = 23,
-  /** A static, inert cold source — pushes the ambient temperature down like Gelo does, but never moves, melts, freezes anything, or is affected by anything itself. A clean tool for steering the climate. */
+  /** A static, inert cold source — pushes the ambient temperature down like Gelo does, but never moves, melts, freezes anything, or is affected by anything itself. A clean tool for steering the climate. Left untouched by any Fio/Alavanca it's always on; touching one, it only cools while that circuit is (see circuitConnected). */
   ColdBlock = 24,
   /** Same explosive behavior as Pólvora (ignites, detonates, chain-reacts with other explosives) but a static Solid instead of a falling Powder — a charge you place exactly where you want it to stay. */
   C4 = 25,
@@ -146,10 +146,12 @@ export const enum MaterialId {
    */
   Lever = 40,
   /**
-   * A conductor: powered the tick after any neighbor is powered (an on
-   * Alavanca, or another powered Fio), unpowered the very next tick once
-   * nothing feeds it any more — no lingering charge. Purely a carrier; it
-   * has no effect on its own; see grid.ts circuitPowered.
+   * A carrier: an Eletricidade charge landing anywhere on a run of Fio
+   * powers the whole run, exactly like an on Alavanca touching it would —
+   * even though the spark itself doesn't travel any further than the one
+   * cell it lands on (not `conductive`, unlike Metal). Unpowered the very
+   * next tick once nothing feeds it any more — no lingering charge. Has no
+   * effect on its own; see grid.ts circuitPowered.
    */
   Wire = 41,
   /**
