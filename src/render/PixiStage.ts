@@ -3,38 +3,19 @@ import type { SimGrid } from "../sim/grid";
 import { MaterialCategory, MaterialId } from "../sim/types";
 import { MATERIALS } from "../sim/materials";
 import { EXTREME_COLD, EXTREME_HOT, COLD_1, COLD_3, PROSPEROUS_LOW, PROSPEROUS_TEMP, PROSPEROUS_HIGH, HOT_2, HOT_3, isProsperous } from "../sim/temperature";
+import {
+  GLASS_SHATTER_HITS, MAGIC_LIFE, WHEAT_RIPE, CIRCUIT_ON_META, LEVER_ARM_META,
+  CIRCUIT_LINKED_META, CLONE_LINKED_META, CLONE_ON_META,
+} from "../sim/metaBits";
+import {
+  HOUSE_WALL_META, HOUSE_ANCHOR_META, HOUSE_KIND_MASK, HOUSE_WALL, HOUSE_WINDOW,
+  HOUSE_CHIMNEY, HOUSE_FLOOR, HOUSE_DECK, HOUSE_STAIR,
+} from "../sim/houseBlueprints";
 
 /** How much lighter fully-salty water renders vs. plain water (0 = no change, 1 = white). */
 const SALT_LIGHTEN = 0.45;
 /** Fire's remaining-fuel window (in ticks) over which it dims toward black instead of popping straight to Empty. */
 const FIRE_FADE_TICKS = 20;
-/** Impacts a Vidro cell takes before it shatters — kept in sync with GLASS_SHATTER_HITS in grid.ts, used here only to tint cracked glass. */
-const GLASS_SHATTER_HITS = 3;
-/** A Magia mote's starting lifespan — kept in sync with MAGIC_LIFE in grid.ts, used here only to fade the mote as it ages. */
-const MAGIC_LIFE = 200;
-/** Trigo ripeness (meta) at which a stalk renders fully gold — kept in sync with WHEAT_RIPE in grid.ts. */
-const WHEAT_RIPE = 120;
-/** Alavanca on-state / Fio+Porta powered-state bit — kept in sync with CIRCUIT_ON_META in grid.ts. */
-const CIRCUIT_ON_META = 0x01;
-/** Marks an Alavanca cell as the handle/knob rather than the base plate — kept in sync with LEVER_ARM_META in grid.ts. */
-const LEVER_ARM_META = 0x02;
-/** Marks a Bloco de Calor/Frio as wired into a circuit at all — kept in sync with CIRCUIT_LINKED_META in grid.ts. Same bit value as LEVER_ARM_META but never the same cell, so no clash. */
-const CIRCUIT_LINKED_META = 0x02;
-/** Clone's locked-material id lives in the low 6 bits, wired/on state in the top two — kept in sync with CLONE_LINKED_META/CLONE_ON_META in grid.ts. */
-const CLONE_LINKED_META = 0x40;
-const CLONE_ON_META = 0x80;
-/** Meta bits a mason stamps on a house cell — kept in sync with grid.ts. Used to style walls, light windows, cap chimneys and shade the room inside. */
-const HOUSE_WALL_META = 0x40;
-const HOUSE_ANCHOR_META = 0x80;
-const HOUSE_KIND_MASK = 0x07;
-const HOUSE_WALL = 0;
-const HOUSE_WINDOW = 2;
-const HOUSE_CHIMNEY = 3;
-const HOUSE_FLOOR = 4;
-/** A mason-laid bridge plank — its own kind (not HOUSE_FLOOR) in grid.ts so deckNear can't mistake an ordinary house/storehouse floor tile for a finished crossing, but it renders exactly like one — see grid.ts's HOUSE_DECK. */
-const HOUSE_DECK = 5;
-/** A mason-laid staircase tread — same idea as HOUSE_DECK, its own kind so stairNear can't mistake a floor or bridge plank for a finished climb, but it renders exactly like one too — see grid.ts's HOUSE_STAIR. */
-const HOUSE_STAIR = 6;
 /** Warm, dim tone an empty cell enclosed by a house is tinted toward, so a house reads as a room with an inside rather than a hollow outline. */
 const HOUSE_INTERIOR: readonly [number, number, number] = [58, 44, 38];
 /** Cool glaze the transparent body of Vidro is tinted toward, over whatever ambient background shows through it. */
