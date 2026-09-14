@@ -296,7 +296,7 @@ const AMBIENT_ICE_MELT_CAP = 0.08;
  * of vapor rains back down just as gradually once the climate cools back
  * below the threshold.
  */
-const WATER_BOIL_TEMP = 100;
+export const WATER_BOIL_TEMP = 100;
 const ACID_BOIL_TEMP = 83;
 const WATER_BOIL_CHANCE = 0.006;
 const STEAM_CONDENSE_CHANCE = 0.01;
