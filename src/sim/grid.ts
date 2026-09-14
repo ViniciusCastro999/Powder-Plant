@@ -16,6 +16,15 @@ import {
 } from "./metaBits";
 import { NEIGHBORS_8, NEIGHBORS_4 } from "./neighbors";
 import { stepLifeGeneration as stepLifeGenerationImpl } from "./systems/life";
+import {
+  randomEmptyNeighbor as randomEmptyNeighborImpl, antScentDir as antScentDirImpl,
+  moveFish as moveFishImpl, stepAnt as stepAntImpl, birdPreyDir as birdPreyDirImpl,
+  stepBird as stepBirdImpl, stepFish as stepFishImpl,
+} from "./systems/wildlife";
+import {
+  CREATURE_FED_MAX, CREATURE_FED_BITS, CREATURE_STARVE_DEATH_CHANCE,
+  packCreature, creatureFacing, creatureTimer, creatureFed,
+} from "./creatureMeta";
 
 /**
  * Per-tick chance a Powder/Liquid cell even attempts its falling-sand
@@ -33,7 +42,7 @@ const MUD_FORM_CHANCE = 0.05;
 const ACID_START_CHARGES = 5;
 /** Safety net only, not a visible countdown — see the Pulse comment below. */
 const PULSE_MAX_STEPS = 4000;
-const SPROUT_BUDGET_MIN = 16;
+export const SPROUT_BUDGET_MIN = 16;
 const SPROUT_BUDGET_MAX = 34;
 /**
  * A Sprout's `meta` byte normally just holds its remaining growth budget
@@ -47,7 +56,7 @@ const SPROUT_BUDGET_MAX = 34;
  * exactly the "leaving and re-entering the season makes plants pile up
  * endlessly" bug this flag exists to prevent.
  */
-const SPROUT_BUDGET_MASK = 0x3f;
+export const SPROUT_BUDGET_MASK = 0x3f;
 const SPROUT_REGROWN_FLAG = 0x80;
 /** Meta bit marking a Sprout (and everything grown from it) as a Lenhador's cultivated tree — it grows without needing water/mud close by, since the forester tends it. */
 const SPROUT_FOREST_FLAG = 0x40;
@@ -80,7 +89,7 @@ const SPROUT_PROSPEROUS_REGROWTH_CHANCE = 0.004;
  * structure with far more than 34 total cells — so even a modest bonus can
  * balloon into a lot of extra growth once branching compounds it.
  */
-const SPROUT_REGROWTH_BONUS = 3;
+export const SPROUT_REGROWTH_BONUS = 3;
 
 /*
  * ── Trigo (the Plantador's crop) ────────────────────────────────────────
@@ -155,7 +164,7 @@ const SHRAPNEL_LIFE_MAX = 42;
 /** Hard ceiling on how many decorative Shrapnel particles a single blast spawns — a rendering/performance budget, not a limit on the blast's actual force (see CLUSTER_BONUS_PER_CHARGE, which is uncapped). */
 const SHRAPNEL_VISUAL_CAP = 400;
 /** Ticks a detonation's initial bright Flash lasts before fully fading — a couple of frames, just long enough to read as a flash rather than a single-frame strobe. */
-const FLASH_LIFE = 4;
+export const FLASH_LIFE = 4;
 /**
  * The explosion model is impulse-based, not a flood-fill pressure wave: a
  * detonation reaches into the disc of grid around it and, for every loose
@@ -401,8 +410,8 @@ const ATTACK_PERIOD = 54;
 /** Ticks a red hit-marker flashes at a struck cell. */
 const HIT_FLASH_LIFE = 7;
 /** `hp` byte: low 7 bits are the points, the top bit flags a unit empowered by Magia (twice the damage, twice the size). */
-const HP_POINTS_MASK = 0x7f;
-const HP_EMPOWERED = 0x80;
+export const HP_POINTS_MASK = 0x7f;
+export const HP_EMPOWERED = 0x80;
 /** How far a Guerreiro scans for a Esqueleto to go and meet — a wide watch, so a guard picks up a threat well before it reaches the houses. */
 const WARRIOR_SIGHT = 52;
 /** How far a Esqueleto scans for a Pip to hunt. */
@@ -3052,42 +3061,14 @@ export class SimGrid {
 
   // ── Creatures & Magia ──────────────────────────────────────────────────
 
-  /** A random empty 8-neighbour of (x, y), or null if the cell is walled in. */
+  /** A random empty 8-neighbour of (x, y), or null if the cell is walled in. See systems/wildlife.ts. */
   randomEmptyNeighbor(x: number, y: number): [number, number] | null {
-    const spots: [number, number][] = [];
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (this.inBounds(nx, ny) && this.get(nx, ny) === MaterialId.Empty) spots.push([nx, ny]);
-    }
-    return spots.length ? spots[Math.floor(Math.random() * spots.length)] : null;
+    return randomEmptyNeighborImpl(this, x, y);
   }
 
-  /** Step direction [dx, dy] (each -1/0/1) toward the nearest food a Formiga can smell within ANT_SMELL_RANGE, or [0, 0] if there's none. */
+  /** Step direction [dx, dy] toward the nearest food a Formiga can smell, or [0, 0] if there's none. See systems/wildlife.ts. */
   antScentDir(x: number, y: number): [number, number] {
-    let bestD = Infinity;
-    let best: [number, number] = [0, 0];
-    for (let dy = -ANT_SMELL_RANGE; dy <= ANT_SMELL_RANGE; dy++) {
-      for (let dx = -ANT_SMELL_RANGE; dx <= ANT_SMELL_RANGE; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        const nx = x + dx;
-        const ny = y + dy;
-        if (!this.inBounds(nx, ny)) continue;
-        const id = this.material[this.index(nx, ny)] as MaterialId;
-        if (
-          id !== MaterialId.Plant && id !== MaterialId.Sprout && id !== MaterialId.Flor &&
-          id !== MaterialId.Seed && id !== MaterialId.Wood && id !== MaterialId.Mud
-        ) {
-          continue;
-        }
-        const d = dx * dx + dy * dy;
-        if (d < bestD) {
-          bestD = d;
-          best = [Math.sign(dx), Math.sign(dy)];
-        }
-      }
-    }
-    return best;
+    return antScentDirImpl(this, x, y);
   }
 
   /** Moves a creature into an Empty cell and stamps its fresh state byte at the destination (swap() carries the old byte along, so it has to be overwritten). */
@@ -3103,493 +3084,29 @@ export class SimGrid {
    * here: it would trade the two meta bytes, turning the fish's hunger
    * gauge into a salinity reading and vice-versa.
    */
+  /** Moves a Peixe into an adjacent Água cell, keeping salinity/fish state each in their own place. See systems/wildlife.ts. */
   moveFish(fx: number, fy: number, tx: number, ty: number, fishMeta: number): void {
-    const fi = this.index(fx, fy);
-    const ti = this.index(tx, ty);
-    const salinity = this.meta[ti];
-    this.material[ti] = MaterialId.Fish;
-    this.meta[ti] = fishMeta;
-    this.material[fi] = MaterialId.Water;
-    this.meta[fi] = salinity;
-    this.processed[fi] = 1;
-    this.processed[ti] = 1;
-    this.wake(fx, fy);
-    this.wake(tx, ty);
+    moveFishImpl(this, fx, fy, tx, ty, fishMeta);
   }
 
-  /**
-   * Formiga: a surface walker. Falls when nothing's underfoot, otherwise
-   * trudges along the ground in its facing direction — stepping down slopes,
-   * climbing walls and low steps, burrowing through loose Areia/Terra/Barro
-   * (which carves tunnels as the displaced grain spills back), and turning
-   * around at water's edge or a dead end. Eats touching Planta/Broto/Flor/
-   * Semente to refill a hunger gauge that drains over time (it starves
-   * without food) and, when well fed, occasionally lays another Formiga.
-   * Drowns in Água, burns in Fogo/Lava.
-   */
+  /** Formiga: a surface walker that eats, breeds, drowns and burns. See systems/wildlife.ts. */
   stepAnt(x: number, y: number, i: number): void {
-    this.processed[i] = 1;
-    let facing = creatureFacing(this.meta[i]);
-    let fed = creatureFed(this.meta[i]);
-
-    // An ant walking a shoreline has water to one side and is fine — it only
-    // drowns when it's actually *in* it: water directly underfoot, or water
-    // on most sides. Fogo/Lava on any side is instantly fatal.
-    let waterBelow = false;
-    let waterAround = 0;
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const nId = this.material[this.index(nx, ny)] as MaterialId;
-      if (nId === MaterialId.Water) {
-        waterAround++;
-        if (dx === 0 && dy === 1) waterBelow = true;
-      } else if (nId === MaterialId.Lava) {
-        this.igniteAt(x, y);
-        return;
-      }
-      // Touching Fogo is *not* handled here — the flame's own per-tick
-      // ignition roll (stepFire, gated by this material's ignitionChance)
-      // lights the ant, which is the same mechanism that then carries the
-      // fire on to the next ant. A brief spark it can walk away from; a
-      // sustained fire is still certain death within a tick or two.
-    }
-    if ((waterBelow || waterAround >= 3) && Math.random() < ANT_DROWN_CHANCE) {
-      this.set(x, y, MaterialId.Empty);
-      return;
-    }
-
-    // Two food classes: fresh greenery (fast, fills the gauge right up) and
-    // gnawable solids — Madeira and Barro — which ants really do eat, just
-    // slowly, so an ant-ridden wooden wall wears away over time.
-    const foods: [number, number][] = [];
-    const solidFoods: [number, number][] = [];
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const nId = this.get(nx, ny);
-      if (nId === MaterialId.Plant || nId === MaterialId.Sprout || nId === MaterialId.Flor || nId === MaterialId.Seed) {
-        foods.push([nx, ny]);
-      } else if (
-        (nId === MaterialId.Wood || nId === MaterialId.Mud) &&
-        (this.meta[this.index(nx, ny)] & HOUSE_WALL_META) === 0 // don't gnaw a house
-      ) {
-        solidFoods.push([nx, ny]);
-      }
-    }
-    const breed = (): void => {
-      if (Math.random() >= ANT_BREED_CHANCE) return;
-      const spot = this.randomEmptyNeighbor(x, y);
-      if (spot) {
-        this.set(spot[0], spot[1], MaterialId.Ant, packCreature(Math.random() < 0.5 ? 1 : -1, 0, CREATURE_FED_MAX >> 1));
-      }
-    };
-    if (foods.length > 0) {
-      if (Math.random() < ANT_EAT_CHANCE) {
-        const [fx, fy] = foods[Math.floor(Math.random() * foods.length)];
-        this.set(fx, fy, MaterialId.Empty);
-        fed = CREATURE_FED_MAX;
-        breed();
-      }
-    } else if (solidFoods.length > 0) {
-      if (Math.random() < ANT_EAT_SOLID_CHANCE) {
-        const [fx, fy] = solidFoods[Math.floor(Math.random() * solidFoods.length)];
-        this.set(fx, fy, MaterialId.Empty);
-        fed = Math.min(CREATURE_FED_MAX, fed + ANT_SOLID_FEED_GAIN);
-        breed();
-      }
-    } else if (fed > 0 && Math.random() < 1 / ANT_HUNGER_INTERVAL) {
-      fed--;
-    } else if (fed === 0 && Math.random() < CREATURE_STARVE_DEATH_CHANCE) {
-      this.set(x, y, MaterialId.Empty);
-      return;
-    }
-
-    if (Math.random() < ANT_TURN_CHANCE) facing = -facing;
-
-    // Follows a scent: if there's food it isn't already touching within
-    // smelling distance, the ant turns toward it and heads over (climbing
-    // if it's above) — this is what keeps a colony gathered on a plant
-    // patch or gnawing up into a wooden post instead of every ant
-    // wandering off after one nibble.
-    // The scent check is a small area scan — only run it every few ticks
-    // per ant (staggered by column so they don't all scan the same frame);
-    // food doesn't move, so re-sniffing every single tick buys nothing.
-    let scentUp = false;
-    if (foods.length === 0 && solidFoods.length === 0 && (this.tick + x) % 3 === 0) {
-      const [sdx, sdy] = this.antScentDir(x, y);
-      if (sdx !== 0) facing = sdx;
-      scentUp = sdy < 0;
-    } else if (solidFoods.length > 0) {
-      // Gnawing at a solid — keep pushing up into the chamber it's hollowing
-      // out rather than dropping back to flat ground.
-      scentUp = this.inBounds(x, y - 1) && this.get(x, y - 1) === MaterialId.Empty;
-    }
-
-    const below = this.inBounds(x, y + 1) ? this.get(x, y + 1) : MaterialId.Stone;
-    if (below === MaterialId.Empty) {
-      this.moveCreature(x, y, x, y + 1, packCreature(facing, 0, fed));
-      return;
-    }
-
-    const fwd = x + facing;
-
-    // Food sensed above (a plant clump overhead, wood it has eaten up into):
-    // climb toward it rather than trudging along flat ground past it.
-    if (scentUp) {
-      if (this.inBounds(x, y - 1) && this.get(x, y - 1) === MaterialId.Empty && Math.random() < 0.7) {
-        this.moveCreature(x, y, x, y - 1, packCreature(facing, 0, fed));
-        return;
-      }
-      if (this.inBounds(fwd, y - 1) && this.get(fwd, y - 1) === MaterialId.Empty && Math.random() < 0.5) {
-        this.moveCreature(x, y, fwd, y - 1, packCreature(facing, 0, fed));
-        return;
-      }
-    }
-
-    const fwdId = this.inBounds(fwd, y) ? this.get(fwd, y) : MaterialId.Stone;
-    if (fwdId === MaterialId.Water) {
-      this.meta[i] = packCreature(-facing, 0, fed);
-      return;
-    }
-    if (fwdId === MaterialId.Empty) {
-      const belowFwd = this.inBounds(fwd, y + 1) ? this.get(fwd, y + 1) : MaterialId.Stone;
-      const target: [number, number] = belowFwd === MaterialId.Empty ? [fwd, y + 1] : [fwd, y];
-      this.moveCreature(x, y, target[0], target[1], packCreature(facing, 0, fed));
-      return;
-    }
-    if (
-      (fwdId === MaterialId.Sand || fwdId === MaterialId.Dirt || fwdId === MaterialId.Mud) &&
-      Math.random() < ANT_DIG_CHANCE
-    ) {
-      this.swap(x, y, fwd, y);
-      this.meta[this.index(fwd, y)] = packCreature(facing, 0, fed);
-      this.meta[i] = 0;
-      return;
-    }
-    // Blocked by another animal (the ant ahead in the trail, a bird, a fish):
-    // just turn or wait rather than clambering over it — that eager climb was
-    // what made a painted line of ants burst apart into a cloud in one tick,
-    // so fire had nothing left to spread between.
-    if (MATERIALS[fwdId].category === MaterialCategory.Creature) {
-      this.meta[i] = packCreature(Math.random() < 0.4 ? -facing : facing, 0, fed);
-      return;
-    }
-    const upId = this.inBounds(x, y - 1) ? this.get(x, y - 1) : MaterialId.Stone;
-    if (upId === MaterialId.Empty && Math.random() < 0.45) {
-      this.moveCreature(x, y, x, y - 1, packCreature(facing, 0, fed));
-      return;
-    }
-    const fwdUpId = this.inBounds(fwd, y - 1) ? this.get(fwd, y - 1) : MaterialId.Stone;
-    if (fwdUpId === MaterialId.Empty && Math.random() < 0.35) {
-      this.moveCreature(x, y, fwd, y - 1, packCreature(facing, 0, fed));
-      return;
-    }
-    this.meta[i] = packCreature(-facing, 0, fed);
+    stepAntImpl(this, x, y, i);
   }
 
-  /**
-   * The nearest thing a Pássaro will swoop on — a Formiga, or a Peixe that's
-   * broken the surface (has an Empty cell beside it, so the bird can reach
-   * it without diving underwater) — within BIRD_HUNT_RANGE, or null. Returns
-   * the [dx, dy] step direction toward it.
-   */
+  /** The nearest thing a Pássaro will swoop on, or null. See systems/wildlife.ts. */
   birdPreyDir(x: number, y: number): [number, number] | null {
-    let bestD = Infinity;
-    let best: [number, number] | null = null;
-    for (let dy = -BIRD_HUNT_RANGE; dy <= BIRD_HUNT_RANGE; dy++) {
-      for (let dx = -BIRD_HUNT_RANGE; dx <= BIRD_HUNT_RANGE; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        const nx = x + dx;
-        const ny = y + dy;
-        if (!this.inBounds(nx, ny)) continue;
-        const id = this.material[this.index(nx, ny)] as MaterialId;
-        let prey = false;
-        if (id === MaterialId.Ant) {
-          prey = true;
-        } else if (id === MaterialId.Fish) {
-          prey = ([[0, -1], [-1, 0], [1, 0], [0, 1]] as const).some(([ax, ay]) => {
-            const fx = nx + ax;
-            const fy = ny + ay;
-            return this.inBounds(fx, fy) && this.get(fx, fy) === MaterialId.Empty;
-          });
-        }
-        if (!prey) continue;
-        const d = dx * dx + dy * dy;
-        if (d < bestD) {
-          bestD = d;
-          best = [Math.sign(dx), Math.sign(dy)];
-        }
-      }
-    }
-    return best;
+    return birdPreyDirImpl(this, x, y);
   }
 
-  /**
-   * Pássaro: cruises open air in a lazy band near the top of the scene, but
-   * breaks off to **swoop** the moment it spots a Formiga on the ground or a
-   * Peixe at the surface within BIRD_HUNT_RANGE — diving straight at it and
-   * snatching it on contact. Flees Fogo/Lava (which always wins over a
-   * hunt), and, with energy to spare, drops a Semente into the open cell
-   * below it now and then. Burns if it can't get clear of flame.
-   */
+  /** Pássaro: cruises, hunts, flees fire, lays Semente. See systems/wildlife.ts. */
   stepBird(x: number, y: number, i: number): void {
-    this.processed[i] = 1;
-    let facing = creatureFacing(this.meta[i]);
-    let fed = creatureFed(this.meta[i]);
-
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      if (this.get(nx, ny) === MaterialId.Lava) {
-        this.igniteAt(x, y);
-        return;
-      }
-      // Fogo is left to the flame's own ignition roll (see stepFire) — that
-      // way a burning bird reliably passes the fire to the next one instead
-      // of just dying alone.
-    }
-
-    const foods: [number, number][] = [];
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const nId = this.get(nx, ny);
-      if (nId === MaterialId.Seed || nId === MaterialId.Ant || nId === MaterialId.Fish) foods.push([nx, ny]);
-    }
-    // A swoop lands its catch far more reliably than an idle peck — prey
-    // it's actually reached rarely gets away.
-    if (foods.length > 0 && Math.random() < 0.85) {
-      const [fx, fy] = foods[Math.floor(Math.random() * foods.length)];
-      this.set(fx, fy, MaterialId.Empty);
-      fed = Math.min(CREATURE_FED_MAX, fed + BIRD_FEED_GAIN);
-    } else if (fed > 0 && Math.random() < 1 / BIRD_HUNGER_INTERVAL) {
-      fed--;
-    } else if (fed === 0 && Math.random() < CREATURE_STARVE_DEATH_CHANCE) {
-      this.set(x, y, MaterialId.Empty);
-      return;
-    }
-
-    if (
-      fed > 20 && Math.random() < BIRD_LAY_CHANCE &&
-      this.inBounds(x, y + 2) &&
-      this.get(x, y + 1) === MaterialId.Empty && this.get(x, y + 2) === MaterialId.Empty
-    ) {
-      // Two clear cells below, so the seed actually drops away instead of
-      // hanging in a packed flock.
-      this.set(x, y + 1, MaterialId.Seed);
-      fed -= 6;
-    }
-
-    let flee = 0;
-    for (let dy = -BIRD_HAZARD_RANGE; dy <= BIRD_HAZARD_RANGE && flee === 0; dy++) {
-      for (let dx = -BIRD_HAZARD_RANGE; dx <= BIRD_HAZARD_RANGE; dx++) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (!this.inBounds(nx, ny)) continue;
-        const nId = this.material[this.index(nx, ny)] as MaterialId;
-        if (nId === MaterialId.Fire || nId === MaterialId.Lava) {
-          flee = dx >= 0 ? -1 : 1;
-          break;
-        }
-      }
-    }
-
-    const bandTop = Math.ceil(this.height * BIRD_BAND_TOP_FRAC);
-    // A peckish bird drops out of its lazy high cruise and patrols low over
-    // the ground/water, hunting — which is what brings it within swooping
-    // range of Formigas and surfacing Peixes. Once it's eaten its fill it
-    // climbs back up to soar.
-    const hungry = fed < BIRD_HUNGER_DIVE;
-    const bandBottom = hungry
-      ? this.height - 3
-      : Math.floor(this.height * BIRD_BAND_BOTTOM_FRAC);
-    let vbias: number;
-    if (y < bandTop) vbias = 1;
-    else if (y > bandBottom) vbias = -1;
-    else if (hungry) vbias = Math.random() < 0.55 ? 1 : 0;
-    else vbias = Math.random() < 0.3 ? -1 : Math.random() < 0.4 ? 1 : 0;
-
-    // Hunt (only while peckish, and not fleeing): a spotted Formiga/Peixe
-    // pulls the bird straight at it, ignoring the cruising band. A well-fed
-    // bird just soars and lets prey be — that oscillation is what stops a
-    // flock from hoovering every ant and fish off the map. Also the pricey
-    // area scan then only runs for the birds actually hunting.
-    const hunt = hungry && flee === 0 ? this.birdPreyDir(x, y) : null;
-
-    let tries: [number, number][];
-    if (flee !== 0) {
-      facing = flee;
-      tries = [[flee, -1], [flee, 0], [0, -1], [flee, 1]];
-    } else if (hunt) {
-      const [hx, hy] = hunt;
-      if (hx !== 0) facing = hx;
-      tries = [
-        [hx, hy],
-        [hx, 0],
-        [0, hy],
-        [hx, -hy],
-        [facing, 0],
-      ];
-    } else {
-      if (Math.random() < BIRD_TURN_CHANCE) facing = -facing;
-      tries = [
-        [facing, vbias],
-        [facing, 0],
-        [0, vbias],
-        [facing, vbias === 0 ? -1 : vbias],
-        [0, -1],
-      ];
-    }
-    for (const [mx, my] of tries) {
-      if (mx === 0 && my === 0) continue;
-      const nx = x + mx;
-      const ny = y + my;
-      if (this.inBounds(nx, ny) && this.get(nx, ny) === MaterialId.Empty) {
-        this.moveCreature(x, y, nx, ny, packCreature(facing, 0, fed));
-        return;
-      }
-    }
-    this.meta[i] = packCreature(-facing, 0, fed);
+    stepBirdImpl(this, x, y, i);
   }
 
-  /**
-   * Peixe: swims only inside Água, nudging horizontally in its facing
-   * direction with a gentle vertical wander and shying away from the open
-   * surface. Nibbles submerged Planta/Broto/Semente for food, breeds in
-   * roomy water when well fed, and dies to Ácido/Lava/Fogo on contact or to
-   * water that's come to a boil. Out of water it flops around a few ticks
-   * (its `timer` nibble counting up) and then suffocates.
-   */
+  /** Peixe: swims, eats, breeds, flops when out of water. See systems/wildlife.ts. */
   stepFish(x: number, y: number, i: number): void {
-    this.processed[i] = 1;
-    let facing = creatureFacing(this.meta[i]);
-    let timer = creatureTimer(this.meta[i]);
-    let fed = creatureFed(this.meta[i]);
-
-    let waterCount = 0;
-    let airCount = 0;
-    const sideWater: [number, number][] = [];
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const nId = this.material[this.index(nx, ny)] as MaterialId;
-      if (nId === MaterialId.Acid || nId === MaterialId.Lava || nId === MaterialId.Fire) {
-        this.set(x, y, MaterialId.Empty);
-        return;
-      }
-      if (nId === MaterialId.Water) {
-        waterCount++;
-        if (dx === 0 || dy === 0) sideWater.push([nx, ny]);
-      } else if (nId === MaterialId.Empty) {
-        airCount++;
-      }
-    }
-
-    if (this.temp >= WATER_BOIL_TEMP && waterCount > 0 && Math.random() < 0.05) {
-      this.set(x, y, MaterialId.Empty);
-      return;
-    }
-
-    if (waterCount === 0) {
-      // Only actually suffocating if it's out in the air. Packed shoulder to
-      // shoulder with other fish (no water *or* air touching) it's just
-      // stuck for a beat — it'll get water back as the shoal shifts.
-      if (airCount === 0) {
-        this.meta[i] = packCreature(facing, 0, fed);
-        return;
-      }
-      // The flop timer only advances every few ticks, so a fish flung onto
-      // the bank has a real moment to thrash its way back to the water.
-      if (this.tick % FISH_AIR_TICK_SCALE === 0) timer++;
-      if (timer >= FISH_AIR_TICKS) {
-        this.set(x, y, MaterialId.Empty);
-        return;
-      }
-      const spots: [number, number][] = [];
-      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [-1, -1], [1, -1], [0, 1]] as const) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (this.inBounds(nx, ny) && this.get(nx, ny) === MaterialId.Empty) spots.push([nx, ny]);
-      }
-      if (spots.length > 0) {
-        const [nx, ny] = spots[Math.floor(Math.random() * spots.length)];
-        this.moveCreature(x, y, nx, ny, packCreature(facing, timer, fed));
-      } else {
-        this.meta[i] = packCreature(facing, timer, fed);
-      }
-      return;
-    }
-    timer = 0;
-
-    const foods: [number, number][] = [];
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const nId = this.get(nx, ny);
-      if (nId === MaterialId.Plant || nId === MaterialId.Sprout || nId === MaterialId.Seed) foods.push([nx, ny]);
-    }
-    if (foods.length > 0 && Math.random() < FISH_EAT_CHANCE) {
-      const [fx, fy] = foods[Math.floor(Math.random() * foods.length)];
-      this.set(fx, fy, MaterialId.Empty);
-      fed = CREATURE_FED_MAX;
-    } else if (fed > 0 && Math.random() < 1 / FISH_HUNGER_INTERVAL) {
-      fed--;
-    } else if (fed === 0 && Math.random() < CREATURE_STARVE_DEATH_CHANCE) {
-      this.set(x, y, MaterialId.Empty);
-      return;
-    }
-
-    if (fed >= CREATURE_FED_MAX - 4 && waterCount >= 4 && sideWater.length > 0 && Math.random() < FISH_BREED_CHANCE) {
-      const [bx, by] = sideWater[Math.floor(Math.random() * sideWater.length)];
-      const bi = this.index(bx, by);
-      this.material[bi] = MaterialId.Fish;
-      this.meta[bi] = packCreature(Math.random() < 0.5 ? 1 : -1, 0, CREATURE_FED_MAX >> 1);
-      this.processed[bi] = 1;
-      this.wake(bx, by);
-      fed -= 8;
-    }
-
-    if (Math.random() < 0.03) facing = -facing;
-
-    // A Pássaro hovering just overhead: bolt for deeper water. This is the
-    // fish's one defence against a swoop — stay down and the bird can't
-    // reach it.
-    let birdAbove = false;
-    for (let sy = 1; sy <= FISH_BIRD_SCARE && !birdAbove; sy++) {
-      for (let sx = -2; sx <= 2; sx++) {
-        if (this.inBounds(x + sx, y - sy) && this.get(x + sx, y - sy) === MaterialId.Bird) {
-          birdAbove = true;
-          break;
-        }
-      }
-    }
-
-    const aboveEmpty = this.inBounds(x, y - 1) && this.get(x, y - 1) === MaterialId.Empty;
-    const vbias = birdAbove ? 1 : aboveEmpty ? 1 : Math.random() < 0.25 ? -1 : Math.random() < 0.3 ? 1 : 0;
-    const tries: [number, number][] = [
-      [facing, vbias],
-      [facing, 0],
-      [0, vbias],
-      [-facing, 0],
-      [0, 1],
-    ];
-    for (const [mx, my] of tries) {
-      if (mx === 0 && my === 0) continue;
-      const nx = x + mx;
-      const ny = y + my;
-      if (this.inBounds(nx, ny) && this.get(nx, ny) === MaterialId.Water) {
-        this.moveFish(x, y, nx, ny, packCreature(facing, 0, fed));
-        return;
-      }
-    }
-    this.meta[i] = packCreature(facing, 0, fed);
+    stepFishImpl(this, x, y, i);
   }
 
   /**
