@@ -1,7 +1,7 @@
 import type { SimGrid } from "../grid";
 import { AMBIENT_ICE_MELT_TEMP } from "../grid";
 import { HEAT_FUSE_GLASS } from "./fire";
-import { COLD_1, COLD_2, COLD_3 } from "../temperature";
+import { COLD_2, COLD_3 } from "../temperature";
 import { MaterialId } from "../types";
 import { MATERIALS } from "../materials";
 import { NEIGHBORS_4, NEIGHBORS_8 } from "../neighbors";

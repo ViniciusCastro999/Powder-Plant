@@ -1,5 +1,4 @@
 import type { SimGrid } from "../grid";
-import { HP_POINTS_MASK, HP_EMPOWERED } from "../grid";
 import { MaterialId, MaterialCategory } from "../types";
 import { MATERIALS } from "../materials";
 import { COLD_1, HOT_2 } from "../temperature";
@@ -9,9 +8,7 @@ import {
   HOUSE_WALLS, HOUSE_WALL_META, HOUSE_ANCHOR_META, HOUSE_KIND_MASK, HOUSE_FLOOR,
   HOUSE_DECK, HOUSE_STAIR, HOUSE_PLANS, type HousePlan, houseType,
 } from "../houseBlueprints";
-import {
-  CREATURE_FED_MAX, CREATURE_STARVE_DEATH_CHANCE, packCreature, creatureFacing, creatureFed, creatureTimer,
-} from "../creatureMeta";
+import { CREATURE_FED_MAX, CREATURE_STARVE_DEATH_CHANCE, packCreature } from "../creatureMeta";
 import { FOLK_SCAN_RANGE, FOLK_FORAGE_HUNGER, FOLK_WADEABLE, FOLK_IDS } from "../grid";
 
 /*

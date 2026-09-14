@@ -1,54 +1,9 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
+  import Modal from "./Modal.svelte";
   import { MaterialId } from "../sim/types";
-  import { MATERIALS, PALETTE_CATEGORIES } from "../sim/materials";
+  import { MATERIALS, PALETTE_CATEGORIES, ICON_BY_MATERIAL } from "../sim/materials";
   import { t, materialName, categoryLabel, materialInfo } from "../i18n";
-
-  const ICON_BY_MATERIAL: Record<MaterialId, string> = {
-    [MaterialId.Empty]: "eraser",
-    [MaterialId.Sand]: "sand",
-    [MaterialId.Water]: "water",
-    [MaterialId.Stone]: "stone",
-    [MaterialId.Wood]: "wood",
-    [MaterialId.Fire]: "fire",
-    [MaterialId.Plant]: "plant",
-    [MaterialId.Dirt]: "dirt",
-    [MaterialId.Mud]: "mud",
-    [MaterialId.Electricity]: "electricity",
-    [MaterialId.Metal]: "metal",
-    [MaterialId.Seed]: "seed",
-    [MaterialId.Acid]: "acid",
-    [MaterialId.Gunpowder]: "gunpowder",
-    [MaterialId.Oil]: "oil",
-    [MaterialId.Salt]: "salt",
-    [MaterialId.Lava]: "lava",
-    [MaterialId.Vida]: "life",
-    [MaterialId.Ice]: "ice",
-    [MaterialId.Glass]: "glass",
-    [MaterialId.Clone]: "clone",
-    [MaterialId.HeatBlock]: "heat-block",
-    [MaterialId.ColdBlock]: "cold-block",
-    [MaterialId.C4]: "c4",
-    [MaterialId.Steam]: "water",
-    [MaterialId.AcidVapor]: "acid",
-    [MaterialId.CombustibleGas]: "gas",
-    [MaterialId.Ant]: "ant",
-    [MaterialId.Bird]: "bird",
-    [MaterialId.Fish]: "fish",
-    [MaterialId.Magic]: "magic",
-    [MaterialId.Mason]: "mason",
-    [MaterialId.Lumberjack]: "lumberjack",
-    [MaterialId.Farmer]: "farmer",
-    [MaterialId.Warrior]: "warrior",
-    [MaterialId.Skeleton]: "skeleton",
-    [MaterialId.Brick]: "brick",
-    [MaterialId.Wheat]: "wheat",
-    [MaterialId.Sprout]: "plant",
-    [MaterialId.Flor]: "plant",
-    [MaterialId.Lever]: "lever",
-    [MaterialId.Wire]: "wire",
-    [MaterialId.Door]: "door",
-  };
 
   interface Props {
     open: boolean;
@@ -70,101 +25,65 @@
   }
 </script>
 
-{#if open}
-  <div class="backdrop" onclick={close} onkeydown={(e) => e.key === "Escape" && close()} role="presentation">
-    <div
-      class="dialog"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.stopPropagation()}
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("materialHints")}
-      tabindex="-1"
-    >
-      <header>
-        {#if selected !== null}
-          <button class="back" onclick={() => (selected = null)} aria-label={t("back")}>
-            <Icon name="back" size={18} />
-            <span>{t("back")}</span>
-          </button>
-        {:else}
-          <span class="title">{t("materialHints")}</span>
-        {/if}
-        <button class="close" onclick={close} aria-label={t("close")}>✕</button>
-      </header>
+<Modal {open} onclose={close} ariaLabel={t("materialHints")} width="560px" maxHeight="600px">
+  <header>
+    {#if selected !== null}
+      <button class="back" onclick={() => (selected = null)} aria-label={t("back")}>
+        <Icon name="back" size={18} />
+        <span>{t("back")}</span>
+      </button>
+    {:else}
+      <span class="title">{t("materialHints")}</span>
+    {/if}
+    <button class="close" onclick={close} aria-label={t("close")}>✕</button>
+  </header>
 
-      {#if selected === null}
-        <p class="hint">{t("hintsIntro")}</p>
-        <div class="categories">
-          {#each PALETTE_CATEGORIES as cat (cat.id)}
-            <section>
-              <span class="category-label">
-                <Icon name={cat.icon} size={12} />
-                {categoryLabel(cat.id)}
-              </span>
-              <div class="grid">
-                {#each cat.materials as id (id)}
-                  <button class="tile" onclick={() => (selected = id)}>
-                    <span class="icon-badge" style={swatchStyle(id)}>
-                      <Icon name={ICON_BY_MATERIAL[id]} size={18} />
-                    </span>
-                    <span class="name">{materialName(id)}</span>
-                  </button>
-                {/each}
-              </div>
-            </section>
-          {/each}
-        </div>
-      {:else}
-        <div class="detail">
-          <div class="detail-head">
-            <span class="icon-badge large" style={swatchStyle(selected)}>
-              <Icon name={ICON_BY_MATERIAL[selected]} size={26} />
-            </span>
-            <span class="detail-name">{materialName(selected)}</span>
+  {#if selected === null}
+    <p class="hint">{t("hintsIntro")}</p>
+    <div class="categories">
+      {#each PALETTE_CATEGORIES as cat (cat.id)}
+        <section>
+          <span class="category-label">
+            <Icon name={cat.icon} size={12} />
+            {categoryLabel(cat.id)}
+          </span>
+          <div class="grid">
+            {#each cat.materials as id (id)}
+              <button class="tile" onclick={() => (selected = id)}>
+                <span class="icon-badge" style={swatchStyle(id)}>
+                  <Icon name={ICON_BY_MATERIAL[id]} size={18} />
+                </span>
+                <span class="name">{materialName(id)}</span>
+              </button>
+            {/each}
           </div>
-          <p class="description">{info?.description}</p>
-          {#if info?.interactions.length}
-            <div class="interactions">
-              <span class="section-label">{t("interactions")}</span>
-              <ul>
-                {#each info?.interactions ?? [] as line}
-                  <li>{line}</li>
-                {/each}
-              </ul>
-            </div>
-          {/if}
+        </section>
+      {/each}
+    </div>
+  {:else}
+    <div class="detail">
+      <div class="detail-head">
+        <span class="icon-badge large" style={swatchStyle(selected)}>
+          <Icon name={ICON_BY_MATERIAL[selected]} size={26} />
+        </span>
+        <span class="detail-name">{materialName(selected)}</span>
+      </div>
+      <p class="description">{info?.description}</p>
+      {#if info?.interactions.length}
+        <div class="interactions">
+          <span class="section-label">{t("interactions")}</span>
+          <ul>
+            {#each info?.interactions ?? [] as line}
+              <li>{line}</li>
+            {/each}
+          </ul>
         </div>
       {/if}
     </div>
-  </div>
-{/if}
+  {/if}
+</Modal>
 
 <style>
-  .backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(4, 5, 8, 0.6);
-    backdrop-filter: blur(3px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 50;
-    padding: 24px;
-  }
-
-  .dialog {
-    width: min(560px, 100%);
-    max-height: min(600px, 90vh);
-    display: flex;
-    flex-direction: column;
-    background: #161a26;
-    border: 1px solid rgba(255, 255, 255, 0.09);
-    border-radius: 16px;
-    box-shadow: 0 30px 70px rgba(0, 0, 0, 0.55);
-    overflow: hidden;
-  }
-
   header {
     display: flex;
     align-items: center;

@@ -3,6 +3,7 @@
   import BottomPanel from "./components/BottomPanel.svelte";
   import HintsModal from "./components/HintsModal.svelte";
   import MapsModal from "./components/MapsModal.svelte";
+  import OnboardingModal from "./components/OnboardingModal.svelte";
   import { BrushShape, MaterialId } from "./sim/types";
   import { NEUTRAL_TEMP } from "./sim/temperature";
   import { intlLocale } from "./i18n";
@@ -20,6 +21,7 @@
   let temperature = $state(NEUTRAL_TEMP);
   let hintsOpen = $state(false);
   let mapsOpen = $state(false);
+  let onboardingOpen = $state(true);
   let paused = $state(false);
   let gravityOn = $state(true);
   let canvasRef: ReturnType<typeof Canvas> | undefined;
@@ -64,6 +66,7 @@
     onclear={() => canvasRef?.clear()}
     onhints={() => (hintsOpen = true)}
     onmaps={() => (mapsOpen = true)}
+    ontour={() => (onboardingOpen = true)}
   />
   <HintsModal open={hintsOpen} onclose={() => (hintsOpen = false)} />
   <MapsModal
@@ -72,6 +75,7 @@
     getSnapshot={() => canvasRef?.snapshot() ?? null}
     onload={(snap) => canvasRef?.loadMap(snap)}
   />
+  <OnboardingModal open={onboardingOpen} onclose={() => (onboardingOpen = false)} />
 </main>
 
 <style>

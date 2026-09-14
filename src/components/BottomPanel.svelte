@@ -1,61 +1,10 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
   import { BrushShape, MaterialId } from "../sim/types";
-  import { MATERIALS, PALETTE_CATEGORIES } from "../sim/materials";
+  import { MATERIALS, PALETTE_CATEGORIES, ICON_BY_MATERIAL } from "../sim/materials";
   import { COLD_1, COLD_2, COLD_3, PROSPEROUS_LOW, HOT_2, HOT_3, isProsperous } from "../sim/temperature";
   import { t, materialName, categoryLabel, intlLocale, locale, setLocale, LOCALES } from "../i18n";
   import type { UIStrings } from "../i18n/ui";
-
-  const ICON_BY_MATERIAL: Record<MaterialId, string> = {
-    [MaterialId.Empty]: "eraser",
-    [MaterialId.Sand]: "sand",
-    [MaterialId.Water]: "water",
-    [MaterialId.Stone]: "stone",
-    [MaterialId.Wood]: "wood",
-    [MaterialId.Fire]: "fire",
-    [MaterialId.Plant]: "plant",
-    [MaterialId.Dirt]: "dirt",
-    [MaterialId.Mud]: "mud",
-    [MaterialId.Electricity]: "electricity",
-    [MaterialId.Metal]: "metal",
-    [MaterialId.Seed]: "seed",
-    [MaterialId.Acid]: "acid",
-    [MaterialId.Gunpowder]: "gunpowder",
-    [MaterialId.Oil]: "oil",
-    [MaterialId.Salt]: "salt",
-    [MaterialId.Lava]: "lava",
-    [MaterialId.Vida]: "life",
-    [MaterialId.Ice]: "ice",
-    [MaterialId.Glass]: "glass",
-    [MaterialId.Clone]: "clone",
-    [MaterialId.HeatBlock]: "heat-block",
-    [MaterialId.ColdBlock]: "cold-block",
-    [MaterialId.C4]: "c4",
-    // Vapor/Vapor de Ácido are never directly paintable — only ever appear
-    // by boiling — but the type still needs an entry for every id.
-    [MaterialId.Steam]: "water",
-    [MaterialId.AcidVapor]: "acid",
-    [MaterialId.CombustibleGas]: "gas",
-    [MaterialId.Ant]: "ant",
-    [MaterialId.Bird]: "bird",
-    [MaterialId.Fish]: "fish",
-    [MaterialId.Magic]: "magic",
-    [MaterialId.Mason]: "mason",
-    [MaterialId.Lumberjack]: "lumberjack",
-    [MaterialId.Farmer]: "farmer",
-    [MaterialId.Warrior]: "warrior",
-    [MaterialId.Skeleton]: "skeleton",
-    [MaterialId.Brick]: "brick",
-    // Sprout and Flor only ever appear by germinating from a Semente —
-    // neither has a palette button, but the type still needs an entry for
-    // every id.
-    [MaterialId.Wheat]: "wheat",
-    [MaterialId.Sprout]: "plant",
-    [MaterialId.Flor]: "plant",
-    [MaterialId.Lever]: "lever",
-    [MaterialId.Wire]: "wire",
-    [MaterialId.Door]: "door",
-  };
 
   const SHAPES: { id: BrushShape; icon: string; labelKey: keyof UIStrings }[] = [
     { id: BrushShape.Point, icon: "point", labelKey: "shapePoint" },
@@ -75,6 +24,7 @@
     onclear: () => void;
     onhints: () => void;
     onmaps: () => void;
+    ontour: () => void;
   }
   let {
     selected = $bindable(),
@@ -87,6 +37,7 @@
     onclear,
     onhints,
     onmaps,
+    ontour,
   }: Props = $props();
 
   /** Which category's tile grid is currently expanded — a single-open accordion (never fully collapsed, so the footer's height stays constant) starting on whichever category the initial selection belongs to. */
@@ -221,6 +172,9 @@
         aria-pressed={paused}
       >
         <Icon name={paused ? "play" : "pause"} size={15} />
+      </button>
+      <button class="icon-btn" onclick={ontour} title={t("welcomeTour")} aria-label={t("welcomeTour")}>
+        <Icon name="sparkle" size={15} />
       </button>
       <button class="icon-btn" onclick={onhints} title={t("hints")} aria-label={t("hints")}>
         <Icon name="help" size={15} />

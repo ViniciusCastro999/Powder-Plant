@@ -1,5 +1,5 @@
 import type { SimGrid } from "../grid";
-import { PULSE_AIR_LIFE, FLASH_LIFE, DETONATIONS_PER_TICK_CAP } from "../grid";
+import { FLASH_LIFE } from "../grid";
 import { MaterialId, MaterialCategory } from "../types";
 import { MATERIALS } from "../materials";
 import { NEIGHBORS_8 } from "../neighbors";

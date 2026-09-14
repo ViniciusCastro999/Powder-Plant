@@ -1,30 +1,17 @@
 import { MaterialCategory, MaterialId, type DragBlob } from "./types";
 import { MATERIALS, SINGLE_DROP_MATERIALS } from "./materials";
-import { NEUTRAL_TEMP, EXTREME_COLD, EXTREME_HOT, COLD_1, COLD_2, COLD_3, HOT_2, isProsperous } from "./temperature";
+import { NEUTRAL_TEMP, EXTREME_COLD, EXTREME_HOT, COLD_1, COLD_2, COLD_3 } from "./temperature";
 import { rleEncode, rleDecode, SCHEMA_VERSION, type MapSnapshot } from "./storage";
-import {
-  HOUSE_ANCHOR_META, HOUSE_WALL_META, HOUSE_WALL_BRICK, HOUSE_WALL_WOOD, HOUSE_WALL_ICE,
-  HOUSE_WALL_MATERIAL, HOUSE_WALLS, type RoofShape, type HousePlan, HOUSE_PLANS,
-  MASON_MAX_PLAN, PLAN_GRANARY, PLAN_WOODSHED, HOUSE_MAX_DWELLING_SPAN,
-  HOUSE_WALL, HOUSE_ROOF, HOUSE_WINDOW, HOUSE_CHIMNEY, HOUSE_FLOOR, HOUSE_DECK, HOUSE_STAIR,
-  HOUSE_KIND_MASK, type HouseCell, houseCellMaterial, houseCells, HOUSE_BLUEPRINTS, HOUSE_HEIGHTS,
-  houseStyle, houseType, packHouseAnchor,
-} from "./houseBlueprints";
-import {
-  WHEAT_RIPE, GLASS_SHATTER_HITS, CIRCUIT_ON_META, LEVER_ARM_META, CIRCUIT_LINKED_META,
-  CLONE_LOCK_MASK, CLONE_LINKED_META, CLONE_ON_META, MAGIC_LIFE,
-} from "./metaBits";
-import { NEIGHBORS_8, NEIGHBORS_4 } from "./neighbors";
+import type { HousePlan } from "./houseBlueprints";
+import { CIRCUIT_ON_META, LEVER_ARM_META, MAGIC_LIFE } from "./metaBits";
+import { NEIGHBORS_8 } from "./neighbors";
 import { stepLifeGeneration as stepLifeGenerationImpl } from "./systems/life";
 import {
   randomEmptyNeighbor as randomEmptyNeighborImpl, antScentDir as antScentDirImpl,
   moveFish as moveFishImpl, stepAnt as stepAntImpl, birdPreyDir as birdPreyDirImpl,
   stepBird as stepBirdImpl, stepFish as stepFishImpl,
 } from "./systems/wildlife";
-import {
-  CREATURE_FED_MAX, CREATURE_FED_BITS, CREATURE_STARVE_DEATH_CHANCE,
-  packCreature, creatureFacing, creatureTimer, creatureFed,
-} from "./creatureMeta";
+import { CREATURE_FED_MAX, packCreature } from "./creatureMeta";
 import {
   stepMagic as stepMagicImpl, transmute as transmuteImpl, conjureCreature as conjureCreatureImpl,
 } from "./systems/magic";
@@ -42,7 +29,7 @@ import {
   canDetonate as canDetonateImpl, stepFuse as stepFuseImpl, floodFuseConnected as floodFuseConnectedImpl,
   spawnShrapnelBurst as spawnShrapnelBurstImpl, advanceShrapnel as advanceShrapnelImpl,
   shatterGlass as shatterGlassImpl, advanceDebris as advanceDebrisImpl, depositDebris as depositDebrisImpl,
-  advanceFlashes as advanceFlashesImpl, HEAT_FUSE_GLASS,
+  advanceFlashes as advanceFlashesImpl,
 } from "./systems/fire";
 import {
   growthFactor as growthFactorImpl, stepOrganic as stepOrganicImpl,
@@ -70,6 +57,26 @@ import {
   fieldWantsMoreWheat as fieldWantsMoreWheatImpl, villageHasTimber as villageHasTimberImpl,
   consumeTimber as consumeTimberImpl,
 } from "./folk/village";
+import {
+  fleeSkeletonDir as fleeSkeletonDirImpl, nearestOf as nearestOfImpl, strike as strikeImpl,
+  strikeClock as strikeClockImpl, stepWarrior as stepWarriorImpl, stepSkeleton as stepSkeletonImpl,
+} from "./folk/combat";
+import { stepFarmer as stepFarmerImpl } from "./folk/farmer";
+import {
+  looseWoodNear as looseWoodNearImpl, stepLumberjack as stepLumberjackImpl,
+  countNear as countNearImpl, clearOfGrowth as clearOfGrowthImpl,
+} from "./folk/lumberjack";
+import {
+  stepMason as stepMasonImpl, offDeckDir as offDeckDirImpl, deckNear as deckNearImpl,
+  isDeck as isDeckImpl, isBridgeDeck as isBridgeDeckImpl, isStair as isStairImpl,
+  stairNear as stairNearImpl, stairScan as stairScanImpl, firmFooting as firmFootingImpl,
+  standTop as standTopImpl, bridgeScan as bridgeScanImpl, underHouse as underHouseImpl,
+  roofedOver as roofedOverImpl, raiseHouse as raiseHouseImpl, masonRepair as masonRepairImpl,
+  masonSurvey as masonSurveyImpl, houseFootprintClear as houseFootprintClearImpl,
+  gradeStrip as gradeStripImpl, groundLevel as groundLevelImpl, treeCrown as treeCrownImpl,
+  isTrunk as isTrunkImpl, treeBase as treeBaseImpl, isMatureTree as isMatureTreeImpl,
+  isOpenDoor as isOpenDoorImpl, isGhost as isGhostImpl,
+} from "./folk/houses";
 
 /**
  * Per-tick chance a Powder/Liquid cell even attempts its falling-sand
@@ -110,8 +117,6 @@ export const SPROUT_FOREST_FLAG = 0x40;
 export const TREE_TRUNK_META = 0x20;
 /** Meta bit on a Semente marking it as one a Lenhador sowed — it germinates with a bigger growth budget so it fills out into a real tree, not a shrub. */
 export const FOREST_SEED_META = 1;
-/** A forest tree stops growing once it carries this many crown cells — keeps a tended tree from ballooning into a canopy blanket. */
-const TREE_CROWN_CAP = 26;
 /** How many cells a tree grows a bare vertical trunk before its crown bushes out. */
 export const TREE_TRUNK_HEIGHT = 4;
 /**
@@ -134,8 +139,7 @@ export const SPROUT_REGROWTH_BONUS = 3;
  */
 // WHEAT_RIPE lives in metaBits.ts — the renderer needs it too.
 export const WHEAT_MAX_HEIGHT = 3;
-/** Cells of level furrow the Plantador needs ahead of it before it will sow a shoot (it grades a slightly wider strip). */
-const WHEAT_FURROW = 1;
+// WHEAT_FURROW lives in folk/farmer.ts.
 /** Divides the density gap when sinking through a liquid; smaller = faster sinking per point of density. */
 const SINK_DENSITY_SCALE = 8;
 /** Ticks a Powder/Liquid cell must fail to move before it's put to sleep and skipped. */
@@ -290,30 +294,16 @@ const ACID_VAPOR_CONDENSE_CHANCE = 0.01;
 /** How many cells around itself each tradesman scans for its work (water, soil, trees, damaged houses, build sites). Staggered per-column so they don't all scan the same frame. */
 export const FOLK_SCAN_RANGE = 28;
 
-/** Per-tick chance a Lenhador fells a fully-grown tree it's touching into Madeira. */
-const LUMBERJACK_FELL_CHANCE = 0.22;
-/** Per-tick chance a Lenhador sows a Semente on the bare soil ahead of it. */
-const LUMBERJACK_SOW_CHANCE = 0.32;
-/** How clear of other greenery a patch has to be before a Lenhador plants there. */
-const LUMBERJACK_SPACING = 4;
-/** Width of the strip a Lenhador levels flat before sowing a seedling, like the other trades grade before they work. */
-const LUMBERJACK_PLOT = 2;
-/** Loose Madeira logs a felled tree yields, scattered on the ground beside the (now-clear) stump. */
-const LUMBERJACK_LOG_YIELD = 3;
-/** Madeira within 6 cells at or above which a Lenhador stops felling — the woodlot's stocked, don't carpet the ground with trunks. */
-const LUMBERJACK_STOCK = 10;
-/** How much crown (Broto/Planta/Flor cells around the base) a tree needs before a Lenhador will fell it — a fully stamped crown is ~17 cells, so this only clears once the tree has finished growing, never a sapling or a half-grown one. */
-const LUMBERJACK_MIN_TREE = 12;
+// LUMBERJACK_SOW_CHANCE / LUMBERJACK_SPACING / LUMBERJACK_PLOT /
+// LUMBERJACK_LOG_YIELD / LUMBERJACK_STOCK live in folk/lumberjack.ts.
+/** How much crown (Broto/Planta/Flor cells around the base) a tree needs before a Lenhador will fell it — a fully stamped crown is ~17 cells, so this only clears once the tree has finished growing, never a sapling or a half-grown one. Exported: houses.ts's isMatureTree needs this too. */
+export const LUMBERJACK_MIN_TREE = 12;
 
-/** Per-tick chance a Fazendeiro sows Trigo / waters Terra when it's in the right spot. */
-const FARMER_WORK_CHANCE = 0.4;
+// FARMER_WORK_CHANCE lives in folk/farmer.ts.
 /** Act-turns a Fazendeiro / Lenhador spends stood working a harvest before it comes in — harvesting isn't instant. */
-const HARVEST_WORK = 5;
+export const HARVEST_WORK = 5;
 /** How far a Fazendeiro / Lenhador looks for its storehouse to stash a load into. */
-const STORE_REACH = 30;
-
-/** Cut Madeira anywhere on the map at or above which the Construtor has stock enough to start decking a bridge or a staircase — the woodlot has to be worked up first, but only barely: a couple of felled trees' worth, not a whole stockpile, so building starts soon after there's anything to build with at all. */
-const BRIDGE_TIMBER_MIN = 4;
+export const STORE_REACH = 30;
 
 /** Hit points a fresh unit spawns with, by kind. Working folk are frail; the Guerreiro is built to last; a Esqueleto is somewhere between. */
 const SPAWN_HP: Partial<Record<MaterialId, number>> = {
@@ -323,23 +313,9 @@ const SPAWN_HP: Partial<Record<MaterialId, number>> = {
   [MaterialId.Warrior]: 10,
   [MaterialId.Skeleton]: 5,
 };
-/** Damage one strike lands. */
-const ATTACK_DAMAGE = 1;
-/** Ticks between strikes — a unit lands roughly one blow a second (the sim runs ~60 ticks/s). */
-const ATTACK_PERIOD = 54;
-/** Ticks a red hit-marker flashes at a struck cell. */
-const HIT_FLASH_LIFE = 7;
 /** `hp` byte: low 7 bits are the points, the top bit flags a unit empowered by Magia (twice the damage, twice the size). */
 export const HP_POINTS_MASK = 0x7f;
 export const HP_EMPOWERED = 0x80;
-/** How far a Guerreiro scans for a Esqueleto to go and meet — a wide watch, so a guard picks up a threat well before it reaches the houses. */
-const WARRIOR_SIGHT = 52;
-/** How far a Esqueleto scans for a Pip to hunt. */
-const SKELETON_SIGHT = 24;
-/** Within this many cells of a Esqueleto, a working Pip drops its task and backs away — it's faster than the undead, so it can. */
-const SKELETON_FLEE_RANGE = 11;
-/** A Esqueleto takes a turn only every Nth tick — slower and more lurching than the folk (FOLK_ACT_INTERVAL). */
-const SKELETON_ACT_INTERVAL = 8;
 /**
  * Short radius a Guerreiro / Esqueleto checks for a foe *every* tick, so a
  * fight already underway never stutters. The full WARRIOR_SIGHT /
@@ -350,7 +326,6 @@ const SKELETON_ACT_INTERVAL = 8;
  * work cadence instead. A real fight is always well inside this radius long
  * before that cadence would notice it late.
  */
-const COMBAT_MELEE_CHECK = 6;
 
 // CIRCUIT_ON_META / LEVER_ARM_META / CIRCUIT_LINKED_META / CLONE_LOCK_MASK /
 // CLONE_LINKED_META / CLONE_ON_META live in metaBits.ts — the renderer needs
@@ -380,71 +355,37 @@ const LEVER_KNOB_ON: readonly [number, number][] = [[1, 2], [2, 2]];
 const LEVER_KNOB_OFF: readonly [number, number][] = [[1, 5], [2, 5]];
 /** Cap on how many connected Alavanca cells one toggleLever flip visits — a perf budget, well past the size of any lever fixture actually placed. */
 const LEVER_FLOOD_CAP = 64;
-/** Per-tick chance a Esqueleto with nothing in sight shuffles a step / turns. */
-const SKELETON_WANDER_CHANCE = 0.5;
 
 /** The four trades of o povo (the Guerreiro included — it's one of the folk, it just fights instead of building). */
 export const FOLK_IDS: readonly MaterialId[] = [
   MaterialId.Mason, MaterialId.Lumberjack, MaterialId.Farmer, MaterialId.Warrior,
 ];
-/** Every Pip a Esqueleto will hunt. */
-const PIP_IDS: readonly MaterialId[] = FOLK_IDS;
-const WATER_ONLY = [MaterialId.Water] as const;
+// PIP_IDS lives in folk/combat.ts.
+export const WATER_ONLY = [MaterialId.Water] as const;
 /** Standing growth a folk walks straight through instead of climbing or snagging on — crops and plant matter. */
 export const FOLK_WADEABLE = new Set<MaterialId>([
   MaterialId.Wheat, MaterialId.Plant, MaterialId.Sprout, MaterialId.Flor, MaterialId.Seed,
 ]);
-/** Grown greenery a Lenhador fells for timber, and casts about for. */
-const LUMBERJACK_TREES: readonly MaterialId[] = [MaterialId.Plant, MaterialId.Sprout];
-/** Stray mature growth a Plantador harvests alongside its ripe Trigo. */
-const FARMER_CROPS: readonly MaterialId[] = [MaterialId.Plant, MaterialId.Flor];
+// FARMER_CROPS / DRY_SOIL live in folk/farmer.ts.
 /** Below this fed level a folk with no urgent task heads for the nearest wheat. */
 export const FOLK_FORAGE_HUNGER = 14;
 // FOLK_STARVING / FOLK_FORAGE_RANGE / FOLK_FORAGE live in folk/engine.ts.
-const DRY_SOIL = [MaterialId.Dirt] as const;
 
 // House/bridge/staircase blueprint data (shapes, bit layout) lives in
 // houseBlueprints.ts — pure data, shared by grid.ts and PixiStage's renderer.
 
-/** How far a founding Construtor surveys the ground + supply and checks no other house is close (kept equal to the spacing so that check really covers the gap it promises), and the minimum anchor-to-anchor gap between houses. */
-const HOUSE_SURVEY_RANGE = 17;
-const HOUSE_SPACING = 17;
+// HOUSE_SURVEY_RANGE / MASON_REPAIR_RANGE / MASON_REPAIR_CHANCE / MASON_BRIDGE_MAX /
+// MASON_APPROACH_MAX / MASON_ARCH_MAX / MASON_SPAN_DROP / STAIR_MIN_RISE /
+// STAIR_MAX_RISE / STAIR_NEAR_RANGE / MASON_WATER_SEEK_RANGE / FOUNDATION_DEPTH /
+// LEVEL_MAX_STEP live in folk/houses.ts.
+export const HOUSE_SPACING = 17;
 // HOUSE_SHELTER_RANGE lives in folk/engine.ts.
 /** Per-check chance a Construtor on a good, empty, house-free patch raises a house (the whole frame at once). High enough that it commits within a few turns of settling on a site, rather than standing frozen on it. */
-const MASON_FOUND_CHANCE = 0.22;
+export const MASON_FOUND_CHANCE = 0.22;
 /** How often (ticks) the rolling village census is refreshed. */
 const CENSUS_INTERVAL = 90;
 /** Ceiling on standing Trigo per Fazendeiro — a field sized to its keepers, not a runaway prairie. */
 export const WHEAT_PER_FARMER = 70;
-/** How far a carrying Construtor notices a damaged house it could patch, and the per-tick chance it sets a brick when standing right next to the gap. */
-const MASON_REPAIR_RANGE = 24;
-const MASON_REPAIR_CHANCE = 0.4;
-/** How wide a stretch of water a Construtor will look across for a far bank before deciding there's nothing to bridge to — generous, so a big lake still gets spanned. */
-const MASON_BRIDGE_MAX = 200;
-/** How far along a bank a Construtor will head to reach water it means to bridge. */
-const MASON_APPROACH_MAX = 48;
-/** How many cells above the near lip a Construtor's arched deck crowns — a gentle hump so it clears the water and meets a far bank at any height. */
-const MASON_ARCH_MAX = 7;
-/** How deep a gap between two banks still counts as "water to bridge" — a deep gorge with a stream at the bottom still gets a span. */
-const MASON_SPAN_DROP = 40;
-/** Shortest clear rise a Construtor will bother building a staircase for — anything lower than this, a folk just steps or climbs it on its own (see folkWalk's wall-hauling), so a whole built structure would be overkill. */
-const STAIR_MIN_RISE = 6;
-/** Tallest ledge a Construtor will still climb toward — generous, so a proper multi-storey "vertical village" stays reachable. */
-const STAIR_MAX_RISE = 80;
-/** Radius (both directions) a Construtor checks for an existing staircase before starting a new one — one climb per ledge, same idea as `deckNear` for bridges. */
-const STAIR_NEAR_RANGE = 60;
-/** How far a Construtor actively looks for water to bridge — wider than the general FOLK_SCAN_RANGE (used for things like a farmer eyeing a nearby crop) so it seeks out a distant crossing on its own instead of only reacting to water it happens to wander within a short radius of. Bridges (and staircases) are what a Construtor is *for*; it shouldn't need luck to notice one's needed. */
-const MASON_WATER_SEEK_RANGE = 80;
-/** How far below its floor a house sinks a pier through any hollow or open water, so it always has solid footing. */
-const FOUNDATION_DEPTH = 5;
-/**
- * Before founding anything a Construtor *levels the lot*: over a strip as wide
- * as the largest house it shifts a cell of earth from the nearest hump into
- * the nearest hollow, one per turn, until the ground is flat. A house may
- * only be founded on a flat lot (`houseFootprintClear`). Past LEVEL_MAX_STEP
- * cells of unevenness it gives up and moves on.
- */
-const LEVEL_MAX_STEP = 2;
 // FOLK_PHASE_REACH / FOLK_WANDER_TURN / FOLK_STUCK_LIMIT / FOLK_GIVEUP_ZONE /
 // FOLK_GIVEUP_COOLDOWN / FOLK_COMFORT_MIN / FOLK_COMFORT_MAX /
 // FOLK_EXPOSURE_PER_DEGREE / FOLK_EXPOSURE_CAP live in folk/engine.ts.
@@ -1920,768 +1861,129 @@ export class SimGrid {
     consumeTimberImpl(this, x, y);
   }
 
+  /** Construtor: repairs, bridges, builds stairs, founds houses. See folk/houses.ts. */
   stepMason(x: number, y: number, i: number): void {
-    this.processed[i] = 1;
-    const facing = creatureFacing(this.meta[i]);
-    const fed = this.folkUpkeep(x, y, creatureFed(this.meta[i]));
-    if (fed < 0) return;
-    if (!this.folkActNow(x, y)) { // slow, deliberate labour (but act every tick to swim clear of water)
-      this.meta[i] = packCreature(facing, 0, fed);
-      return;
-    }
-    const flee = this.fleeSkeletonDir(x, y);
-    if (flee !== 0) { this.folkWalk(x, y, i, flee, fed, 0, flee); return; }
-    if (this.folkWeather(x, y, i, facing, fed, 0)) return;
-
-    // Objective: the nearest damaged house wins; else work the ground here.
-    const repair = this.masonRepair(x, y);
-    if (repair.patched || repair.busy) {
-      this.meta[i] = packCreature(facing, 0, fed);
-      return;
-    }
-    let wantDir = repair.dir;
-    // The moment the woodpile's up to it, the Construtor makes straight for
-    // the nearest water to raise its bridge — it doesn't wait to stumble
-    // onto a crossing on its ordinary rounds. Repair still wins (a leaking
-    // roof doesn't wait on a bridge), and it stands down once a span
-    // already crosses this stretch.
-    if (wantDir === 0 && this.villageHasTimber() && !this.deckNear(x, y, 40)) {
-      wantDir = this.folkScanForIds(x, y, WATER_ONLY, MASON_WATER_SEEK_RANGE);
-    }
-
-    // Bridging is in a Construtor's nature, like raising houses. It decks a
-    // real-shaped timber bridge across any water it walks up to, however wide:
-    // a short ramp off each bank, then one dead-level span the rest of the way,
-    // a touch above the water — so two headlands with water between them get
-    // joined, not just a flat ford. Guards: it builds from firm dry footing
-    // only (a body dropped in the water wades out via folkWalk below), and one
-    // bridge per crossing (`deckNear`). `bridgeScan` sorts lead from follower
-    // (a follower gets `walk` > 0 and queues single file) and returns null once
-    // the span is closed, so nobody keeps working — or pacing — a finished bridge.
-    // A new bridge also waits on the Lenhador: no woodpile, no span.
-    const startBridge = this.countNear(x, y, MaterialId.Water, 8) > 0 &&
-      !this.deckNear(x, y, 40) && this.villageHasTimber();
-    const onDeckNow = this.isBridgeDeck(x, y + 1);
-    if ((wantDir !== 0 || onDeckNow || startBridge) && this.firmFooting(x, y)) {
-      const dirs: readonly number[] = wantDir !== 0 ? [wantDir] : (facing >= 0 ? [1, -1] : [-1, 1]);
-      let anyPlan = false;
-      for (const d of dirs) {
-        const plan = this.bridgeScan(x, y, d);
-        if (!plan) continue;
-        anyPlan = true;
-        if (plan.walk > 0) {
-          this.folkWalk(x, y, i, facing, fed, 0, d);
-          return;
-        }
-        const px = x + d;
-        // Keep the plank within a single step of the builder's own feet, and
-        // never stack one on a plank already there.
-        const layRow = Math.max(y, Math.min(y + 2, plan.layRow));
-        const stand = layRow - 1;
-        if (
-          this.get(px, layRow) !== MaterialId.Empty ||
-          this.isBridgeDeck(px, layRow - 1) || this.isBridgeDeck(px, layRow + 1) ||
-          !this.inBounds(px, stand) || this.get(px, stand) !== MaterialId.Empty
-        ) {
-          // Can't place a clean plank + step onto it from here — walk and retry.
-          this.folkWalk(x, y, i, facing, fed, 0, d);
-          return;
-        }
-        this.set(px, layRow, MaterialId.Wood, HOUSE_WALL_META | HOUSE_DECK);
-        // Half price: only every other plank actually spends a log off the
-        // woodpile (see bridgePlankFree) — a bridge costs half what it used to.
-        this.bridgePlankFree = !this.bridgePlankFree;
-        if (!this.bridgePlankFree) this.consumeTimber(x, y);
-        this.moveCreature(x, y, px, stand, packCreature(d, 0, fed));
-        return;
-      }
-      // Standing on a finished bridge with no span to push on: walk off it the
-      // short way and get back to ordinary life rather than pacing the deck.
-      if (onDeckNow && !anyPlan) {
-        const off = this.offDeckDir(x, y);
-        this.folkWalk(x, y, i, facing, fed, 0, off !== 0 ? off : facing);
-        return;
-      }
-    }
-
-    // Staircases: same idea as a bridge, but climbing to a ledge instead of
-    // spanning water — a permanent, built structure any Pip can walk (see
-    // isDeck), not just something the one purposeful folk free-climbs past
-    // (see folkWalk's wall-hauling) and leaves no trace of. Dead vertical —
-    // a ladder straight up from wherever the Construtor happens to be
-    // standing, never leaning sideways.
-    const onStairNow = this.isStair(x, y + 1);
-    if (this.villageHasTimber() && this.firmFooting(x, y) && (onStairNow || !this.stairNear(x, y, STAIR_NEAR_RANGE))) {
-      const plan = this.stairScan(x, y);
-      if (plan) {
-        // The new rung takes the Construtor's own current cell — has to be
-        // vacated first (climbing into the open headroom stairScan already
-        // confirmed above it), or `set` below would just be overwriting the
-        // Construtor standing there instead of laying a rung underfoot.
-        const layRow = plan.layRow;
-        const stand = layRow - 1;
-        this.moveCreature(x, y, x, stand, packCreature(facing, 0, fed));
-        this.set(x, layRow, MaterialId.Wood, HOUSE_WALL_META | HOUSE_STAIR);
-        this.consumeTimber(x, stand); // full price — the half-off only applies to bridge planks, see bridgePlankFree
-        return;
-      }
-    }
-
-    if (wantDir === 0) {
-      // Level the strip (shifting a hump of earth into a hollow, never
-      // removing any) — but not next to a channel, where slumping the bank
-      // just floods the place.
-      if (this.countNear(x, y, MaterialId.Water, 3) === 0 && this.gradeStrip(x, y, 8)) {
-        this.meta[i] = packCreature(facing, 0, fed);
-        return;
-      }
-      // Found a house on flat ground, while the village still wants one.
-      const spot = this.villageWantsHouse() ? this.masonSurvey(x, y) : null;
-      if (spot) {
-        if (Math.random() < MASON_FOUND_CHANCE) {
-          this.raiseHouse(x + 1, y, spot.style, spot.type);
-        } else {
-          this.meta[i] = packCreature(facing, 0, fed); // keep working the site
-          return;
-        }
-      } else {
-        // Nothing to build here. Amble on to find fresh ground / patrol the
-        // street — genuinely idle (wantDir 0, same as stepWarrior passing
-        // `home`), not a purposeful walk. That matters: idle is what keeps
-        // folkWalk's wall-hauling from firing at all, so a Construtor just
-        // turns away from a wall, a fence, a tight little structure it
-        // wanders into instead of trying to power through or climb it —
-        // treating ordinary wandering as "a real want" (climbs short walls
-        // in its way, doesn't back off) is exactly what let one get stuck
-        // fighting a cramped hand-built nook it should have just walked
-        // away from. Reaching genuinely distant, unclaimed ground is still
-        // the staircase/bridge triggers' job — those run unconditionally,
-        // idle or not, so a real cliff or crossing still gets built the
-        // moment an idly-wandering Construtor happens across one.
-        const home = this.folkHomeDir(x, y, MaterialId.Mason);
-        this.folkWalk(x, y, i, facing, fed, 0, home);
-        return;
-      }
-    }
-
-    // Closing on a gap in a wall: walk the last steps solidly (carry === 3),
-    // never phasing through the house — that would carry the mason clean past
-    // the hole it's trying to mend.
-    this.folkWalk(x, y, i, facing, fed, repair.near ? 3 : 0, wantDir);
+    stepMasonImpl(this, x, y, i);
   }
 
-
-  /** From a folk standing on a bridge deck, the horizontal direction to its nearer end (where the planks meet dry ground). 0 if not on a deck. */
+  /** From a folk on a bridge deck, the direction to its nearer end. See folk/houses.ts. */
   offDeckDir(x: number, y: number): number {
-    if (!this.isBridgeDeck(x, y + 1)) return 0;
-    const reach = (dir: number): number => {
-      let cx = x, r = y + 1;
-      for (let k = 1; k <= 320; k++) {
-        if (this.isBridgeDeck(cx + dir, r)) cx += dir;
-        else if (this.isBridgeDeck(cx + dir, r + 1)) { cx += dir; r += 1; }
-        else if (this.isBridgeDeck(cx + dir, r - 1)) { cx += dir; r -= 1; }
-        else return k;
-      }
-      return 999;
-    };
-    return reach(1) <= reach(-1) ? 1 : -1;
+    return offDeckDirImpl(this, x, y);
   }
 
-  /** Whether a bridge deck already runs within `r` cells of (x, y) — one crossing per stretch of water, so a crew doesn't lay deck after parallel deck. Checks `isBridgeDeck`, not the broader `isDeck` — an ordinary house or storehouse floor tile that happens to fall in range is not a bridge and must never veto a real crossing. */
+  /** Whether a bridge deck already runs within `r` cells of (x, y). See folk/houses.ts. */
   deckNear(x: number, y: number, r: number): boolean {
-    for (let dy = -MASON_ARCH_MAX - 3; dy <= MASON_ARCH_MAX + 3; dy++) {
-      const ny = y + dy;
-      if (ny < 0 || ny >= this.height) continue;
-      for (let dx = -r; dx <= r; dx++) {
-        const nx = x + dx;
-        if (nx >= 0 && nx < this.width && this.isBridgeDeck(nx, ny)) return true;
-      }
-    }
-    return false;
+    return deckNearImpl(this, x, y, r);
   }
 
-  /**
-   * Something a folk can walk on like solid ground: Madeira flagged as
-   * house-floor (a real house/storehouse floor course), an actual
-   * mason-laid bridge plank (HOUSE_DECK), or a staircase tread (HOUSE_STAIR)
-   * — all three are walkable, not a ghost, for the movement/pathing code
-   * that just cares about standing on *something* firm, one row higher or
-   * lower than the last (see the deck/stair-following branch of folkWalk,
-   * which already handles either without knowing which it's on). `deckNear`
-   * / `stairNear` need to tell them apart (see `isBridgeDeck` / `isStair`),
-   * so they don't use this.
-   */
+  /** A house floor, bridge plank, or staircase tread — all walkable, not a ghost. See folk/houses.ts. */
   isDeck(x: number, y: number): boolean {
-    if (!this.inBounds(x, y)) return false;
-    const i = this.index(x, y);
-    if (this.material[i] !== MaterialId.Wood || (this.meta[i] & HOUSE_WALL_META) === 0) return false;
-    const kind = this.meta[i] & HOUSE_KIND_MASK;
-    return kind === HOUSE_FLOOR || kind === HOUSE_DECK || kind === HOUSE_STAIR;
+    return isDeckImpl(this, x, y);
   }
 
-  /** Specifically a plank the Construtor laid while bridging water — unlike `isDeck`, an ordinary house or storehouse floor tile (or a staircase tread) never counts, so `deckNear` can't mistake one for a finished crossing. */
+  /** Specifically a plank the Construtor laid while bridging water. See folk/houses.ts. */
   isBridgeDeck(x: number, y: number): boolean {
-    if (!this.inBounds(x, y)) return false;
-    const i = this.index(x, y);
-    return this.material[i] === MaterialId.Wood &&
-      (this.meta[i] & HOUSE_WALL_META) !== 0 && (this.meta[i] & HOUSE_KIND_MASK) === HOUSE_DECK;
+    return isBridgeDeckImpl(this, x, y);
   }
 
-  /** Specifically a tread the Construtor laid while climbing to a ledge — unlike `isDeck`, an ordinary floor tile or bridge plank never counts, so `stairNear` can't mistake one for a finished climb. */
+  /** Specifically a tread the Construtor laid while climbing to a ledge. See folk/houses.ts. */
   isStair(x: number, y: number): boolean {
-    if (!this.inBounds(x, y)) return false;
-    const i = this.index(x, y);
-    return this.material[i] === MaterialId.Wood &&
-      (this.meta[i] & HOUSE_WALL_META) !== 0 && (this.meta[i] & HOUSE_KIND_MASK) === HOUSE_STAIR;
+    return isStairImpl(this, x, y);
   }
 
-  /** Whether a staircase already climbs within `r` cells of (x, y) — one climb per ledge, same idea as `deckNear` for bridges. Checked well above (x, y) too, since a climb runs vertically, not sideways. */
+  /** Whether a staircase already climbs within `r` cells of (x, y). See folk/houses.ts. */
   stairNear(x: number, y: number, r: number): boolean {
-    for (let dy = -STAIR_MAX_RISE - 3; dy <= 3; dy++) {
-      const ny = y + dy;
-      if (ny < 0 || ny >= this.height) continue;
-      for (let dx = -r; dx <= r; dx++) {
-        const nx = x + dx;
-        if (nx >= 0 && nx < this.width && this.isStair(nx, ny)) return true;
-      }
-    }
-    return false;
+    return stairNearImpl(this, x, y, r);
   }
 
-  /**
-   * Survey a climb from a Construtor at (x, y) straight up — a ladder-style
-   * staircase, dead vertical, never leaning sideways as it rises. Already
-   * partway up one it (or another Construtor) started, it just keeps
-   * extending it one rung at a time; not on one yet, it first looks straight
-   * up this same column for solid, standable ground actually worth climbing
-   * to (see `standTop`) — any ground counts, a house floor included (the
-   * whole point is connecting whatever's up there to whatever's down here,
-   * not just "real" terrain), and no ledge at all means no staircase
-   * starts. Returns `{ layRow }` — `layRow` is always the Construtor's own
-   * current row: the rung takes the cell it's standing in right now,
-   * vacated by the very move that climbs it up into the open headroom
-   * above (see the call site — placing the rung *before* moving would just
-   * be overwriting the Construtor standing there) — or null: nothing worth
-   * climbing, or the climb is capped (the headroom above is no longer
-   * open, whether because the ledge itself starts there or something else
-   * is blocking it).
-   */
+  /** Survey a vertical climb from a Construtor, extending or starting a staircase. See folk/houses.ts. */
   stairScan(x: number, y: number): { layRow: number } | null {
-    if (!this.isStair(x, y + 1)) {
-      let foundLedge = false;
-      for (let s = STAIR_MIN_RISE; s <= STAIR_MAX_RISE; s++) {
-        const cy = y - s;
-        if (!this.inBounds(x, cy)) break;
-        const top = this.standTop(x, cy - 1, cy + 1);
-        // standTop reports the first solid row with headroom, full stop —
-        // it doesn't know a tree trunk or a house wall is meant to be
-        // walked straight through, not landed on. Climbing all the way up
-        // to one of those would just plant the Construtor's ladder against
-        // a ghost with nothing real to actually stand on, a "staircase to
-        // nowhere." isGhost is the same check folk movement itself uses to
-        // decide what's actually solid underfoot, so a target this rejects
-        // isn't a real ledge either.
-        if (top >= 0 && !this.isGhost(x, top)) { foundLedge = true; break; }
-      }
-      if (!foundLedge) return null;
-    }
-    const stand = y - 1;
-    if (!this.inBounds(x, stand) || this.get(x, stand) !== MaterialId.Empty) return null; // capped, or nowhere to go
-    return { layRow: y };
+    return stairScanImpl(this, x, y);
   }
 
-  /**
-   * Solid, dry footing to stand on: the cell (x, y) itself isn't water, and
-   * the cell right under it is dry non-liquid solid — real ground, or a deck
-   * plank. A Construtor only ever lays a plank while it has this under it, so
-   * a bridge always grows out from a bank, never from a body dropped in the
-   * water.
-   */
+  /** Solid, dry footing to stand on. See folk/houses.ts. */
   firmFooting(x: number, y: number): boolean {
-    if (!this.inBounds(x, y) || this.get(x, y) === MaterialId.Water) return false;
-    const b = this.inBounds(x, y + 1) ? this.get(x, y + 1) : MaterialId.Stone;
-    return b !== MaterialId.Empty && b !== MaterialId.Water && MATERIALS[b].category !== MaterialCategory.Liquid;
+    return firmFootingImpl(this, x, y);
   }
 
-  /** Row of the first solid, standable surface in a vertical window at column `cx` (lowest row number wins), or -1. "Standable" = firm non-liquid with clear headroom just above. */
+  /** Row of the first solid, standable surface in a vertical window. See folk/houses.ts. */
   standTop(cx: number, from: number, to: number): number {
-    for (let r = from; r <= to; r++) {
-      if (!this.inBounds(cx, r)) continue;
-      const g = this.get(cx, r);
-      if (g === MaterialId.Water || g === MaterialId.Empty || this.isDeck(cx, r)) continue;
-      if (MATERIALS[g].category === MaterialCategory.Liquid) return -1;
-      const head = this.inBounds(cx, r - 1) ? this.get(cx, r - 1) : MaterialId.Empty;
-      if (head === MaterialId.Empty || FOLK_WADEABLE.has(head) || this.isDeck(cx, r - 1)) return r;
-      return -1; // solid with no headroom — a wall face, not a footing
-    }
-    return -1;
+    return standTopImpl(this, cx, from, to);
   }
 
-  /**
-   * Survey a crossing from a Construtor at (x, y) heading `dir`. Follows any
-   * deck it has already laid out to the leading edge, then looks across open
-   * water for a bank to land on. Returns what to do next, or null — including
-   * when the span is already closed, so nobody keeps pacing a finished bridge.
-   *
-   *  - `walk`  > 0 : the lead edge is that many steps off; go there.
-   *  - `walk` === 0: lay the next plank now, at deck row `layRow`.
-   *
-   * The deck is shaped like a real bridge: short ramp off each bank, then one
-   * dead-level span the rest of the way (a touch above the water).
-   */
-  bridgeScan(
-    x: number, y: number, dir: number,
-  ): { walk: number; layRow: number } | null {
-    const onDeck = this.isBridgeDeck(x, y + 1);
-    // Trace our deck back to its near anchor.
-    let ax = x, aRow = y + 1;
-    if (onDeck) {
-      for (let k = 0; k < 300; k++) {
-        if (this.isBridgeDeck(ax - dir, aRow)) ax -= dir;
-        else if (this.isBridgeDeck(ax - dir, aRow + 1)) { ax -= dir; aRow += 1; }
-        else if (this.isBridgeDeck(ax - dir, aRow - 1)) { ax -= dir; aRow -= 1; }
-        else break;
-      }
-    }
-    const nearRow = aRow;                       // deck row where it meets the near bank
-    // Trace forward to the leading edge of the deck, noting whether the span
-    // we've already laid crosses open water.
-    let lx = x, lRow = y + 1;
-    let spannedWater = false;
-    let waterTop = this.height;                 // highest (lowest row number) water seen
-    const noteWater = (cx: number, r0: number): void => {
-      for (let k = 0; k <= MASON_SPAN_DROP && this.inBounds(cx, r0 + k); k++) {
-        const c = this.get(cx, r0 + k);
-        if (c === MaterialId.Water) { spannedWater = true; waterTop = Math.min(waterTop, r0 + k); return; }
-        if (c !== MaterialId.Empty && !this.isBridgeDeck(cx, r0 + k)) return;
-      }
-    };
-    if (onDeck) {
-      noteWater(lx, lRow + 1);
-      for (let k = 0; k < 300; k++) {
-        if (this.isBridgeDeck(lx + dir, lRow)) lx += dir;
-        else if (this.isBridgeDeck(lx + dir, lRow + 1)) { lx += dir; lRow += 1; }
-        else if (this.isBridgeDeck(lx + dir, lRow - 1)) { lx += dir; lRow -= 1; }
-        else break;
-        noteWater(lx, lRow + 1);
-      }
-    }
-    const leadStep = Math.abs(lx - x);          // steps from here to the leading edge
-    const nearDist = Math.abs(lx - ax);         // deck laid so far
-
-    // From just past the leading edge, look for open water below the deck line
-    // and a bank on the far side. If the deck already crosses water, we're past
-    // the near bank — the next ground we meet is the far one.
-    let sawWater = spannedWater;
-    for (let s = 1; s <= MASON_BRIDGE_MAX; s++) {
-      const cx = lx + dir * s;
-      if (!this.inBounds(cx, lRow)) return null;
-      for (let k = 0; k <= MASON_SPAN_DROP && this.inBounds(cx, lRow + k); k++) {
-        const c = this.get(cx, lRow + k);
-        if (c === MaterialId.Water) { sawWater = true; waterTop = Math.min(waterTop, lRow + k); break; }
-        if (c !== MaterialId.Empty && !this.isBridgeDeck(cx, lRow + k)) break;
-      }
-      const top = this.standTop(cx, lRow - MASON_ARCH_MAX - 2, lRow + MASON_SPAN_DROP);
-      if (top < 0) {
-        if (!sawWater && s > MASON_APPROACH_MAX) return null;
-        continue;
-      }
-      if (!sawWater) {
-        // Ground before any water. Flat or dropping toward the shore: keep
-        // walking the near bank. Rising well above the deck line: blocked by
-        // terrain, not water — leave it to ordinary patrol.
-        if (top >= lRow - 1) continue;
-        return null;
-      }
-      // Ground past the water sitting well below the surface is the submerged
-      // bed, not a bank — keep scanning for a real shore.
-      if (top > waterTop + 2) continue;
-
-      // Far bank found. If the leading edge already reaches it (adjacent, within
-      // a single step up or down), the span is closed — return null so no one
-      // keeps working, or pacing, a finished bridge.
-      if (s === 1 && Math.abs(lRow - top) <= 1) return null;
-
-      // Shape: a short ramp off each bank, one dead-level span between. The
-      // level D sits at the higher of the two banks, but never below the water.
-      const farRow = top;
-      const span = nearDist + s;
-      let deckLevel = Math.min(nearRow, farRow);
-      if (deckLevel >= waterTop) deckLevel = waterTop - 1;
-      const p = nearDist + 1;                       // where the next plank goes, from the near anchor
-      const q = span - p;                           // ...and from the far anchor
-      const nearRamp = Math.abs(deckLevel - nearRow);
-      const farRamp = Math.abs(deckLevel - farRow);
-      let target: number;
-      if (p <= nearRamp) target = nearRow + Math.sign(deckLevel - nearRow) * p;
-      else if (q <= farRamp) target = farRow + Math.sign(deckLevel - farRow) * q;
-      else target = deckLevel;
-      // move at most a row at a time from the current leading edge, and never
-      // sink a plank below the water surface
-      let layRow = onDeck ? lRow + Math.sign(target - lRow) : y + 1;
-      while (layRow > waterTop && layRow > 1) layRow--;
-
-      if (leadStep > 0) return { walk: leadStep, layRow };
-      return { walk: 0, layRow };
-    }
-    return null;
+  /** Survey a bridge crossing from a Construtor heading `dir`. See folk/houses.ts. */
+  bridgeScan(x: number, y: number, dir: number): { walk: number; layRow: number } | null {
+    return bridgeScanImpl(this, x, y, dir);
   }
 
-  /** Whether (x, y) has a house cell close overhead — i.e. digging it out would undermine a building. */
+  /** Whether (x, y) has a house cell close overhead. See folk/houses.ts. */
   underHouse(x: number, y: number): boolean {
-    for (let d = 1; d <= FOUNDATION_DEPTH + 2; d++) {
-      if (!this.inBounds(x, y - d)) break;
-      if (this.isHouseCell(this.index(x, y - d))) return true;
-    }
-    return false;
+    return underHouseImpl(this, x, y);
   }
 
-  /** Whether (x, y) is inside a house's footprint — a wall/roof cell anywhere up to a tall house's height overhead. Farmers and foresters won't sow indoors. */
+  /** Whether (x, y) is inside a house's footprint. See folk/houses.ts. */
   roofedOver(x: number, y: number): boolean {
-    for (let d = 1; d <= 16; d++) {
-      const ny = y - d;
-      if (ny < 0) break;
-      if (this.isHouseCell(ny * this.width + x)) return true;
-    }
-    return false;
+    return roofedOverImpl(this, x, y);
   }
 
-  /**
-   * Stamps a whole house of plan `type` in one go once the mason has spent
-   * its turns preparing the site (see `stepMason`): the anchor, then every
-   * wall, roof, window, chimney and floor cell of the blueprint, over Empty
-   * or loose Powder only (and over cells of this same house already stamped,
-   * so a window can claim a spot the wall got to first). Doing it all at
-   * once keeps a crew from piling onto one spot, and a house never sits
-   * half-built with an open roof no one can reach to close.
-   */
+  /** Stamps a whole house of plan `type` in one go. See folk/houses.ts. */
   raiseHouse(ax: number, ay: number, style: number, type: number): void {
-    const wallMat = HOUSE_WALL_MATERIAL[style];
-    this.set(ax, ay, MaterialId.Brick, packHouseAnchor(style, type));
-    for (const [dx, dy, kind] of HOUSE_BLUEPRINTS[type]) {
-      if (dx === 0 && dy === 0) continue;
-      const wx = ax + dx;
-      const wy = ay + dy;
-      if (!this.inBounds(wx, wy)) continue;
-      const hi = this.index(wx, wy);
-      const here = this.material[hi] as MaterialId;
-      // Build into open space, or over a cell of this same house already
-      // stamped (so a window can claim a wall's spot). Never over the ground
-      // itself — the frame is conjured and sits on whatever's there, it
-      // doesn't eat the hillside for bricks. (A blueprint cell that lands in
-      // earth is just left buried; masonRepair knows that isn't damage.)
-      const overwritable =
-        here === MaterialId.Empty ||
-        ((this.meta[hi] & HOUSE_WALL_META) !== 0 && (this.meta[hi] & HOUSE_ANCHOR_META) === 0);
-      if (overwritable) {
-        this.set(wx, wy, houseCellMaterial(kind, style), HOUSE_WALL_META | kind);
-      }
-    }
-    // Underpin the footprint: wherever the ground under a column is missing
-    // (a hollow, or open water), sink a wall-material pier down to solid bed
-    // so the house has something to stand on. Where the ground is already
-    // there it's left alone — no earth is dug or converted.
-    const span = HOUSE_PLANS[type].span;
-    for (let dx = 0; dx <= span; dx++) {
-      const fx = ax + dx;
-      for (let d = 1; d <= FOUNDATION_DEPTH; d++) {
-        const fy = ay + d;
-        if (!this.inBounds(fx, fy)) break;
-        const b = this.get(fx, fy);
-        if (b === MaterialId.Empty || b === MaterialId.Water) {
-          this.set(fx, fy, wallMat, HOUSE_WALL_META | HOUSE_FLOOR);
-        } else {
-          break; // solid ground (or bedrock) — the pier is anchored
-        }
-      }
-    }
+    raiseHouseImpl(this, ax, ay, style, type);
   }
 
-  /**
-   * A carrying mason tending nearby houses. When `scan` is true it finds the
-   * nearest house anchor within MASON_REPAIR_RANGE and walks *that one's*
-   * blueprint (checking only the closest keeps the per-tick cost down with a
-   * crew of masons) for a wall/roof/floor cell gone missing. If it's damaged
-   * the mason makes for the gap and, standing by it, sets a fresh cell there
-   * for part of its load. `dir` is a heading toward the damage, `busy` means
-   * it's at the gap working, both 0/false if there's nothing to mend.
-   */
+  /** A carrying mason tending nearby houses for damage. See folk/houses.ts. */
   masonRepair(x: number, y: number): { patched: boolean; dir: number; busy: boolean; near: boolean } {
-    let anchorD = Infinity;
-    let ai = -1;
-    for (let dy = -MASON_REPAIR_RANGE; dy <= MASON_REPAIR_RANGE; dy++) {
-      for (let dx = -MASON_REPAIR_RANGE; dx <= MASON_REPAIR_RANGE; dx++) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (!this.inBounds(nx, ny)) continue;
-        const ni = this.index(nx, ny);
-        if (this.material[ni] !== MaterialId.Brick || (this.meta[ni] & HOUSE_ANCHOR_META) === 0) continue;
-        const d = dx * dx + dy * dy;
-        if (d < anchorD) { anchorD = d; ai = ni; }
-      }
-    }
-    if (ai < 0) return { patched: false, dir: 0, busy: false, near: false }; // no house in sight
-
-    const nx = ai % this.width;
-    const ny = (ai / this.width) | 0;
-    const style = houseStyle(this.meta[ai]);
-    let bestHoleD = Infinity;
-    let holeX = 0;
-    let holeY = 0;
-    let holeMat: MaterialId = MaterialId.Brick;
-    let holeKind = HOUSE_WALL;
-    for (const [bx, by, kind] of HOUSE_BLUEPRINTS[houseType(this.meta[ai])]) {
-      if (bx === 0 && by === 0) continue; // the anchor itself
-      const wx = nx + bx;
-      const wy = ny + by;
-      if (!this.inBounds(wx, wy)) continue;
-      const want = houseCellMaterial(kind, style);
-      const h = this.get(wx, wy);
-      if (h === want) continue; // intact
-      if (h !== MaterialId.Empty) continue; // a real gap is open air; earth/sand banked into a cell isn't damage to chase
-      const d = (wx - x) * (wx - x) + (wy - y) * (wy - y);
-      if (d < bestHoleD) { bestHoleD = d; holeX = wx; holeY = wy; holeMat = want; holeKind = kind; }
-    }
-    if (bestHoleD === Infinity) return { patched: false, dir: 0, busy: false, near: false }; // nearest house is whole
-
-    // Within reach of the gap: set a wall cell there. If the roll misses this
-    // tick, stay put (busy) and try again — don't march off the job.
-    if (Math.abs(holeX - x) <= 1 && Math.abs(holeY - y) <= 1) {
-      if (Math.random() < MASON_REPAIR_CHANCE) {
-        const cur = this.get(holeX, holeY);
-        if (cur === MaterialId.Empty || MATERIALS[cur].category === MaterialCategory.Powder) {
-          this.set(holeX, holeY, holeMat, HOUSE_WALL_META | holeKind);
-          return { patched: true, dir: 0, busy: true, near: true };
-        }
-      }
-      return { patched: false, dir: 0, busy: true, near: true };
-    }
-    return { patched: false, dir: Math.sign(holeX - x) || 1, busy: false, near: Math.abs(holeX - x) + Math.abs(holeY - y) <= 4 };
+    return masonRepairImpl(this, x, y);
   }
 
-  /**
-   * Sizes up the ground just right of the mason for a new house. One sweep
-   * of the surroundings tallies the loose building supply and rejects the
-   * site outright if another house anchor is within HOUSE_SPACING. Then,
-   * largest plan first, it returns the biggest house whose footprint fits
-   * on clear flat ground and whose supply the survey turned up — or null.
-   */
+  /** Sizes up the ground just right of the mason for a new house. See folk/houses.ts. */
   masonSurvey(x: number, y: number): { style: number; type: number } | null {
-    const ax = x + 1;
-    const ay = y;
-    // Smallest plan must at least fit on the grid (get() is bounds-safe, but
-    // there's no point surveying a site pressed against the edge/ceiling).
-    if (!this.inBounds(ax, ay - HOUSE_HEIGHTS[0]) || !this.inBounds(ax + HOUSE_PLANS[0].span, ay + 1)) {
-      return null;
-    }
-    let wood = 0;
-    let ice = 0;
-    let earth = 0; // loose Areia/Terra/Barro — fired or packed into Tijolo (not the Pedra bedrock underfoot, which is everywhere)
-    for (let dy = -HOUSE_SURVEY_RANGE; dy <= HOUSE_SURVEY_RANGE; dy++) {
-      for (let dx = -HOUSE_SURVEY_RANGE; dx <= HOUSE_SURVEY_RANGE; dx++) {
-        const nx = ax + dx;
-        const ny = ay + dy;
-        if (!this.inBounds(nx, ny)) continue;
-        const ni = this.index(nx, ny);
-        const id = this.material[ni] as MaterialId;
-        if (
-          id === MaterialId.Brick && (this.meta[ni] & HOUSE_ANCHOR_META) !== 0 &&
-          Math.abs(dx) <= HOUSE_SPACING && Math.abs(dy) <= HOUSE_SPACING
-        ) {
-          return null; // too close to another house
-        }
-        // Not on a waterline — water sloshing around a footprint traps folk
-        // between the new walls and the pool. Give it a wide berth.
-        if (id === MaterialId.Water && Math.abs(dx) <= HOUSE_MAX_DWELLING_SPAN && dy >= -2 && dy <= 4) {
-          return null;
-        }
-        if (id === MaterialId.Wood) wood++;
-        else if (id === MaterialId.Ice) ice++;
-        else if (id === MaterialId.Sand || id === MaterialId.Dirt || id === MaterialId.Mud) earth++;
-      }
-    }
-    const supply = wood + ice + earth;
-    if (supply < HOUSE_PLANS[0].supply) return null;
-    // A timber cabin or an ice hut only when that material is genuinely
-    // plentiful right here; an ice hut also only where it's cold enough for
-    // the Gelo not to just melt away. Otherwise fired Tijolo.
-    const style =
-      ice > wood && ice > earth && ice >= 16 && this.temp < AMBIENT_ICE_MELT_TEMP ? HOUSE_WALL_ICE :
-      wood > earth && wood >= 16 ? HOUSE_WALL_WOOD :
-      HOUSE_WALL_BRICK;
-    // Largest that the lot and the supply allow — but not slavishly: about
-    // half the time, when a bigger house would fit, the mason settles for the
-    // next size down instead, so a well-stocked village still comes out a mix
-    // of halls, cottages and huts rather than a row of identical blocks.
-    for (let type = MASON_MAX_PLAN; type >= 0; type--) {
-      if (supply < HOUSE_PLANS[type].supply) continue;
-      if (!this.houseFootprintClear(ax, ay, type)) continue;
-      if (type > 0 && Math.random() < 0.45) continue;
-      return { style, type };
-    }
-    return null;
+    return masonSurveyImpl(this, x, y);
   }
 
-  /**
-   * Whether the lot for a house of plan `type` anchored at (ax, ay) is ready
-   * to build on: the ground must be *level* — filled ground one cell under
-   * every column and nothing protruding into the floor row — and the wall +
-   * roof volume above it clear (Empty, loose powder, or existing house
-   * wall). The mason grades the ground level itself first (see `gradeStrip`);
-   * this is the gate that says the grading is done.
-   */
+  /** Whether the lot for a house of plan `type` is ready to build on. See folk/houses.ts. */
   houseFootprintClear(ax: number, ay: number, type: number): boolean {
-    const { span } = HOUSE_PLANS[type];
-    const height = HOUSE_HEIGHTS[type];
-    if (!this.inBounds(ax, ay - height) || !this.inBounds(ax + span, ay + 1)) return false;
-    for (let s = 0; s <= span; s++) {
-      const fx = ax + s;
-      const under = this.get(fx, ay + 1);
-      if (under === MaterialId.Empty || MATERIALS[under].category === MaterialCategory.Liquid) return false; // a pit
-      // A stray cell of loose powder in the floor row is fine — raiseHouse
-      // builds straight over it. Anything solid there means the ground isn't level.
-      const atFloor = this.get(fx, ay);
-      if (atFloor !== MaterialId.Empty && MATERIALS[atFloor].category !== MaterialCategory.Powder) return false;
-      for (let up = 1; up <= height; up++) {
-        const c = this.get(fx, ay - up);
-        if (c !== MaterialId.Empty && MATERIALS[c].category !== MaterialCategory.Powder && !HOUSE_WALLS.includes(c)) {
-          return false;
-        }
-      }
-    }
-    return true;
+    return houseFootprintClearImpl(this, ax, ay, type);
   }
 
-  /**
-   * A Pip grading the ground just ahead level before it builds or sows. Over
-   * a strip it finds the nearest bump (loose powder standing in or above the
-   * floor line) and the nearest shallow pit, and *moves* a cell of earth
-   * from the bump into the pit — one per call, never adding or removing any
-   * material. If there's a bump but nowhere to put the spoil (no pit), or a
-   * pit but no loose earth to fill it with, it leaves the strip as it is and
-   * the Pip moves on to find a flatter spot. Returns whether it moved a cell.
-   * Shared by the Construtor (a house-wide strip) and the Plantador (a furrow).
-   */
+  /** A Pip grading the ground just ahead level before it builds or sows. See folk/houses.ts. */
   gradeStrip(x: number, y: number, span: number): boolean {
-    const ax = x + 1;
-    const ay = y;
-    if (!this.inBounds(ax + span, ay + 2) || !this.inBounds(ax, ay - 1)) return false;
-
-    let bumpX = -1;
-    let bumpY = -1;
-    let bumpD = Infinity;
-    let pitX = -1;
-    let pitD = Infinity;
-    let rough = 0;
-    for (let s = 0; s <= span; s++) {
-      const cx = ax + s;
-      for (let up = LEVEL_MAX_STEP - 1; up >= 0; up--) {
-        const c = this.get(cx, ay - up);
-        if (
-          (c === MaterialId.Sand || c === MaterialId.Dirt || c === MaterialId.Mud) &&
-          !this.underHouse(cx, ay - up)
-        ) {
-          rough++;
-          const d = s * s + up * up;
-          if (d < bumpD) { bumpD = d; bumpX = cx; bumpY = ay - up; }
-          break;
-        }
-        if (c !== MaterialId.Empty) break; // solid/creature — leave it
-      }
-      // a pit: no ground directly under this column, solid bed not far below
-      // (skipped right under a house, same as the bump check above — that
-      // headroom is the foundation, not a hole waiting to be filled, and
-      // trying to fill it just gets undone, leaving the grader parked here
-      // forever instead of moving on).
-      if (this.get(cx, ay + 1) === MaterialId.Empty && !this.underHouse(cx, ay + 1)) {
-        const bed = this.get(cx, ay + 2);
-        if (bed !== MaterialId.Empty && MATERIALS[bed].category !== MaterialCategory.Liquid) {
-          rough++;
-          const d = s * s;
-          if (d < pitD) { pitD = d; pitX = cx; }
-        } else {
-          rough += 3; // a deep hole / water — not gradeable
-        }
-      }
-    }
-    if (rough === 0) return false;                    // already level
-    if (rough > span + LEVEL_MAX_STEP) return false;  // a cliff, not a lot
-
-    // Only act when there's a place for the spoil to go: shift earth from the
-    // bump into the pit, conserving every cell.
-    if (bumpX >= 0 && pitX >= 0) {
-      this.set(bumpX, bumpY, MaterialId.Empty);
-      this.set(pitX, ay + 1, MaterialId.Dirt);
-      return true;
-    }
-    return false;
+    return gradeStripImpl(this, x, y, span);
   }
 
-  /**
-   * Whether the `span+1` cells of ground just right of (x, y) form a level
-   * furrow: filled ground one cell under each, nothing protruding into the
-   * walking row. The gate the Construtor and Plantador grade toward before
-   * building or sowing.
-   */
+  /** Whether a level furrow of `span+1` cells sits just right of (x, y). See folk/houses.ts. */
   groundLevel(x: number, y: number, span: number): boolean {
-    const ax = x + 1;
-    if (!this.inBounds(ax + span, y + 1)) return false;
-    for (let s = 0; s <= span; s++) {
-      const under = this.get(ax + s, y + 1);
-      if (under === MaterialId.Empty || MATERIALS[under].category === MaterialCategory.Liquid) return false;
-      if (this.get(ax + s, y) !== MaterialId.Empty) return false;
-    }
-    return true;
+    return groundLevelImpl(this, x, y, span);
   }
 
-  /** How much crown a tree rooted near (tx, ty) carries — Broto/Planta/Flor in a tall box reaching up from the base. A seedling is a cell or two; a grown tree is a dozen-plus. */
+  /** How much crown a tree rooted near (tx, ty) carries. See folk/houses.ts. */
   treeCrown(tx: number, ty: number): number {
-    let n = 0;
-    for (let dy = -9; dy <= 2; dy++) {
-      for (let dx = -4; dx <= 4; dx++) {
-        const g = this.get(tx + dx, ty + dy);
-        if (g === MaterialId.Sprout || g === MaterialId.Plant || g === MaterialId.Flor) n++;
-      }
-    }
-    return n;
+    return treeCrownImpl(this, tx, ty);
   }
 
-  /** Whether (x, y) is a living tree trunk cell — Madeira flagged TREE_TRUNK. */
+  /** Whether (x, y) is a living tree trunk cell. See folk/houses.ts. */
   isTrunk(x: number, y: number): boolean {
-    return this.inBounds(x, y) && this.material[this.index(x, y)] === MaterialId.Wood &&
-      (this.meta[this.index(x, y)] & TREE_TRUNK_META) !== 0;
+    return isTrunkImpl(this, x, y);
   }
 
-  /** The foot of the tree trunk/stem passing through (tx, ty) — walks on down through more trunk or its still-soft stem (Broto/Planta) to find where it actually roots. */
+  /** The foot of the tree trunk/stem passing through (tx, ty). See folk/houses.ts. */
   treeBase(tx: number, ty: number): number {
-    let by = ty;
-    for (let d = 0; d < 10; d++) {
-      const n = by + 1;
-      if (this.isTrunk(tx, n) || this.get(tx, n) === MaterialId.Sprout || this.get(tx, n) === MaterialId.Plant) by = n;
-      else break;
-    }
-    return by;
+    return treeBaseImpl(this, tx, ty);
   }
 
-  /** Whether the tree trunk/stem passing through (tx, ty) has filled out enough of a crown to be worth felling — a bare or half-grown sapling reports false, so a Lenhador never treats one as "a tree to work" and paces at its foot forever waiting on it. */
+  /** Whether the tree at (tx, ty) has filled out enough of a crown to fell. See folk/houses.ts. */
   isMatureTree(tx: number, ty: number): boolean {
-    return this.treeCrown(tx, this.treeBase(tx, ty)) >= LUMBERJACK_MIN_TREE;
+    return isMatureTreeImpl(this, tx, ty);
   }
 
-  /** Whether (x, y) is a Porta currently powered open. */
+  /** Whether (x, y) is a Porta currently powered open. See folk/houses.ts. */
   isOpenDoor(x: number, y: number): boolean {
-    return this.inBounds(x, y) && this.material[this.index(x, y)] === MaterialId.Door &&
-      (this.meta[this.index(x, y)] & CIRCUIT_ON_META) !== 0;
+    return isOpenDoorImpl(this, x, y);
   }
 
-  /**
-   * Whichever kind of "there, but not really" cell a folk simply walks
-   * through: a house wall/roof, a living tree trunk, or a powered-open
-   * Porta. Every obstacle check in folkWalk treats all three identically —
-   * this is the one place that says so.
-   */
+  /** A house wall/roof, a living tree trunk, or a powered-open Porta — folk pass straight through. See folk/houses.ts. */
   isGhost(x: number, y: number): boolean {
-    return this.houseGhost(x, y) || this.isTrunk(x, y) || this.isOpenDoor(x, y);
+    return isGhostImpl(this, x, y);
   }
 
   /** Whether (x, y) touches a Fio or Alavanca directly. See systems/electricity.ts. */
@@ -2725,487 +2027,58 @@ export class SimGrid {
   }
 
 
-  /** Loose (cut, not trunk / not structural) Madeira within `r` of (x, y). */
+  /** Loose (cut, not trunk / not structural) Madeira within `r` of (x, y). See folk/lumberjack.ts. */
   looseWoodNear(x: number, y: number, r: number): number {
-    let n = 0;
-    for (let dy = -r; dy <= r; dy++) {
-      const ny = y + dy;
-      if (ny < 0 || ny >= this.height) continue;
-      for (let dx = -r; dx <= r; dx++) {
-        const nx = x + dx;
-        if (nx < 0 || nx >= this.width) continue;
-        const j = ny * this.width + nx;
-        if (this.material[j] === MaterialId.Wood && (this.meta[j] & (HOUSE_WALL_META | TREE_TRUNK_META)) === 0) n++;
-      }
-    }
-    return n;
+    return looseWoodNearImpl(this, x, y, r);
   }
 
-  /**
-   * Lenhador: a forester. Sows a Semente on bare Terra/Barro and then *leaves
-   * it be* — the shoot grows a bare trunk that lignifies to Madeira under a
-   * spreading green crown. Only once the tree has really filled out does the
-   * Lenhador fell it: the crown drops away and the trunk becomes a stack of
-   * cut logs. It stops once the woodlot's stocked. That growing woodpile is
-   * what a Construtor needs before it will bridge a river.
-   */
+  /** Lenhador: sows, tends and fells trees, stocking the woodpile. See folk/lumberjack.ts. */
   stepLumberjack(x: number, y: number, i: number): void {
-    this.processed[i] = 1;
-    const facing = creatureFacing(this.meta[i]);
-    const fed = this.folkUpkeep(x, y, creatureFed(this.meta[i]));
-    if (fed < 0) return;
-    if (!this.folkActNow(x, y)) { // slow, deliberate labour (but act every tick to swim clear of water)
-      this.meta[i] = packCreature(facing, 0, fed);
-      return;
-    }
-    const flee = this.fleeSkeletonDir(x, y);
-    if (flee !== 0) { this.folkWalk(x, y, i, flee, fed, 0, flee); return; }
-    if (this.folkWeather(x, y, i, facing, fed, 0)) return;
-
-    // Fell a fully-grown tree it's touching — one with a lignified trunk under
-    // a finished crown — while the woodlot still has room for the timber. A
-    // sapling (no woody trunk yet) or a bare shoot is left alone to grow.
-    const targets: [number, number][] = [];
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const tx = x + dx, ty = y + dy;
-      if (this.isTrunk(tx, ty)) targets.push([tx, ty]);
-    }
-    if (targets.length > 0 && this.looseWoodNear(x, y, 16) < LUMBERJACK_STOCK) {
-      targets.sort((a, b) => b[1] - a[1]); // lowest first
-      for (const [tx, ty] of targets) {
-        const by = this.treeBase(tx, ty);
-        const under = this.get(tx, by + 1);
-        if (under === MaterialId.Empty || MATERIALS[under].category === MaterialCategory.Liquid) continue;
-        if (this.treeCrown(tx, by) < LUMBERJACK_MIN_TREE) continue; // still a seedling — let it grow
-
-        // Felling is slow work — it stands and swings the axe for a while first.
-        if (!this.harvestReady(i, HARVEST_WORK)) {
-          this.meta[i] = packCreature(facing, 0, fed);
-          return;
-        }
-
-        // Timber it: the *whole* tree comes down — trunk and crown, both sides
-        // — leaving the ground clear for the next sapling.
-        for (let dy = -16; dy <= 1; dy++) {
-          for (let dx = -3; dx <= 3; dx++) {
-            const cx = tx + dx, cy = by + dy;
-            const g = this.get(cx, cy);
-            if (this.isTrunk(cx, cy) || g === MaterialId.Sprout || g === MaterialId.Plant || g === MaterialId.Flor) {
-              this.set(cx, cy, MaterialId.Empty);
-            }
-          }
-        }
-        // The cut wood goes into the galpão if there's one in reach; otherwise
-        // it drops as loose logs on the ground beside the stump (never in the
-        // stump column, so that spot's free for the next seed).
-        const shed = this.nearestStore(x, y, PLAN_WOODSHED, STORE_REACH);
-        let dropped = 0;
-        for (let n = 0; n < LUMBERJACK_LOG_YIELD; n++) {
-          if (shed && this.stashInStore(shed[0], shed[1], PLAN_WOODSHED, MaterialId.Wood)) { dropped++; continue; }
-          for (let r = 1; r <= 6 && dropped === n; r++) {
-            for (const cx of [tx - r, tx + r]) {
-              if (dropped > n || !this.inBounds(cx, by)) continue;
-              const floor = this.get(cx, by + 1);
-              if (this.get(cx, by) === MaterialId.Empty && floor !== MaterialId.Empty &&
-                MATERIALS[floor].category !== MaterialCategory.Liquid) {
-                this.set(cx, by, MaterialId.Wood, 0);
-                dropped++;
-              }
-            }
-          }
-        }
-        this.meta[i] = packCreature(facing, 0, fed);
-        return;
-      }
-    }
-
-    // Raise a galpão once the woodlot's producing and the village wants one.
-    {
-      const gb = this.inBounds(x, y + 1) ? this.get(x, y + 1) : MaterialId.Stone;
-      if (this.woodlotWantsShed() && (gb === MaterialId.Dirt || gb === MaterialId.Mud) &&
-        this.countNear(x, y, MaterialId.Water, 3) === 0 && !this.nearStore(x, y, HOUSE_SPACING)) {
-        if (this.gradeStrip(x, y, HOUSE_PLANS[PLAN_WOODSHED].span + 1)) {
-          this.meta[i] = packCreature(facing, 0, fed);
-          return;
-        }
-        if (Math.random() < MASON_FOUND_CHANCE && this.raiseStoreRight(x, y, PLAN_WOODSHED)) {
-          this.meta[i] = packCreature(facing, 0, fed);
-          return;
-        }
-      }
-    }
-
-    // Prepare the plot before planting, like the other trades: level the
-    // strip flat first (never next to water, where slumping the bank floods
-    // the place), then sow a seedling on the level ground.
-    const below = this.inBounds(x, y + 1) ? this.get(x, y + 1) : MaterialId.Stone;
-    if (below === MaterialId.Dirt || below === MaterialId.Mud) {
-      if (this.countNear(x, y, MaterialId.Water, 3) === 0 && this.gradeStrip(x, y, LUMBERJACK_PLOT + 1)) {
-        this.meta[i] = packCreature(facing, 0, fed);
-        return;
-      }
-      const f = x + 1;
-      const belowF = this.get(f, y + 1);
-      // A tended tree's crown is stamped in one shot once it's grown (see
-      // stepSprout) and only ever lands cells actually on the grid — sown
-      // too close to the left/right edge or the top, it comes out clipped
-      // and permanently short of LUMBERJACK_MIN_TREE, a "tree" no Lenhador
-      // can ever fell and the seed that grew it a dead loss.
-      const hasRoom = f - TREE_CROWN_DX_MAX >= 0 && f + TREE_CROWN_DX_MAX < this.width &&
-        y - (TREE_CROWN_START + TREE_CROWN_DY_MAX) >= 0;
-      if (
-        hasRoom &&
-        this.get(f, y) === MaterialId.Empty &&
-        (belowF === MaterialId.Dirt || belowF === MaterialId.Mud) &&
-        this.groundLevel(x, y, LUMBERJACK_PLOT) &&
-        this.clearOfGrowth(x, y, LUMBERJACK_SPACING) &&
-        !this.roofedOver(f, y) && !this.roofedOver(x, y) &&
-        Math.random() < LUMBERJACK_SOW_CHANCE
-      ) {
-        this.set(f, y, MaterialId.Seed, FOREST_SEED_META);
-        this.meta[i] = packCreature(facing, 0, fed);
-        return;
-      }
-    }
-
-    // Head for the nearest fully-grown tree (a lignified trunk with a full
-    // crown — isMatureTree, not just isTrunk) to fell. A still-growing
-    // sapling already has trunk material, but heading for one and camping at
-    // its foot doesn't make it grow any faster — it only reads as the
-    // Lenhador stuck pacing the same seedling forever. With no tree actually
-    // ready, folkWalk drifts it back to the woodlot (Madeira / houses) where
-    // it plants and paces while the saplings fill out.
-    let wantDir = 0;
-    let bestD = Infinity;
-    for (let dy = -FOLK_SCAN_RANGE; dy <= FOLK_SCAN_RANGE; dy++) {
-      for (let dx = -FOLK_SCAN_RANGE; dx <= FOLK_SCAN_RANGE; dx++) {
-        if (dx === 0 && dy === 0 || !this.isTrunk(x + dx, y + dy)) continue;
-        const d = dx * dx + dy * dy;
-        if (d < bestD && this.isMatureTree(x + dx, y + dy)) { bestD = d; wantDir = Math.sign(dx) || (Math.random() < 0.5 ? 1 : -1); }
-      }
-    }
-    this.folkWalk(x, y, i, facing, fed, 0, wantDir);
+    stepLumberjackImpl(this, x, y, i);
   }
 
-  /** How many cells of material `id` sit within `r` of (x, y). */
+  /** How many cells of material `id` sit within `r` of (x, y). See folk/lumberjack.ts. */
   countNear(x: number, y: number, id: MaterialId, r: number): number {
-    let n = 0;
-    for (let dy = -r; dy <= r; dy++) {
-      const ny = y + dy;
-      if (ny < 0 || ny >= this.height) continue;
-      for (let dx = -r; dx <= r; dx++) {
-        const nx = x + dx;
-        if (nx >= 0 && nx < this.width && this.material[ny * this.width + nx] === id) n++;
-      }
-    }
-    return n;
+    return countNearImpl(this, x, y, id, r);
   }
 
-  /** Whether a square of `r` around (x, y) is free of growing things and cut timber — so a Lenhador won't crowd a new sapling onto a field or an existing stand. */
+  /** Whether a square of `r` around (x, y) is free of growing things and cut timber. See folk/lumberjack.ts. */
   clearOfGrowth(x: number, y: number, r: number): boolean {
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
-        const g = this.get(x + dx, y + dy);
-        if (
-          g === MaterialId.Seed || g === MaterialId.Sprout || g === MaterialId.Plant ||
-          g === MaterialId.Flor || g === MaterialId.Wheat || g === MaterialId.Wood
-        ) return false;
-      }
-    }
-    return true;
+    return clearOfGrowthImpl(this, x, y, r);
   }
 
-  /**
-   * Plantador. Like the Construtor, a focused worker that *levels before it
-   * sows*: it carries Água from a pool to dry Terra to make Barro, grades
-   * the furrow ahead flat, and only then plants Trigo on it — Trigo takes
-   * only on level ground. A sown row grows and self-seeds into a field.
-   * Harvests a ripe Trigo head (or stray mature Planta/Flor) it touches for
-   * a full meal. Over time it turns a barren strip into cropland that feeds
-   * the whole village.
-   */
   stepFarmer(x: number, y: number, i: number): void {
-    this.processed[i] = 1;
-    const facing = creatureFacing(this.meta[i]);
-    let carrying = creatureTimer(this.meta[i]) === 1;
-    let fed = this.folkUpkeep(x, y, creatureFed(this.meta[i]));
-    if (fed < 0) return;
-    if (!this.folkActNow(x, y)) { // slow, deliberate labour (but act every tick to swim clear of water)
-      this.meta[i] = packCreature(facing, carrying ? 1 : 0, fed);
-      return;
-    }
-    if (this.folkWeather(x, y, i, facing, fed, carrying ? 1 : 0)) return;
-
-    const below = this.inBounds(x, y + 1) ? this.get(x, y + 1) : MaterialId.Stone;
-
-    // Raise a celeiro once the field's established and the village wants one —
-    // before working the field, so a farmer standing in a mature crop still
-    // gets round to putting up the storehouse.
-    if (!carrying && this.fieldWantsGranary() && (below === MaterialId.Dirt || below === MaterialId.Mud) &&
-      !this.nearStore(x, y, HOUSE_SPACING) && this.countNear(x, y, MaterialId.Water, 3) === 0) {
-      if (this.gradeStrip(x, y, HOUSE_PLANS[PLAN_GRANARY].span + 1)) {
-        this.meta[i] = packCreature(facing, 0, fed);
-        return;
-      }
-      if (Math.random() < MASON_FOUND_CHANCE && this.raiseStoreRight(x, y, PLAN_GRANARY)) {
-        this.meta[i] = packCreature(facing, 0, fed);
-        return;
-      }
-    }
-
-    // Harvest a ripe head it's standing beside — a slow job it works at over
-    // several turns. Hungry, it eats the head; otherwise, if there's a celeiro
-    // in reach and the field's already big enough, the grain goes into store.
-    let ripeAt: [number, number] | null = null;
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx, ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const ni = this.index(nx, ny);
-      const nId = this.material[ni] as MaterialId;
-      if ((nId === MaterialId.Wheat && this.meta[ni] >= WHEAT_RIPE) || FARMER_CROPS.includes(nId)) { ripeAt = [nx, ny]; break; }
-    }
-    if (ripeAt && !carrying) {
-      const hungry = fed <= FOLK_FORAGE_HUNGER;
-      // Once the field's got going, spare ripe heads go into the celeiro.
-      const store = hungry || this.cropCensus < 30 ? null : this.nearestStore(x, y, PLAN_GRANARY, STORE_REACH);
-      if (hungry || store) {
-        if (this.harvestReady(i, HARVEST_WORK)) {
-          if (hungry) { this.set(ripeAt[0], ripeAt[1], MaterialId.Empty); fed = CREATURE_FED_MAX; }
-          else if (store && this.stashInStore(store[0], store[1], PLAN_GRANARY, MaterialId.Wheat)) {
-            this.set(ripeAt[0], ripeAt[1], MaterialId.Empty);
-          }
-        }
-        this.meta[i] = packCreature(facing, 0, fed);
-        return; // stood at the work
-      }
-    }
-
-    if (!carrying) {
-      const water = this.adjacentOf(x, y, WATER_ONLY);
-      if (water.length > 0 && Math.random() < FARMER_WORK_CHANCE) {
-        const [wx, wy] = water[Math.floor(Math.random() * water.length)];
-        this.set(wx, wy, MaterialId.Empty);
-        carrying = true;
-      }
-    }
-
-    let wantDir = 0;
-    if (carrying && below === MaterialId.Dirt && Math.random() < FARMER_WORK_CHANCE) {
-      this.set(x, y + 1, MaterialId.Mud);
-      carrying = false;
-    } else if (!carrying && (below === MaterialId.Dirt || below === MaterialId.Mud)) {
-      // Grade the furrow flat, then sow one shoot on it. Standing to grade is
-      // the "level first" beat; Trigo only takes on level ground.
-      if (this.gradeStrip(x, y, WHEAT_FURROW + 1) && Math.random() < 0.7) {
-        this.meta[i] = packCreature(facing, 0, fed);
-        return;
-      }
-      const f = x + 1;
-      const belowF = this.get(f, y + 1);
-      if (
-        this.get(f, y) === MaterialId.Empty &&
-        (belowF === MaterialId.Dirt || belowF === MaterialId.Mud) &&
-        this.groundLevel(x, y, WHEAT_FURROW) &&
-        this.fieldWantsMoreWheat() &&
-        !this.roofedOver(f, y) && !this.roofedOver(x, y) && // never sow indoors
-        Math.random() < FARMER_WORK_CHANCE
-      ) {
-        this.set(f, y, MaterialId.Wheat, 0);
-      }
-    }
-
-    if (wantDir === 0) {
-      // Carrying with no dry soil underfoot -> go find some. Empty-handed ->
-      // go find water. Otherwise there's nothing to travel to (soil is right
-      // here) and folkWalk keeps it working this patch.
-      wantDir = carrying
-        ? (below === MaterialId.Dirt ? 0 : this.folkScanDir(x, y, DRY_SOIL))
-        : this.folkScanDir(x, y, WATER_ONLY);
-    }
-    this.folkWalk(x, y, i, facing, fed, carrying ? 1 : 0, wantDir);
+    stepFarmerImpl(this, x, y, i);
   }
 
-  /**
-   * A working Pip that sees a Esqueleto close by drops what it's doing and
-   * backs off — it outpaces the undead, so running works. Returns the away
-   * direction (-1/1), or 0 if there's nothing to run from. The Guerreiro
-   * never calls this — it closes in.
-   */
+
+  /** A working Pip that sees a Esqueleto close by drops what it's doing and backs off. See folk/combat.ts. */
   fleeSkeletonDir(x: number, y: number): number {
-    const foe = this.nearestOf(x, y, SimGrid.SKELETON_ONLY, SKELETON_FLEE_RANGE);
-    if (!foe) return 0;
-    return foe[0] > 0 ? -1 : foe[0] < 0 ? 1 : (Math.random() < 0.5 ? 1 : -1);
+    return fleeSkeletonDirImpl(this, x, y);
   }
 
-  /** Nearest cell of any id in `ids` within `range` of (x, y) — returns its [dx, dy] offset, or null. */
+  /** Nearest cell of any id in `ids` within `range` of (x, y). See folk/combat.ts. */
   nearestOf(x: number, y: number, ids: readonly MaterialId[], range: number): [number, number] | null {
-    let best: [number, number] | null = null;
-    let bestD = Infinity;
-    for (let dy = -range; dy <= range; dy++) {
-      const ny = y + dy;
-      if (ny < 0 || ny >= this.height) continue;
-      for (let dx = -range; dx <= range; dx++) {
-        const nx = x + dx;
-        if (nx < 0 || nx >= this.width) continue;
-        if ((dx === 0 && dy === 0) || !ids.includes(this.material[ny * this.width + nx] as MaterialId)) continue;
-        const d = dx * dx + dy * dy;
-        if (d < bestD) { bestD = d; best = [dx, dy]; }
-      }
-    }
-    return best;
+    return nearestOfImpl(this, x, y, ids, range);
   }
 
-  /**
-   * Land `dmg` on whatever unit is at cell `i`, struck from (fromX, fromY).
-   * The cell flashes red; a survivor is knocked a step back, away from the
-   * blow. Returns true if it finished the target — a Esqueleto crumbles to
-   * nothing, a Pip falls.
-   */
+  /** Land `dmg` on whatever unit is at cell `i`. See folk/combat.ts. */
   strike(i: number, dmg: number, fromX: number, fromY: number): boolean {
-    if (i < 0 || i >= this.hp.length) return false;
-    const raw = this.hp[i];
-    const cur = raw & HP_POINTS_MASK;
-    if (cur === 0) return false;
-    const x = i % this.width;
-    const y = (i / this.width) | 0;
-    this.hits.push({ x, y, life: HIT_FLASH_LIFE, maxLife: HIT_FLASH_LIFE });
-    if (cur <= dmg) {
-      this.set(x, y, MaterialId.Empty);
-      return true;
-    }
-    this.hp[i] = (raw & HP_EMPOWERED) | (cur - dmg);
-    // Recoil: often shove the victim a step back, away from the blow, if the
-    // cell that way is clear. Not every time — a fight should still be a fight,
-    // not two units pinballing apart on every hit.
-    if (Math.random() < 0.55) {
-      const kx = Math.sign(x - fromX) || (Math.random() < 0.5 ? 1 : -1);
-      if (this.inBounds(x + kx, y) && this.get(x + kx, y) === MaterialId.Empty) {
-        this.moveCreature(x, y, x + kx, y, packCreature(-kx, 0, creatureFed(this.meta[i])));
-      }
-    }
-    return false;
+    return strikeImpl(this, i, dmg, fromX, fromY);
   }
 
-  /**
-   * The attack clock for the fighter at cell `i`. Called once a turn while it's
-   * in a fight: ticks the cooldown down, and when it's run out (and the unit is
-   * `readyToHit`) resets it to ATTACK_PERIOD and returns true. A unit stood toe
-   * to toe lands about one blow a second; the cooldown rides along through a
-   * knockback since it lives in `workCd`, swapped with the unit.
-   */
+  /** The attack clock for the fighter at cell `i`. See folk/combat.ts. */
   strikeClock(i: number, readyToHit: boolean): boolean {
-    if (this.workCd[i] > 0) { this.workCd[i]--; return false; }
-    if (!readyToHit) return false;
-    this.workCd[i] = ATTACK_PERIOD;
-    return true;
+    return strikeClockImpl(this, i, readyToHit);
   }
 
-  static readonly SKELETON_ONLY: readonly MaterialId[] = [MaterialId.Skeleton];
-
-  /**
-   * Guerreiro: one of o povo, but it guards instead of building. It patrols
-   * among the houses; the moment a Esqueleto comes within WARRIOR_SIGHT it
-   * *charges* — it drops the unhurried folk pace and takes a step every tick
-   * to close the distance — and trades blows (one point a strike, about once
-   * a second). It carries 10 hit points to a working Pip's 5.
-   */
+  /** Guerreiro: guards the village, charges and fights any Esqueleto it spots. See folk/combat.ts. */
   stepWarrior(x: number, y: number, i: number): void {
-    this.processed[i] = 1;
-    const facing = creatureFacing(this.meta[i]);
-    const fed = this.folkUpkeep(x, y, creatureFed(this.meta[i]));
-    if (fed < 0 || this.material[i] !== MaterialId.Warrior) return;
-
-    // Look for a fight first — a Guerreiro that's spotted a Esqueleto acts
-    // every tick (it's running), not on the slow labour cadence. The full
-    // WARRIOR_SIGHT sweep for spotting a threat from afar only runs on the
-    // ordinary cadence (see COMBAT_MELEE_CHECK); a fight already underway is
-    // always caught by the cheap short-range check every tick regardless.
-    const foe = this.nearestOf(x, y, SimGrid.SKELETON_ONLY, COMBAT_MELEE_CHECK) ||
-      (this.folkActNow(x, y) ? this.nearestOf(x, y, SimGrid.SKELETON_ONLY, WARRIOR_SIGHT) : null);
-    if (foe) {
-      const [fdx, fdy] = foe;
-      const nf = Math.sign(fdx) || facing;
-      const adj = Math.abs(fdx) <= 1 && Math.abs(fdy) <= 1;
-      if (this.strikeClock(i, adj)) {
-        const dmg = (this.hp[i] & HP_EMPOWERED) ? ATTACK_DAMAGE * 2 : ATTACK_DAMAGE;
-        this.strike(this.index(x + fdx, y + fdy), dmg, x, y);
-      }
-      if (adj) {
-        this.meta[i] = packCreature(nf, 0, fed);
-        return;
-      }
-      this.folkWalk(x, y, i, nf, fed, 0, nf); // charge, every tick
-      return;
-    }
-
-    // Nothing to fight: back to the unhurried pace.
-    if (!this.folkActNow(x, y)) {
-      this.meta[i] = packCreature(facing, 0, fed);
-      return;
-    }
-    if (this.folkWeather(x, y, i, facing, fed, 0)) return;
-    const home = this.folkHomeDir(x, y, MaterialId.Warrior);
-    this.folkWalk(x, y, i, facing, fed, 0, home);
+    stepWarriorImpl(this, x, y, i);
   }
 
-  /**
-   * Esqueleto: a slow undead that hunts o povo. It shambles toward the
-   * nearest Pip it can see and, toe to toe, strikes it once a second for one
-   * point. It has 5 hit points; a Guerreiro's blows, Fogo, Lava, Ácido or
-   * deep Água end it. It takes a turn only every SKELETON_ACT_INTERVAL ticks,
-   * so the folk outpace it.
-   */
+  /** Esqueleto: a slow undead that hunts and strikes o povo. See folk/combat.ts. */
   stepSkeleton(x: number, y: number, i: number): void {
-    this.processed[i] = 1;
-    const facing = creatureFacing(this.meta[i]);
-
-    // Lethal ground: Lava on contact, or dragged under deep water.
-    let waterBelow = false, waterAround = 0;
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx, ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const nId = this.material[this.index(nx, ny)] as MaterialId;
-      if (nId === MaterialId.Lava) { this.igniteAt(x, y); this.set(x, y, MaterialId.Empty); return; }
-      if (nId === MaterialId.Water) { waterAround++; if (dx === 0 && dy === 1) waterBelow = true; }
-    }
-    if (waterBelow && waterAround >= 6 && Math.random() < 0.14) {
-      this.set(x, y, MaterialId.Empty);
-      return;
-    }
-
-    // Slow and lurching — takes a turn only every SKELETON_ACT_INTERVAL ticks,
-    // so the folk always outpace it, but it acts every tick while it's actually
-    // toe to toe with a Pip so a single shove can't break off the fight. The
-    // cheap short-range check settles that every tick; the full SKELETON_SIGHT
-    // sweep for spotting a Pip from afar only runs on the ordinary cadence
-    // (see COMBAT_MELEE_CHECK) — anything adjacent is always inside it too,
-    // so a fight already underway never has to wait on the slow cadence.
-    const nearPrey = this.nearestOf(x, y, PIP_IDS, COMBAT_MELEE_CHECK);
-    const adjacentNow = nearPrey !== null && Math.abs(nearPrey[0]) <= 1 && Math.abs(nearPrey[1]) <= 1;
-    if (!adjacentNow && (this.tick + x) % SKELETON_ACT_INTERVAL !== 0) {
-      this.meta[i] = packCreature(facing, 0, CREATURE_FED_MAX);
-      return;
-    }
-    const prey = adjacentNow ? nearPrey : this.nearestOf(x, y, PIP_IDS, SKELETON_SIGHT);
-    let wantDir = 0;
-    if (prey) {
-      const [pdx, pdy] = prey;
-      wantDir = Math.sign(pdx) || facing;
-      const adj = Math.abs(pdx) <= 1 && Math.abs(pdy) <= 1;
-      if (this.strikeClock(i, adj)) {
-        const dmg = (this.hp[i] & HP_EMPOWERED) ? ATTACK_DAMAGE * 2 : ATTACK_DAMAGE;
-        this.strike(this.index(x + pdx, y + pdy), dmg, x, y);
-      }
-      if (adj) {
-        this.meta[i] = packCreature(wantDir, 0, CREATURE_FED_MAX);
-        return;
-      }
-    } else if (Math.random() < SKELETON_WANDER_CHANCE) {
-      wantDir = Math.random() < 0.5 ? -facing : facing;
-    }
-    // Reuse the folk surface walk (well fed, so it never forages) — it climbs,
-    // steps down, and phases through house walls to get at the folk inside.
-    this.folkWalk(x, y, i, wantDir || facing, CREATURE_FED_MAX, 0, wantDir);
+    stepSkeletonImpl(this, x, y, i);
   }
-
 }

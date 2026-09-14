@@ -673,9 +673,9 @@ export interface PaletteCategory {
  * split as `MaterialCategory` (which is about simulation physics: Metal and
  * Vidro are both "Solid" for movement purposes but belong in very different
  * mental buckets for a player scanning a menu). This is the single source
- * of truth for both the categorized picker (BottomPanel) and the flat
- * palette list (HintsModal, `PALETTE` below) — add a new material to a
- * category here and it automatically shows up in both places.
+ * of truth for both the categorized picker (BottomPanel) and the hints
+ * modal (HintsModal) — add a new material to a category here and it
+ * automatically shows up in both places.
  */
 /**
  * Five player-facing groups: the three matter states (Pó / Sólidos / Líquidos),
@@ -727,5 +727,54 @@ export const PALETTE_CATEGORIES: PaletteCategory[] = [
   },
 ];
 
-/** Flat palette order shown to the player; Empty (the eraser) is handled separately in the UI. */
-export const PALETTE: MaterialId[] = PALETTE_CATEGORIES.flatMap((c) => c.materials);
+/** Icon name shown for each material, in the palette and in the hints modal. */
+export const ICON_BY_MATERIAL: Record<MaterialId, string> = {
+  [MaterialId.Empty]: "eraser",
+  [MaterialId.Sand]: "sand",
+  [MaterialId.Water]: "water",
+  [MaterialId.Stone]: "stone",
+  [MaterialId.Wood]: "wood",
+  [MaterialId.Fire]: "fire",
+  [MaterialId.Plant]: "plant",
+  [MaterialId.Dirt]: "dirt",
+  [MaterialId.Mud]: "mud",
+  [MaterialId.Electricity]: "electricity",
+  [MaterialId.Metal]: "metal",
+  [MaterialId.Seed]: "seed",
+  [MaterialId.Acid]: "acid",
+  [MaterialId.Gunpowder]: "gunpowder",
+  [MaterialId.Oil]: "oil",
+  [MaterialId.Salt]: "salt",
+  [MaterialId.Lava]: "lava",
+  [MaterialId.Vida]: "life",
+  [MaterialId.Ice]: "ice",
+  [MaterialId.Glass]: "glass",
+  [MaterialId.Clone]: "clone",
+  [MaterialId.HeatBlock]: "heat-block",
+  [MaterialId.ColdBlock]: "cold-block",
+  [MaterialId.C4]: "c4",
+  // Vapor/Vapor de Ácido are never directly paintable — only ever appear
+  // by boiling — but the type still needs an entry for every id.
+  [MaterialId.Steam]: "water",
+  [MaterialId.AcidVapor]: "acid",
+  [MaterialId.CombustibleGas]: "gas",
+  [MaterialId.Ant]: "ant",
+  [MaterialId.Bird]: "bird",
+  [MaterialId.Fish]: "fish",
+  [MaterialId.Magic]: "magic",
+  [MaterialId.Mason]: "mason",
+  [MaterialId.Lumberjack]: "lumberjack",
+  [MaterialId.Farmer]: "farmer",
+  [MaterialId.Warrior]: "warrior",
+  [MaterialId.Skeleton]: "skeleton",
+  [MaterialId.Brick]: "brick",
+  // Sprout and Flor only ever appear by germinating from a Semente —
+  // neither has a palette button, but the type still needs an entry for
+  // every id.
+  [MaterialId.Wheat]: "wheat",
+  [MaterialId.Sprout]: "plant",
+  [MaterialId.Flor]: "plant",
+  [MaterialId.Lever]: "lever",
+  [MaterialId.Wire]: "wire",
+  [MaterialId.Door]: "door",
+};

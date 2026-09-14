@@ -36,6 +36,18 @@ export type UIStrings = {
   hintsIntro: string;
   interactions: string;
 
+  // OnboardingModal
+  welcomeTour: string;
+  onboardTitle1: string;
+  onboardBody1: string;
+  onboardTitle2: string;
+  onboardBody2: string;
+  onboardTitle3: string;
+  onboardBody3: string;
+  onboardNext: string;
+  onboardStart: string;
+  onboardSkip: string;
+
   // MapsModal
   mapsDialogLabel: string;
   mapNamePlaceholder: string;
@@ -85,6 +97,17 @@ export const UI: Record<Locale, UIStrings> = {
     hintsIntro: "Tap a material to see what it does and how it reacts with the others.",
     interactions: "Interactions",
 
+    welcomeTour: "Welcome tour",
+    onboardTitle1: "Paint anything",
+    onboardBody1: "Sand, water, fire, and dozens more. Drag to paint and watch it move.",
+    onboardTitle2: "Everything reacts",
+    onboardBody2: "Fire, water, powder, circuits. Mix them and see what happens.",
+    onboardTitle3: "A whole village lives here",
+    onboardBody3: "Builders, farmers, warriors. Give them room and watch them work.",
+    onboardNext: "Next",
+    onboardStart: "Start playing",
+    onboardSkip: "Skip",
+
     mapsDialogLabel: "Save and load maps",
     mapNamePlaceholder: "Map name",
     saveCurrentMap: "Save current map",
@@ -132,6 +155,17 @@ export const UI: Record<Locale, UIStrings> = {
     hintsIntro: "Toque em um material para ver a descrição e como ele interage com os outros.",
     interactions: "Interações",
 
+    welcomeTour: "Tour de boas-vindas",
+    onboardTitle1: "Pinte qualquer coisa",
+    onboardBody1: "Areia, água, fogo e muito mais. Arraste para pintar e veja se mexer.",
+    onboardTitle2: "Tudo reage",
+    onboardBody2: "Fogo, água, pólvora, circuitos. Misture e veja o que acontece.",
+    onboardTitle3: "Um povo mora aqui",
+    onboardBody3: "Pedreiros, fazendeiros, guerreiros. Dê espaço e observe.",
+    onboardNext: "Próximo",
+    onboardStart: "Começar a jogar",
+    onboardSkip: "Pular",
+
     mapsDialogLabel: "Salvar e carregar mapas",
     mapNamePlaceholder: "Nome do mapa",
     saveCurrentMap: "Salvar mapa atual",
@@ -178,6 +212,17 @@ export const UI: Record<Locale, UIStrings> = {
     close: "閉じる",
     hintsIntro: "素材をタップすると、その説明と他の素材との反応が見られます。",
     interactions: "相互作用",
+
+    welcomeTour: "ようこそツアー",
+    onboardTitle1: "好きに描こう",
+    onboardBody1: "砂、水、火、他にもたくさん。ドラッグして描いて、動きを見てみよう。",
+    onboardTitle2: "すべてが反応する",
+    onboardBody2: "火、水、火薬、回路。混ぜて何が起きるか見てみよう。",
+    onboardTitle3: "ここには村人がいる",
+    onboardBody3: "職人、農民、戦士。スペースを与えて観察しよう。",
+    onboardNext: "次へ",
+    onboardStart: "始める",
+    onboardSkip: "スキップ",
 
     mapsDialogLabel: "マップの保存と読み込み",
     mapNamePlaceholder: "マップ名",

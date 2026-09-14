@@ -152,6 +152,8 @@
     <rect x="13.5" y="5" width="3.5" height="14" rx="1" fill="currentColor" stroke="none" />
   {:else if name === "play"}
     <path d="M7 4.5 L19 12 L7 19.5 Z" fill="currentColor" stroke="none" />
+  {:else if name === "sparkle"}
+    <path d="M12 3 L13.6 9.4 L20 11 L13.6 12.6 L12 19 L10.4 12.6 L4 11 L10.4 9.4 Z" />
   {:else if name === "globe"}
     <circle cx="12" cy="12" r="9" />
     <path d="M3 12 H21 M12 3 C14.5 6 15.5 9 15.5 12 C15.5 15 14.5 18 12 21 C9.5 18 8.5 15 8.5 12 C8.5 9 9.5 6 12 3 Z" />

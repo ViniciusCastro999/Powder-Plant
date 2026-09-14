@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Icon from "./Icon.svelte";
+  import Modal from "./Modal.svelte";
   import {
     listMaps,
     saveMap,
@@ -140,113 +141,77 @@
   }
 </script>
 
-{#if open}
-  <div class="backdrop" onclick={close} onkeydown={(e) => e.key === "Escape" && close()} role="presentation">
-    <div
-      class="dialog"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.stopPropagation()}
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("mapsDialogLabel")}
-      tabindex="-1"
-    >
-      <header>
-        <span class="title">{t("maps")}</span>
-        <button class="close" onclick={close} aria-label={t("close")}>✕</button>
-      </header>
+<Modal {open} onclose={close} ariaLabel={t("mapsDialogLabel")} width="520px" maxHeight="620px">
+  <header>
+    <span class="title">{t("maps")}</span>
+    <button class="close" onclick={close} aria-label={t("close")}>✕</button>
+  </header>
 
-      <div class="save-row">
-        <input
-          type="text"
-          bind:value={name}
-          maxlength="40"
-          placeholder={t("mapNamePlaceholder")}
-          onkeydown={(e) => e.key === "Enter" && save()}
-        />
-        <button class="save-btn" onclick={save}>
-          <Icon name="save" size={15} />
-          {t("saveCurrentMap")}
-        </button>
-      </div>
-
-      {#if error}
-        <p class="msg error">{error}</p>
-      {:else if notice}
-        <p class="msg notice">{notice}</p>
-      {/if}
-
-      <div class="list">
-        {#if maps.length === 0}
-          <p class="empty">{t("noMapsYet")}</p>
-        {:else}
-          {#each maps as m (m.id)}
-            <div class="map-row">
-              <div class="map-info">
-                <span class="map-name">{m.name}</span>
-                <span class="map-date">{formatDate(m.savedAt)}</span>
-              </div>
-              <div class="map-actions">
-                {#if confirmingId === m.id}
-                  <button class="danger" onclick={() => remove(m.id)}>{t("confirm")}</button>
-                  <button class="ghost" onclick={() => (confirmingId = null)}>{t("cancel")}</button>
-                {:else}
-                  <button class="primary" onclick={() => load(m.id)}>{t("load")}</button>
-                  <button class="ghost" onclick={() => exportMap(m)} title={t("exportTitle")} aria-label={t("exportLabel")}>
-                    <Icon name="export" size={15} />
-                  </button>
-                  <button class="ghost" onclick={() => (confirmingId = m.id)} title={t("deleteTitle")} aria-label={t("deleteTitle")}>
-                    <Icon name="trash" size={15} />
-                  </button>
-                {/if}
-              </div>
-            </div>
-          {/each}
-        {/if}
-      </div>
-
-      <footer>
-        <button class="import" onclick={() => fileInput?.click()}>
-          <Icon name="import" size={15} />
-          {t("importFile")}
-        </button>
-        <input
-          bind:this={fileInput}
-          type="file"
-          accept=".json,application/json"
-          onchange={onFilePicked}
-          hidden
-        />
-      </footer>
-    </div>
+  <div class="save-row">
+    <input
+      type="text"
+      bind:value={name}
+      maxlength="40"
+      placeholder={t("mapNamePlaceholder")}
+      onkeydown={(e) => e.key === "Enter" && save()}
+    />
+    <button class="save-btn" onclick={save}>
+      <Icon name="save" size={15} />
+      {t("saveCurrentMap")}
+    </button>
   </div>
-{/if}
+
+  {#if error}
+    <p class="msg error">{error}</p>
+  {:else if notice}
+    <p class="msg notice">{notice}</p>
+  {/if}
+
+  <div class="list">
+    {#if maps.length === 0}
+      <p class="empty">{t("noMapsYet")}</p>
+    {:else}
+      {#each maps as m (m.id)}
+        <div class="map-row">
+          <div class="map-info">
+            <span class="map-name">{m.name}</span>
+            <span class="map-date">{formatDate(m.savedAt)}</span>
+          </div>
+          <div class="map-actions">
+            {#if confirmingId === m.id}
+              <button class="danger" onclick={() => remove(m.id)}>{t("confirm")}</button>
+              <button class="ghost" onclick={() => (confirmingId = null)}>{t("cancel")}</button>
+            {:else}
+              <button class="primary" onclick={() => load(m.id)}>{t("load")}</button>
+              <button class="ghost" onclick={() => exportMap(m)} title={t("exportTitle")} aria-label={t("exportLabel")}>
+                <Icon name="export" size={15} />
+              </button>
+              <button class="ghost" onclick={() => (confirmingId = m.id)} title={t("deleteTitle")} aria-label={t("deleteTitle")}>
+                <Icon name="trash" size={15} />
+              </button>
+            {/if}
+          </div>
+        </div>
+      {/each}
+    {/if}
+  </div>
+
+  <footer>
+    <button class="import" onclick={() => fileInput?.click()}>
+      <Icon name="import" size={15} />
+      {t("importFile")}
+    </button>
+    <input
+      bind:this={fileInput}
+      type="file"
+      accept=".json,application/json"
+      onchange={onFilePicked}
+      hidden
+    />
+  </footer>
+</Modal>
 
 <style>
-  .backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(4, 5, 8, 0.6);
-    backdrop-filter: blur(3px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 50;
-    padding: 24px;
-  }
-
-  .dialog {
-    width: min(520px, 100%);
-    max-height: min(620px, 90vh);
-    display: flex;
-    flex-direction: column;
-    background: #161a26;
-    border: 1px solid rgba(255, 255, 255, 0.09);
-    border-radius: 16px;
-    box-shadow: 0 30px 70px rgba(0, 0, 0, 0.55);
-    overflow: hidden;
-  }
-
   header {
     display: flex;
     align-items: center;
