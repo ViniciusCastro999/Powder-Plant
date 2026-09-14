@@ -25,6 +25,35 @@ import {
   CREATURE_FED_MAX, CREATURE_FED_BITS, CREATURE_STARVE_DEATH_CHANCE,
   packCreature, creatureFacing, creatureTimer, creatureFed,
 } from "./creatureMeta";
+import {
+  stepMagic as stepMagicImpl, transmute as transmuteImpl, conjureCreature as conjureCreatureImpl,
+} from "./systems/magic";
+import {
+  stepClone as stepCloneImpl, advancePulses as advancePulsesImpl, conducts as conductsImpl,
+  pulseDirCandidates as pulseDirCandidatesImpl, circuitConnected as circuitConnectedImpl,
+  stepCircuitBlock as stepCircuitBlockImpl, circuitPowered as circuitPoweredImpl,
+  pulseAt as pulseAtImpl, stepWire as stepWireImpl, doorPowered as doorPoweredImpl,
+  bodyCircuitState as bodyCircuitStateImpl, stepDoor as stepDoorImpl,
+} from "./systems/electricity";
+import {
+  stepFire as stepFireImpl, tryMoveFire as tryMoveFireImpl, igniteAt as igniteAtImpl,
+  detonate as detonateImpl, applyBlastImpulse as applyBlastImpulseImpl,
+  isFusableExplosive as isFusableExplosiveImpl, collectExplosivePocket as collectExplosivePocketImpl,
+  canDetonate as canDetonateImpl, stepFuse as stepFuseImpl, floodFuseConnected as floodFuseConnectedImpl,
+  spawnShrapnelBurst as spawnShrapnelBurstImpl, advanceShrapnel as advanceShrapnelImpl,
+  shatterGlass as shatterGlassImpl, advanceDebris as advanceDebrisImpl, depositDebris as depositDebrisImpl,
+  advanceFlashes as advanceFlashesImpl, HEAT_FUSE_GLASS,
+} from "./systems/fire";
+import {
+  growthFactor as growthFactorImpl, stepOrganic as stepOrganicImpl,
+  stampProsperousBloom as stampProsperousBloomImpl, stepDirt as stepDirtImpl,
+  stepSeed as stepSeedImpl, stampFlower as stampFlowerImpl, stemBelow as stemBelowImpl,
+  crownAbove as crownAboveImpl, stepSprout as stepSproutImpl, stepWheat as stepWheatImpl,
+} from "./systems/plants";
+import {
+  stepSalt as stepSaltImpl, stepMetal as stepMetalImpl, stepIce as stepIceImpl,
+  frostOver as frostOverImpl, stepLava as stepLavaImpl, stepAcid as stepAcidImpl,
+} from "./systems/reactions";
 
 /**
  * Per-tick chance a Powder/Liquid cell even attempts its falling-sand
@@ -36,14 +65,9 @@ import {
  * acceleration value to halve.
  */
 const GRAVITY_STRENGTH = 0.5;
-const GROWTH_CHANCE = 0.01;
-const GERMINATE_CHANCE = 0.05;
-const MUD_FORM_CHANCE = 0.05;
 const ACID_START_CHARGES = 5;
-/** Safety net only, not a visible countdown — see the Pulse comment below. */
-const PULSE_MAX_STEPS = 4000;
+// PULSE_MAX_STEPS lives in systems/electricity.ts.
 export const SPROUT_BUDGET_MIN = 16;
-const SPROUT_BUDGET_MAX = 34;
 /**
  * A Sprout's `meta` byte normally just holds its remaining growth budget
  * (see stepSprout), but budgets never exceed SPROUT_BUDGET_MAX — comfortably
@@ -57,9 +81,9 @@ const SPROUT_BUDGET_MAX = 34;
  * endlessly" bug this flag exists to prevent.
  */
 export const SPROUT_BUDGET_MASK = 0x3f;
-const SPROUT_REGROWN_FLAG = 0x80;
+export const SPROUT_REGROWN_FLAG = 0x80;
 /** Meta bit marking a Sprout (and everything grown from it) as a Lenhador's cultivated tree — it grows without needing water/mud close by, since the forester tends it. */
-const SPROUT_FOREST_FLAG = 0x40;
+export const SPROUT_FOREST_FLAG = 0x40;
 /**
  * Meta bit on a Madeira cell marking it as a living tree's trunk (grown by
  * stepSprout, not cut by anyone yet). A trunk renders like ordinary wood but
@@ -67,21 +91,13 @@ const SPROUT_FOREST_FLAG = 0x40;
  * a Lenhador felling the tree turns it into plain, harvestable Madeira. Sits
  * clear of the HOUSE_* bits (0x40 wall / 0x80 anchor / 0x07 kind).
  */
-const TREE_TRUNK_META = 0x20;
+export const TREE_TRUNK_META = 0x20;
 /** Meta bit on a Semente marking it as one a Lenhador sowed — it germinates with a bigger growth budget so it fills out into a real tree, not a shrub. */
-const FOREST_SEED_META = 1;
-/** Growth budget a forester's seedling germinates with (vs a wild Semente's SPROUT_BUDGET_MIN..MAX) — enough for a trunk and a tidy crown, no more. Fits in the 6-bit budget field. */
-const FOREST_SEED_BUDGET = 22;
+export const FOREST_SEED_META = 1;
 /** A forest tree stops growing once it carries this many crown cells — keeps a tended tree from ballooning into a canopy blanket. */
 const TREE_CROWN_CAP = 26;
 /** How many cells a tree grows a bare vertical trunk before its crown bushes out. */
-const TREE_TRUNK_HEIGHT = 4;
-/** Per-tick chance a low, canopy-topped Sprout cell hardens into a Madeira trunk. */
-const TREE_HARDEN_CHANCE = 0.12;
-/** Crown cells (Sprout/Planta/Flor above) a trunk cell needs before it starts to lignify. */
-const TREE_CROWN_FOR_BARK = 2;
-/** Per-tick chance a fully-grown (budget-exhausted), not-yet-regrown Sprout gains a one-time bonus growth budget while sitting in the prosperous climate — see stepSprout. */
-const SPROUT_PROSPEROUS_REGROWTH_CHANCE = 0.004;
+export const TREE_TRUNK_HEIGHT = 4;
 /**
  * Size of that one-time catch-up bonus. Kept deliberately small: a Sprout's
  * budget is cloned (not split) at every branch point it spawns — the same
@@ -100,51 +116,19 @@ export const SPROUT_REGROWTH_BONUS = 3;
  * food for the folk (see folkUpkeep / stepFarmer) and, rarely, it flings a
  * seed onto adjacent bare soil. An unrooted or hard-frosted stalk withers.
  */
-const WHEAT_RIPEN_PER_TICK = 1;
-const WHEAT_GROW_AT = 26;      // min ripeness before a cell shoots one above it
 // WHEAT_RIPE lives in metaBits.ts — the renderer needs it too.
-const WHEAT_MAX_HEIGHT = 3;
-const WHEAT_GROW_CHANCE = 0.06;
-const WHEAT_SEED_CHANCE = 0.006; // ripe head self-seeds onto adjacent bare soil
-const WHEAT_WITHER_CHANCE = 0.05;
+export const WHEAT_MAX_HEIGHT = 3;
 /** Cells of level furrow the Plantador needs ahead of it before it will sow a shoot (it grades a slightly wider strip). */
 const WHEAT_FURROW = 1;
 /** Divides the density gap when sinking through a liquid; smaller = faster sinking per point of density. */
 const SINK_DENSITY_SCALE = 8;
 /** Ticks a Powder/Liquid cell must fail to move before it's put to sleep and skipped. */
 const SLEEP_THRESHOLD = 4;
-/** Fire only spreads/burns/flickers on every Nth tick — an easy global slow-down independent of each material's own burnTicks. 1 = full speed. */
-const FIRE_TICK_INTERVAL = 1;
-/** Extra fuel a Fire cell loses on a tick where it's boxed in on all 3 upward cells — it smothers instead of sitting fully lit against a wall for its whole lifetime. */
-const FIRE_SMOTHER_DECAY = 4;
-/** Chance an active Fire cell leaps 2 cells instead of 1 on its flicker move, so a burst of flame scatters wider before it burns out. */
-const FIRE_LEAP_CHANCE = 0.22;
-/** Plain Metal touching Water has this per-tick chance to rust away into one Dirt particle. */
-const RUST_CHANCE = 0.0012;
-/** Fully salty Water rusts touching Metal this many times faster than fresh Water. */
-const RUST_SALT_MULTIPLIER = 6;
-/** Baseline chance a charge actually conducts through a touching Water cell; salinity raises it toward 1. Metal (and everything else conductive) always conducts. */
-const WATER_BASE_CONDUCT_CHANCE = 0.55;
+// WATER_BASE_CONDUCT_CHANCE / PULSE_TOUCH_BONUS / PULSE_DRIFT_CHANCE /
+// PULSE_LEAP_CHANCE live in systems/electricity.ts. PULSE_AIR_LIFE stays
+// here — paintCell's Eletricidade brush needs it too.
 /** Ticks a free-falling charge survives with nothing touching it — see the Pulse comment below. Short, so a lone spark fizzles out almost immediately. */
-const PULSE_AIR_LIFE = 6;
-/** Extra ticks of life a charge regains (capped at PULSE_AIR_LIFE) on a tick another charge is touching it. Deliberately <= the 1/tick decay, so touching can only pause dissipation, never grow it — a dense cluster's total life can't climb back up, only hold steady at best, so it still visibly thins out instead of reading as "more electricity" than a lone spark. */
-const PULSE_TOUCH_BONUS = 1;
-/** Chance a free-falling charge nudges one column sideways instead of dropping straight down, per tick. */
-const PULSE_DRIFT_CHANCE = 0.22;
-/** Chance a free-falling charge covers 2 rows instead of 1 this tick, so it moves a bit faster without ballooning how far it can spread before it dissipates. */
-const PULSE_LEAP_CHANCE = 0.15;
-/** Per-tick chance a Metal cell touching Lava melts into Lava — fastest of the three. */
-const LAVA_MELT_METAL = 0.02;
-/** Per-tick chance a Sand cell touching Lava melts into Lava — middle speed. */
-const LAVA_MELT_SAND = 0.008;
-/** Per-tick chance a Sand cell touching Lava or Fire fuses into Glass instead of melting — glassblowing by the fire. */
-const HEAT_FUSE_GLASS = 0.03;
-/** Per-tick chance a Stone cell touching Lava melts into Lava — slowest. */
-const LAVA_MELT_STONE = 0.0025;
-/** Per-tick chance a Gelo cell freezes a touching fresh-water neighbor into more Gelo. */
-const ICE_FREEZE_CHANCE = 0.02;
-/** Per-tick chance a Gelo cell touching Fogo/Lava melts back into Água. */
-const ICE_MELT_CHANCE = 0.18;
+export const PULSE_AIR_LIFE = 6;
 /**
  * Purely a visual flourish — see `Debris` for what actually shoves material
  * around. Shrapnel is evenly spread around the full circle from the
@@ -155,14 +139,6 @@ const ICE_MELT_CHANCE = 0.18;
 /** Per-tick chance a Gás cell that hasn't been ignited disperses into the air and vanishes — emitted as a puff like Fogo, and gone within about a second if nothing sets it off. */
 const GAS_DISSIPATE_CHANCE = 0.015;
 // GLASS_SHATTER_HITS lives in metaBits.ts — the renderer needs it too.
-/** Each particle's starting speed is randomized in this range — a spread of fast and slow debris reads as a real blast instead of a uniform ring all moving in lockstep. */
-const SHRAPNEL_SPEED_MIN = 0.35;
-const SHRAPNEL_SPEED_MAX = 0.95;
-/** Ticks a Shrapnel particle survives before it's fully faded out — randomized per-particle so a burst doesn't blink out all at once. No gravity: it's a purely decorative spark, not a falling object, so it flies outward in a straight line and just dies out over time instead of curving into a fall. */
-const SHRAPNEL_LIFE_MIN = 22;
-const SHRAPNEL_LIFE_MAX = 42;
-/** Hard ceiling on how many decorative Shrapnel particles a single blast spawns — a rendering/performance budget, not a limit on the blast's actual force (see CLUSTER_BONUS_PER_CHARGE, which is uncapped). */
-const SHRAPNEL_VISUAL_CAP = 400;
 /** Ticks a detonation's initial bright Flash lasts before fully fading — a couple of frames, just long enough to read as a flash rather than a single-frame strobe. */
 export const FLASH_LIFE = 4;
 /**
@@ -183,27 +159,6 @@ export const FLASH_LIFE = 4;
  * own reach also grows with `Math.sqrt(power)` so the consumed pocket's
  * size feeds through to a proportionally larger — but not runaway — disc.
  */
-const BLAST_BASE_RADIUS = 9;
-/** Fraction of the blast radius within which even sturdy solids (Pedra) can be pulverized into flying rubble; outside it they only shield. */
-const BLAST_PULVERIZE_FRAC = 0.5;
-/** Fraction of the blast radius within which the fragile solids (Madeira, Planta, Vidro, Gelo, Semente, Broto, Flor) are torn loose and thrown; outside it they're left standing (though a flammable one may still be lit by the heat). */
-const BLAST_SHATTER_FRAC = 0.8;
-/** Peak outward launch speed (cells/tick) handed to a chunk right at the epicenter — it falls off linearly to zero at the blast's edge. */
-const BLAST_LAUNCH_SPEED = 4.0;
-/** Every launched chunk also gets this much straight-up bias added on top of its radial velocity, so debris arcs and rains rather than skating flat along the ground. */
-const BLAST_UPWARD_BIAS = 0.9;
-/** Random ± spread (radians) added to each chunk's launch angle so the debris fans out instead of firing along perfectly radial spokes. */
-const BLAST_ANGLE_JITTER = 0.5;
-/** Hard ceiling on live `Debris` particles — past this, a fresh detonation stops converting cells to debris (it still consumes/ignites them) so a huge chain can't melt the frame rate. */
-const DEBRIS_CAP = 5000;
-/** Downward acceleration (cells/tick²) on a chunk in flight. */
-const DEBRIS_GRAVITY = 0.044;
-/** Per-tick multiplier on a chunk's velocity — mild air drag so fast debris sheds speed and settles instead of skating forever. */
-const DEBRIS_DRAG = 0.991;
-/** Below this speed a chunk is considered to have come to rest and is deposited back onto the grid. */
-const DEBRIS_SETTLE_SPEED = 0.2;
-/** Failsafe lifespan (ticks) — a chunk that somehow never settles is deposited anyway once this runs out. */
-const DEBRIS_MAX_LIFE = 140;
 /**
  * Scales how readily the blast itself ignites a flammable cell in range
  * (Madeira, Óleo, and the like) on top of that material's own
@@ -218,9 +173,6 @@ const DEBRIS_MAX_LIFE = 140;
  * at the heart of a blast reads as "very likely to ignite" while a faint
  * touch near the rim still only has a small chance.
  */
-const BLAST_IGNITE_FACTOR = 25;
-/** How much extra blast scale (decorative Shrapnel count, starting energy) each extra cell in the small local *pocket* a single detonation consumes adds — see `detonate`/`collectExplosivePocket`. The pocket is only ~1-9 cells, so this stays modest; a big pile's force comes from a long chain of these small pops, not one huge blast. */
-const CLUSTER_BONUS_PER_CHARGE = 0.2;
 /**
  * When an explosive first goes off, the detonation floods the whole
  * *connected* body of explosive it's part of and lights a fuse on every
@@ -229,15 +181,6 @@ const CLUSTER_BONUS_PER_CHARGE = 0.2;
  * few frames (like a real detonation front tearing through the charge),
  * not a lazy smoulder-chain crawling cell by cell over several seconds.
  */
-const CHAIN_BASE_DELAY = 1;
-/** BFS rings of connected explosive that share each 1-tick step of fuse delay — smaller = the detonation front sweeps the charge faster. */
-const CHAIN_RINGS_PER_TICK = 4;
-/** Cap on how many connected cells one detonation floods and fuses in a single pass — a rendering/perf budget; anything past it is picked up by the next detonation's own flood. */
-const CHAIN_FLOOD_CAP = 1600;
-/** Ticks a *separate* Pólvora/C4 pile (one the blast reached across a gap, not touching the charge that went off) waits before detonating — a scattered minefield ripples outward over several frames instead of flashing to nothing at once. */
-const CHAIN_DELAY_SEPARATE = 5;
-/** Decorative Shrapnel sparks spawned per individual detonation, scaled by its small pocket size. Low on purpose: a big pile now produces a long chain of these small pops rather than one massive burst. */
-const SHRAPNEL_PER_POP = 7;
 /**
  * Hard ceiling on how many individual pops (`detonate` calls) happen in one
  * tick, no matter how much explosive is in play. Each pop is cheap on its
@@ -249,13 +192,9 @@ const SHRAPNEL_PER_POP = 7;
  * blast still goes off in full, it just takes a few extra ticks to finish
  * eating a monster pile instead of freezing the game trying to do it in one.
  */
-const DETONATIONS_PER_TICK_CAP = 240;
+export const DETONATIONS_PER_TICK_CAP = 240;
 /** Fraction of a Vida brush stroke that actually gets painted — see the comment on VIDA in paintCell. */
 const VIDA_PAINT_DENSITY = 0.4;
-/** Chance a spreading Planta blooms into a Flor cell instead of plain leaf, checked only in the prosperous band. */
-const FLOWER_BLOOM_CHANCE = 0.25;
-/** Standalone per-tick chance a Planta cell blossoms directly into a touching empty cell while the climate is prosperous, even with no Água nearby to trigger its usual water-driven spread — a mature, already-settled patch still gets to flower once conditions are ideal. */
-const PLANT_PROSPEROUS_BLOOM_CHANCE = 0.006;
 /**
  * How many weighted hot/cold pixels it takes to fully saturate temperature
  * to EXTREME_HOT/EXTREME_COLD — an absolute count, deliberately *not* a
@@ -290,9 +229,7 @@ const SPONTANEOUS_IGNITE_BASE = 0.0002;
 const SPONTANEOUS_IGNITE_PER_DEGREE = 0.00025;
 const SPONTANEOUS_IGNITE_CAP = 0.02;
 /** Gelo starts melting on its own (no Fogo/Lava touching it) above this ambient temperature — melt chance then climbs smoothly with each degree past it, capped. */
-const AMBIENT_ICE_MELT_TEMP = 5;
-const AMBIENT_ICE_MELT_PER_DEGREE = 0.0022;
-const AMBIENT_ICE_MELT_CAP = 0.08;
+export const AMBIENT_ICE_MELT_TEMP = 5;
 /**
  * Água boils into Vapor at ordinary atmospheric pressure — 100°C, same as
  * real water. Ácido here is modeled after nitric acid (HNO₃), a common
@@ -311,20 +248,11 @@ const WATER_BOIL_CHANCE = 0.006;
 const STEAM_CONDENSE_CHANCE = 0.01;
 const ACID_BOIL_CHANCE = 0.006;
 const ACID_VAPOR_CONDENSE_CHANCE = 0.01;
-/** Below COLD_1, a Planta/Broto/Flor cell has a chance each tick to frost over one touching Empty cell into Gelo — a rime layer creeping in around it — one tier per cold milestone. */
-const PLANT_FROST_1 = 0.004;
-const PLANT_FROST_2 = 0.014;
-const PLANT_FROST_3 = 0.035;
-/** Per-tick chance a Clone that's already locked onto a material spawns one more unit of it into a touching empty cell. */
-const CLONE_CHANCE = 0.1;
-/** Per-tick chance an unlocked Clone touching an already-locked Clone inherits its lock — much slower than a direct touch, so a lock creeps through a connected blob of Clone instead of the whole thing snapping to the same material at once. */
-const CLONE_PROPAGATE_CHANCE = 0.04;
+// CLONE_CHANCE / CLONE_PROPAGATE_CHANCE live in systems/electricity.ts.
 // LIFE_EAT_CHANCE (Vida's per-material eat odds) lives in systems/life.ts.
 
 // Creature meta-byte packing (facing/timer/fed) lives in creatureMeta.ts —
 // every creature system (wildlife, folk, magic) shares it.
-/** How many connected flammable creatures one ignition flashes over at once — this is what makes fire sweep a whole trail/flock instead of dying with the one it caught. A perf budget, not a balance knob. */
-const CREATURE_FIRE_FLOOD_CAP = 600;
 
 // Ant/Bird/Fish tuning constants live in systems/wildlife.ts, alongside the
 // AI that uses them.
@@ -435,8 +363,7 @@ const COMBAT_MELEE_CHECK = 6;
 // CIRCUIT_ON_META / LEVER_ARM_META / CIRCUIT_LINKED_META / CLONE_LOCK_MASK /
 // CLONE_LINKED_META / CLONE_ON_META live in metaBits.ts — the renderer needs
 // them too. See that file for the full layout explanation.
-/** Cap on how many connected Fio cells one circuitPowered trace visits — a perf budget for a pathological loop of wire, not a limit anyone wiring up a door will ever bump into. */
-const CIRCUIT_FLOOD_CAP = 4000;
+// CIRCUIT_FLOOD_CAP lives in systems/electricity.ts.
 /**
  * A single click of Alavanca stamps a housing (LEVER_FRAME, offsets from
  * its anchor at the top-left) with a two-cell-wide knob sitting inside it
@@ -502,7 +429,7 @@ const MASON_FOUND_CHANCE = 0.22;
 /** How often (ticks) the rolling village census is refreshed. */
 const CENSUS_INTERVAL = 90;
 /** Ceiling on standing Trigo per Fazendeiro — a field sized to its keepers, not a runaway prairie. */
-const WHEAT_PER_FARMER = 70;
+export const WHEAT_PER_FARMER = 70;
 /** How far a carrying Construtor notices a damaged house it could patch, and the per-tick chance it sets a brick when standing right next to the gap. */
 const MASON_REPAIR_RANGE = 24;
 const MASON_REPAIR_CHANCE = 0.4;
@@ -562,39 +489,27 @@ const FOLK_COMFORT_MAX = HOT_2;
 const FOLK_EXPOSURE_PER_DEGREE = 0.000012;
 const FOLK_EXPOSURE_CAP = 0.0012;
 
-/*
- * ── Magia ────────────────────────────────────────────────────────────────
- * A mote of enchantment: floats up and wanders, and each tick reaches for
- * one random neighbor and tries to turn it toward life and order. Potent
- * but self-limiting — it carries a lifespan in `meta` (set by the brush)
- * and every transmutation it lands also costs it extra life, so a single
- * mote can only do so much before it winks out.
- */
-// MAGIC_LIFE lives in metaBits.ts — the renderer needs it too.
-/** Extra life a mote spends when a transmutation attempt actually succeeds. */
-const MAGIC_CAST_COST = 6;
-/** Per-tick chance a Magia mote, sitting right by the right surroundings, conjures a creature (a Formiga on soil, a Peixe in water) into an adjacent empty cell. Deliberately rare — it's a surprise, not a spawner. */
-const MAGIC_CONJURE_CHANCE = 0.003;
-/** Per-tick chance a fading mote leaves a Flor where it vanishes — only ever taken when it dies resting against something solid, so flowers sprout on surfaces instead of hanging in mid-air. */
-const MAGIC_BLOOM_ON_DEATH = 0.35;
+// Magia's tuning constants (MAGIC_CAST_COST, MAGIC_CONJURE_CHANCE,
+// MAGIC_BLOOM_ON_DEATH) live in systems/magic.ts. MAGIC_LIFE lives in
+// metaBits.ts — the renderer needs it too.
 
 // NEIGHBORS_8 / NEIGHBORS_4 live in neighbors.ts — every system module needs them.
 /** [dx, dy, weight] a Sprout can grow into — biased upward, never downward, so it reads as a little plant instead of a blob. */
-const SPROUT_DIRECTIONS = [
+export const SPROUT_DIRECTIONS = [
   [0, -1, 3],
   [-1, -1, 2], [1, -1, 2],
   [-1, 0, 1], [1, 0, 1],
 ] as const;
 /** Growth directions for the lowest cells of a shoot — straight up only, so a tree starts with a clean vertical trunk before its crown spreads. */
-const TREE_TRUNK_DIRECTIONS = [[0, -1, 1]] as const;
+export const TREE_TRUNK_DIRECTIONS = [[0, -1, 1]] as const;
 /** Trunk cells a tended tree grows before it stamps its crown. */
-const TREE_CROWN_START = TREE_TRUNK_HEIGHT;
+export const TREE_CROWN_START = TREE_TRUNK_HEIGHT;
 /**
  * The leaf cells of a tended tree's crown, stamped in one go around the top of
  * the trunk (relative to the tip cell) — a rounded blob so it reads as
  * foliage. Only lands on empty air, so a crowded spot just gets a smaller crown.
  */
-const TREE_CROWN_SHAPE: readonly (readonly [number, number])[] = [
+export const TREE_CROWN_SHAPE: readonly (readonly [number, number])[] = [
   [-1, 0], [1, 0], [0, 0],
   [-2, -1], [-1, -1], [0, -1], [1, -1], [2, -1],
   [-2, -2], [-1, -2], [0, -2], [1, -2], [2, -2],
@@ -602,71 +517,12 @@ const TREE_CROWN_SHAPE: readonly (readonly [number, number])[] = [
   [0, -4],
 ];
 /** How far sideways TREE_CROWN_SHAPE ever reaches from the trunk tip it's stamped around — the crown only ever lands cells actually in bounds (see stepSprout), so a tree whose tip ends up this close to the map's left/right edge stamps permanently short and can never fill out past LUMBERJACK_MIN_TREE. Used to keep a Lenhador from sowing a seed doomed to grow into one. */
-const TREE_CROWN_DX_MAX = Math.max(...TREE_CROWN_SHAPE.map(([dx]) => Math.abs(dx)));
+export const TREE_CROWN_DX_MAX = Math.max(...TREE_CROWN_SHAPE.map(([dx]) => Math.abs(dx)));
 /** How far above the trunk tip TREE_CROWN_SHAPE reaches — combined with the bare-trunk climb (TREE_CROWN_START) below, the total headroom a tended tree needs above where it's sown. */
-const TREE_CROWN_DY_MAX = Math.max(...TREE_CROWN_SHAPE.map(([, dy]) => -dy));
+export const TREE_CROWN_DY_MAX = Math.max(...TREE_CROWN_SHAPE.map(([, dy]) => -dy));
 
-/**
- * Tiny stamped shapes a Semente becomes when it germinates on Barro — a
- * one-shot pattern instead of gradual growth, so its size is guaranteed
- * (never more than 3 rows above the seed) rather than merely likely. Each
- * entry is [dx, dy, isFlower] relative to the seed's own cell; `isFlower`
- * cells become Flor (petal color varies by meta), the rest become a
- * dormant Sprout (stem green).
- */
-const FLOWER_PATTERNS = [
-  [[0, -1, false], [0, -2, true]],
-  [[0, -1, false], [-1, -2, true], [1, -2, false]],
-  [[0, -1, false], [0, -2, false], [-1, -2, true], [1, -2, true]],
-  [[0, -1, false], [0, -2, false], [0, -3, true]],
-  [[0, -1, false], [-1, -1, true], [1, -1, true]],
-] as const;
-
-/**
- * Taller variants of FLOWER_PATTERNS, used instead of the normal set while
- * the temperature is in the prosperous band — roughly double the reach
- * (the tallest normal pattern caps at 3 rows; these cap at 6), so a
- * Semente sprouting right when things are thriving visibly grows bigger
- * than one sprouting in ordinary conditions.
- */
-const FLOWER_PATTERNS_PROSPEROUS = [
-  [[0, -1, false], [0, -2, false], [0, -3, false], [0, -4, true]],
-  [[0, -1, false], [0, -2, false], [-1, -3, false], [-1, -4, true], [1, -3, false], [1, -4, false]],
-  [[0, -1, false], [0, -2, false], [0, -3, false], [-1, -4, true], [1, -4, true]],
-  [[0, -1, false], [0, -2, false], [0, -3, false], [0, -4, false], [0, -5, false], [0, -6, true]],
-  [[0, -1, false], [0, -2, false], [-1, -2, true], [1, -2, true], [0, -3, false], [0, -4, false], [-1, -4, true], [1, -4, true]],
-] as const;
-
-/**
- * Small stamped flower clusters a mature Planta blooms directly into on its
- * own in the prosperous climate — see PLANT_PROSPEROUS_BLOOM_CHANCE. Reach
- * up/sideways only (never a negative dy, i.e. never downward — a plant
- * doesn't sprout growth into the ground it's standing on) and never more
- * than 4 cells from the Planta cell itself. Each entry is [dx, dy,
- * isFlower] relative to the blooming Planta cell; `isFlower` cells become
- * Flor, the rest a plain Sprout-colored stem.
- */
-const PLANT_BLOOM_FLOWER_PATTERNS = [
-  [[1, 0, false], [2, 0, false], [3, -1, true]],
-  [[-1, 0, false], [-2, -1, false], [-3, -1, true]],
-  [[0, -1, false], [1, -2, false], [2, -3, true], [-1, -2, false], [-2, -3, true]],
-  [[1, -1, false], [2, -2, false], [3, -3, true]],
-  [[-1, -1, false], [-2, -2, false], [-3, -3, true], [-4, -4, true]],
-] as const;
-
-/**
- * Small twisted-branch shapes a mature Planta blooms into instead of a
- * flower cluster — the same reach/direction rules as
- * PLANT_BLOOM_FLOWER_PATTERNS, but all plain Sprout-colored stem (no Flor),
- * zig-zagging as it climbs to read as a gnarled little branch rather than a
- * straight twig.
- */
-const PLANT_BLOOM_BRANCH_PATTERNS = [
-  [[1, 0, false], [2, -1, false], [1, -2, false], [2, -3, false]],
-  [[-1, 0, false], [-2, -1, false], [-1, -2, false], [-2, -3, false]],
-  [[1, -1, false], [0, -2, false], [1, -3, false], [0, -4, false]],
-  [[-1, -1, false], [0, -2, false], [-1, -3, false], [0, -4, false]],
-] as const;
+// FLOWER_PATTERNS / FLOWER_PATTERNS_PROSPEROUS / PLANT_BLOOM_FLOWER_PATTERNS /
+// PLANT_BLOOM_BRANCH_PATTERNS live in systems/plants.ts.
 
 /**
  * A charge of electricity. Never written into the material grid — it has
@@ -677,7 +533,7 @@ const PLANT_BLOOM_BRANCH_PATTERNS = [
  * something flammable), while Empty space and conductors just let it
  * keep travelling through.
  */
-interface Pulse {
+export interface Pulse {
   x: number;
   y: number;
   dx: number;
@@ -704,7 +560,7 @@ interface Pulse {
  * with it (see PixiStage), so it always reads as gradually dying out rather
  * than an abrupt pop.
  */
-interface Shrapnel {
+export interface Shrapnel {
   x: number;
   y: number;
   vx: number;
@@ -721,7 +577,7 @@ interface Shrapnel {
  * ticks (see FLASH_LIFE), just a near-white overlay the renderer blends in
  * proportional to `life`.
  */
-interface Flash {
+export interface Flash {
   x: number;
   y: number;
   life: number;
@@ -741,7 +597,7 @@ interface Flash {
  * around it, instead of the old wave that only ever nudged a grain one cell
  * at a time and let gravity trickle it back into the hole.
  */
-interface Debris {
+export interface Debris {
   x: number;
   y: number;
   vx: number;
@@ -1684,568 +1540,86 @@ export class SimGrid {
     return true;
   }
 
+  /** Fogo: spreads, ignites neighbours, smothers or burns out. See systems/fire.ts. */
   stepFire(x: number, y: number, i: number): void {
-    this.processed[i] = 1;
-    // Fire only acts on every FIRE_TICK_INTERVAL-th tick — a global slow
-    // motion knob for spread/ignition/fuel-burn/flicker all at once,
-    // independent of each material's own burnTicks ratio.
-    if (this.tick % FIRE_TICK_INTERVAL !== 0) return;
-
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      if (this.get(nx, ny) === MaterialId.Water) {
-        this.set(x, y, MaterialId.Empty);
-        return;
-      }
-    }
-
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const neigh = this.get(nx, ny);
-      // Sand held in the flame slowly fuses to Glass.
-      if (neigh === MaterialId.Sand) { if (Math.random() < HEAT_FUSE_GLASS) this.set(nx, ny, MaterialId.Glass); continue; }
-      const nDef = MATERIALS[neigh];
-      if (!nDef.flammable) continue;
-      // A flame right next to an animal grabs it far more readily than it
-      // would, say, a log — a creature that only had this material's slow
-      // per-tick ignitionChance would usually be missed as the fire flickers
-      // past, and a thin ant trail would never catch.
-      const chance = nDef.category === MaterialCategory.Creature ? Math.max(nDef.ignitionChance, 0.55) : nDef.ignitionChance;
-      if (Math.random() < chance) this.igniteAt(nx, ny);
-    }
-
-    // Boxed in on all 3 upward cells (nothing to flicker into): this flame
-    // has nowhere to breathe and smothers out well before its fuel would
-    // otherwise run out, instead of sitting fully lit against a wall.
-    const smothered = ([[0, -1], [-1, -1], [1, -1]] as const).every(([dx, dy]) => {
-      const nx = x + dx;
-      const ny = y + dy;
-      return !this.inBounds(nx, ny) || this.get(nx, ny) !== MaterialId.Empty;
-    });
-    // Math.max clamps this at 0 before it's written back — meta is a
-    // Uint8Array, so `meta[i] -= 4` when meta[i] is, say, 2 doesn't go
-    // negative, it *underflows* to 254 and the "reached zero" check below
-    // never trips again. That's exactly why fire pinned against the
-    // ceiling (permanently smothered, since everything above row 0 is
-    // out of bounds) looked like it never went out.
-    this.meta[i] = Math.max(0, this.meta[i] - (smothered ? FIRE_SMOTHER_DECAY : 1));
-    if (this.meta[i] <= 0) {
-      this.set(x, y, MaterialId.Empty);
-      return;
-    }
-
-    // Flickers upward through empty space instead of sitting still. A
-    // fraction of moves leap 2 cells instead of 1 in the same direction —
-    // occasional bigger jumps read as scattering embers, spreading the
-    // flame further from where it started before it burns out.
-    const dir = Math.random();
-    const [ddx, ddy] = dir < 0.34 ? [0, -1] : dir < 0.67 ? [-1, -1] : [1, -1];
-    const leap = Math.random() < FIRE_LEAP_CHANCE;
-    if (leap && this.tryMoveFire(x, y, x + ddx * 2, y + ddy * 2)) return;
-    this.tryMoveFire(x, y, x + ddx, y + ddy);
+    stepFireImpl(this, x, y, i);
   }
 
+  /** Moves a Fogo cell into empty space if it can. See systems/fire.ts. */
   tryMoveFire(fx: number, fy: number, tx: number, ty: number): boolean {
-    if (!this.inBounds(tx, ty) || this.get(tx, ty) !== MaterialId.Empty) return false;
-    this.swap(fx, fy, tx, ty);
-    return true;
+    return tryMoveFireImpl(this, fx, fy, tx, ty);
   }
 
-  /** Sets a cell alight — a detonation for Gunpowder, an ordinary burn for anything else flammable. */
+  /** Sets a cell alight — a detonation for explosives, an ordinary burn otherwise. See systems/fire.ts. */
   igniteAt(x: number, y: number): void {
-    const def = MATERIALS[this.get(x, y)];
-    if (def.explosive) {
-      // A whole flank of a huge charge can catch in the same tick (fire or a
-      // blast reaching many separate cells at once) — spend from the shared
-      // pop budget same as a fuse would, and give it a one-tick fuse to retry
-      // through `stepFuse` if the budget's already spent.
-      if (this.canDetonate()) this.detonate(x, y);
-      else this.meta[this.index(x, y)] = 1;
-      return;
-    }
-    this.set(x, y, MaterialId.Fire, def.burnTicks);
-    this.processed[this.index(x, y)] = 1;
-    // Fire runs right through a huddle of animals: the whole connected
-    // group of touching flammable creatures goes up at once. Without this
-    // the flame flickers up and off the spot before the next one in a
-    // trail or flock ever catches, so a torch to a colony just kills the
-    // single ant it touched. Bounded by CREATURE_FIRE_FLOOD_CAP for perf;
-    // any beyond that catch the ordinary way from the spreading Fogo.
-    if (def.category === MaterialCategory.Creature) {
-      let frontier = [this.index(x, y)];
-      const seen = new Set(frontier);
-      let budget = CREATURE_FIRE_FLOOD_CAP;
-      while (frontier.length > 0 && budget > 0) {
-        const nextRing: number[] = [];
-        for (const idx of frontier) {
-          const cxx = idx % this.width;
-          const cyy = (idx / this.width) | 0;
-          for (const [dx, dy] of NEIGHBORS_8) {
-            const nx = cxx + dx;
-            const ny = cyy + dy;
-            if (!this.inBounds(nx, ny)) continue;
-            const ni = this.index(nx, ny);
-            if (seen.has(ni)) continue;
-            const nDef = MATERIALS[this.material[ni] as MaterialId];
-            if (nDef.category !== MaterialCategory.Creature || !nDef.flammable) continue;
-            seen.add(ni);
-            this.set(nx, ny, MaterialId.Fire, nDef.burnTicks);
-            this.processed[ni] = 1;
-            nextRing.push(ni);
-            if (--budget <= 0) break;
-          }
-          if (budget <= 0) break;
-        }
-        frontier = nextRing;
-      }
-    }
+    igniteAtImpl(this, x, y);
   }
 
-  /**
-   * Any explosive material (Pólvora, C4, Gás) detonates instead of just
-   * smouldering. A detonation is deliberately *local*: it consumes only a
-   * small pocket around the cell that went off (that cell plus its touching
-   * explosive neighbours — see `collectExplosivePocket`, ~1-9 cells), and
-   * every explosive cell touching that pocket gets a short lit fuse
-   * (`meta`, a tick countdown — see `stepFuse`) so it detonates a few ticks
-   * later in turn. That's what makes a big solid block of Pólvora/C4 rip
-   * itself apart as a visible chain reaction eating outward ring by ring
-   * over roughly a second, instead of the whole connected mass vanishing in
-   * a single frame.
-   *
-   * The blast itself is an *impulse*, applied once, right now: over the disc
-   * of radius `BLAST_BASE_RADIUS·√power` around the epicentre, every loose
-   * cell (all Powder/Liquid, plus the fragile solids near the core, plus
-   * sturdy Pedra right at the core) is lifted straight off the grid and
-   * handed to the `Debris` particle system with an outward velocity that's
-   * strongest at the centre and fades to nothing at the rim, plus an upward
-   * bias and some angular jitter. Those chunks arc out under gravity and
-   * pile back onto the grid where they land (see `advanceDebris`), which is
-   * what actually digs the crater and throws a rim up around it. Flammable
-   * cells in range instead catch fire (heat of the blast), and a *separate*
-   * explosive pile in range gets its own lit fuse on a slightly longer
-   * delay (CHAIN_DELAY_SEPARATE) so a scattered minefield ripples rather
-   * than going off all at once.
-   *
-   * The fuse lives in `meta` rather than a separate queue keyed by position
-   * specifically because Pólvora is Powder — it can fall. A queue holding
-   * onto the (x, y) it was lit at would lose track of the charge the moment
-   * gravity (or another blast) moved it, and silently never go off. `meta`
-   * travels with the cell through every `swap()`, so the countdown always
-   * keeps up with wherever the charge actually ends up (C4 never falls, but
-   * shares the same mechanism for consistency).
-   */
+  /** One local detonation: consumes a small pocket, floods fuses through the rest of the charge, applies the blast impulse. See systems/fire.ts. */
   detonate(cx: number, cy: number): void {
-    const pocket = this.collectExplosivePocket(cx, cy);
-
-    // Only this small pocket is consumed directly — the rest of a connected
-    // pile keeps its shape and detonates in turn via the fuses lit just
-    // below, so a big block visibly chain-reacts instead of vanishing.
-    let ex = 0;
-    let ey = 0;
-    for (const [x, y] of pocket) {
-      this.set(x, y, MaterialId.Empty);
-      this.flashes.push({ x, y, life: FLASH_LIFE, maxLife: FLASH_LIFE });
-      ex += x;
-      ey += y;
-    }
-    ex /= pocket.length;
-    ey /= pocket.length;
-
-    // Flood the connected body of explosive this pocket is part of and light
-    // every cell's fuse now, timed by distance so the detonation front
-    // sweeps across the whole charge in a few frames. Gás is never fused (it
-    // flashes over instantly), only ever ignited directly. Already-fused
-    // cells stop the flood, so a second detonation into the same body is
-    // cheap.
-    this.floodFuseConnected(pocket);
-
-    const power = 1 + (pocket.length - 1) * CLUSTER_BONUS_PER_CHARGE;
-    const radius = BLAST_BASE_RADIUS * Math.sqrt(power);
-    this.applyBlastImpulse(cx, cy, ex, ey, radius);
-
-    // Decorative heat-sparks, radiating from the epicentre.
-    this.spawnShrapnelBurst(ex, ey, Math.min(SHRAPNEL_VISUAL_CAP, Math.max(4, Math.round(SHRAPNEL_PER_POP * power))));
+    detonateImpl(this, cx, cy);
   }
 
-  /**
-   * The physical shove of one detonation: walks every grid cell inside the
-   * blast disc and, by distance-from-centre falloff, either throws it
-   * (converts it to a `Debris` chunk with an outward + upward velocity),
-   * ignites it, or — for a *separate* explosive pile — lights its fuse.
-   * `cx`/`cy` is the cell that actually went off (used as the radial origin
-   * so the push always points genuinely away from the charge); `ex`/`ey` is
-   * the pocket's centre of mass (used only to keep the scan box tight).
-   */
+  /** The physical shove of one detonation over its blast disc. See systems/fire.ts. */
   applyBlastImpulse(cx: number, cy: number, ex: number, ey: number, radius: number): void {
-    const r = Math.ceil(radius);
-    const minX = Math.max(0, Math.floor(ex) - r);
-    const maxX = Math.min(this.width - 1, Math.ceil(ex) + r);
-    const minY = Math.max(0, Math.floor(ey) - r);
-    const maxY = Math.min(this.height - 1, Math.ceil(ey) + r);
-    const shatterR = radius * BLAST_SHATTER_FRAC;
-    const pulverizeR = radius * BLAST_PULVERIZE_FRAC;
-
-    for (let y = minY; y <= maxY; y++) {
-      for (let x = minX; x <= maxX; x++) {
-        const rx = x - cx;
-        const ry = y - cy;
-        const dist = Math.hypot(rx, ry);
-        if (dist > radius) continue;
-        const i = this.index(x, y);
-        const id = this.material[i] as MaterialId;
-        if (id === MaterialId.Empty) continue;
-
-        const falloff = 1 - dist / radius; // 1 at the centre, 0 at the rim
-        const def = MATERIALS[id];
-
-        // A separate explosive pile: fuse it (longer delay than the
-        // connected chain) rather than throwing or burning it.
-        if (this.isFusableExplosive(id) && this.meta[i] === 0) {
-          if (Math.random() < 0.35 + 0.6 * falloff) {
-            this.meta[i] = CHAIN_DELAY_SEPARATE + Math.floor(Math.random() * 4);
-          }
-          continue;
-        }
-
-        // Flammable, non-explosive: the heat of the blast lights it.
-        if (def.flammable && id !== MaterialId.Fire) {
-          if (Math.random() < falloff * def.ignitionChance * BLAST_IGNITE_FACTOR) {
-            this.igniteAt(x, y);
-            continue;
-          }
-        }
-
-        // Decide whether this cell gets torn loose and thrown.
-        const cat = def.category;
-        const loose = cat === MaterialCategory.Powder || cat === MaterialCategory.Liquid || cat === MaterialCategory.Gas;
-        const fragileSolid =
-          id === MaterialId.Wood || id === MaterialId.Plant || id === MaterialId.Sprout ||
-          id === MaterialId.Flor || id === MaterialId.Seed || id === MaterialId.Ice ||
-          id === MaterialId.Glass || id === MaterialId.Salt;
-        let throwIt = false;
-        if (loose) throwIt = true;
-        else if (fragileSolid && dist <= shatterR) throwIt = true;
-        else if (id === MaterialId.Stone && dist <= pulverizeR && Math.random() < 0.6 * falloff) throwIt = true;
-
-        if (!throwIt) continue;
-        if (this.debris.length >= DEBRIS_CAP) continue;
-
-        // Glass throws sand grains, not intact panes.
-        const chunkId = id === MaterialId.Glass ? MaterialId.Sand : id;
-        const chunkMeta = id === MaterialId.Glass ? 0 : this.meta[i];
-
-        // Radial direction, away from the charge — straight up for a cell
-        // sitting exactly on the epicentre.
-        let ang: number;
-        if (rx === 0 && ry === 0) ang = -Math.PI / 2;
-        else ang = Math.atan2(ry, rx);
-        ang += (Math.random() - 0.5) * BLAST_ANGLE_JITTER;
-        const speed = BLAST_LAUNCH_SPEED * falloff * (0.55 + Math.random() * 0.7);
-
-        this.set(x, y, MaterialId.Empty);
-        this.debris.push({
-          x: x + 0.5,
-          y: y + 0.5,
-          vx: Math.cos(ang) * speed,
-          vy: Math.sin(ang) * speed - BLAST_UPWARD_BIAS * falloff,
-          material: chunkId,
-          meta: chunkMeta,
-          life: DEBRIS_MAX_LIFE,
-        });
-      }
-    }
+    applyBlastImpulseImpl(this, cx, cy, ex, ey, radius);
   }
 
-  /** Pólvora and C4 detonate on a lit fuse; Gás doesn't (it flashes over the instant it catches). */
+  /** Whether a material detonates on a lit fuse (Pólvora/C4, not Gás). See systems/fire.ts. */
   isFusableExplosive(id: MaterialId): boolean {
-    const def = MATERIALS[id];
-    return def.explosive && def.category !== MaterialCategory.Gas;
+    return isFusableExplosiveImpl(this, id);
   }
 
-  /**
-   * The small local group a single detonation consumes: the cell that went
-   * off, plus any explosive cells directly touching it (8-directional). A
-   * big connected mass is *not* collected whole here — it comes apart as a
-   * chain reaction, one pocket per pop, via the fuses `detonate` lights.
-   */
+  /** The small local pocket a single detonation consumes. See systems/fire.ts. */
   collectExplosivePocket(cx: number, cy: number): [number, number][] {
-    const cells: [number, number][] = [[cx, cy]];
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = cx + dx;
-      const ny = cy + dy;
-      // Gás isn't pulled into the pocket — it catches from the blast
-      // and detonates in its own right instead of being quietly consumed.
-      if (this.inBounds(nx, ny) && this.isFusableExplosive(this.get(nx, ny))) cells.push([nx, ny]);
-    }
-    return cells;
+    return collectExplosivePocketImpl(this, cx, cy);
   }
 
-  /** Spends one pop of this tick's DETONATIONS_PER_TICK_CAP budget, if there's any left. */
+  /** Spends one pop of this tick's detonation budget, if any is left. See systems/fire.ts. */
   canDetonate(): boolean {
-    if (this.detonationBudget <= 0) return false;
-    this.detonationBudget--;
-    return true;
+    return canDetonateImpl(this);
   }
 
-  /** A lit fuse (meta > 0) on any explosive cell (Pólvora, C4) counts down once per tick and detonates when it reaches 0 — see `detonate`. Past the per-tick pop budget it just holds at zero and retries next tick, rather than force through and stall the frame. */
+  /** A lit fuse counts down and detonates at zero. See systems/fire.ts. */
   stepFuse(x: number, y: number, i: number): void {
-    this.meta[i]--;
-    if (this.meta[i] <= 0) {
-      if (this.canDetonate()) this.detonate(x, y);
-      else this.meta[i] = 1;
-    }
+    stepFuseImpl(this, x, y, i);
   }
 
-  /**
-   * Breadth-first flood over the connected body of fusable explosive that
-   * `seeds` belongs to, lighting a fuse on every still-inert cell timed by
-   * how many cells out it is (CHAIN_RINGS_PER_TICK) — so the whole charge
-   * detonates in one fast crack that sweeps across it in a few frames
-   * rather than a cell-by-cell smoulder. Bounded by CHAIN_FLOOD_CAP; cells
-   * past the budget are simply left for the next detonation's own flood to
-   * pick up. Already-fused cells end a branch, so re-flooding the same body
-   * is cheap.
-   */
+  /** Floods the connected body of explosive and lights a timed fuse on every cell. See systems/fire.ts. */
   floodFuseConnected(seeds: readonly [number, number][]): void {
-    let frontier: number[] = [];
-    for (const [x, y] of seeds) frontier.push(this.index(x, y));
-    const seen = new Set<number>(frontier);
-    let ring = 0;
-    let budget = CHAIN_FLOOD_CAP;
-    while (frontier.length > 0 && budget > 0) {
-      const nextRing: number[] = [];
-      const delay = CHAIN_BASE_DELAY + Math.floor(ring / CHAIN_RINGS_PER_TICK);
-      for (const idx of frontier) {
-        const x = idx % this.width;
-        const y = (idx / this.width) | 0;
-        for (const [dx, dy] of NEIGHBORS_8) {
-          const nx = x + dx;
-          const ny = y + dy;
-          if (!this.inBounds(nx, ny)) continue;
-          const ni = this.index(nx, ny);
-          if (seen.has(ni)) continue;
-          if (!this.isFusableExplosive(this.material[ni] as MaterialId)) continue;
-          seen.add(ni);
-          if (this.meta[ni] === 0) {
-            this.meta[ni] = Math.min(250, delay + Math.floor(Math.random() * 2));
-            budget--;
-          }
-          nextRing.push(ni);
-          if (budget <= 0) break;
-        }
-        if (budget <= 0) break;
-      }
-      frontier = nextRing;
-      ring++;
-    }
+    floodFuseConnectedImpl(this, seeds);
   }
 
-  /**
-   * Launches a burst of decorative heat-sparks radiating from a detonation's
-   * epicentre, each at its own randomized angle, speed and lifespan so the
-   * burst scatters and fades unevenly rather than reading as a uniform ring.
-   * Purely cosmetic — the actual force is `Debris` (see `applyBlastImpulse`).
-   */
+  /** Launches a decorative burst of heat-sparks from a detonation's epicentre. See systems/fire.ts. */
   spawnShrapnelBurst(ex: number, ey: number, count: number): void {
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = SHRAPNEL_SPEED_MIN + Math.random() * (SHRAPNEL_SPEED_MAX - SHRAPNEL_SPEED_MIN);
-      const life = SHRAPNEL_LIFE_MIN + Math.floor(Math.random() * (SHRAPNEL_LIFE_MAX - SHRAPNEL_LIFE_MIN));
-      this.shrapnel.push({
-        x: ex + 0.5,
-        y: ey + 0.5,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        life,
-        maxLife: life,
-      });
-    }
+    spawnShrapnelBurstImpl(this, ex, ey, count);
   }
 
-  /**
-   * Advances every Shrapnel particle one tick. No gravity — it's a
-   * decorative spark, not a falling object, so it flies outward at
-   * constant speed in a straight line instead of curving into a fall. It
-   * shatters Glass on contact (a nice touch worth keeping, and consumes
-   * the spark on the spot), but hitting anything else solid just stops it
-   * dead where it is rather than deleting it outright — either way, `life`
-   * ticks down every tick regardless of whether it's still moving, and the
-   * renderer fades its opacity down with it (see PixiStage), so a spark
-   * always reads as gradually dying out instead of an abrupt pop, whether
-   * that's mid-flight or after coming to rest.
-   */
+  /** Advances every Shrapnel particle one tick. See systems/fire.ts. */
   advanceShrapnel(): void {
-    if (this.shrapnel.length === 0) return;
-    const next: Shrapnel[] = [];
-    for (const s of this.shrapnel) {
-      s.life--;
-      if (s.life <= 0) continue;
-
-      const nx = s.x + s.vx;
-      const ny = s.y + s.vy;
-      const gx = Math.round(nx);
-      const gy = Math.round(ny);
-      if (this.inBounds(gx, gy)) {
-        const id = this.get(gx, gy);
-        if (id === MaterialId.Glass) {
-          this.shatterGlass(gx, gy);
-          continue;
-        }
-        if (id === MaterialId.Empty) {
-          s.x = nx;
-          s.y = ny;
-        }
-        // Anything else solid: stays put right where it is, still fading
-        // out over its remaining life instead of vanishing on contact.
-      }
-      next.push(s);
-    }
-    this.shrapnel = next;
+    advanceShrapnelImpl(this);
   }
 
-  /**
-   * Vidro is fragile, but not *instantly* fragile: each violent impact
-   * (Shrapnel, Eletricidade) only cracks the cell it actually reaches —
-   * tracked in `meta` — and it takes GLASS_SHATTER_HITS of them before that
-   * one cell finally gives way into Areia. A blast therefore pits the face
-   * of a pane pointed at it over a moment, instead of the whole sheet
-   * flashing to sand the instant the first spark lands. Cracks never spread
-   * to neighbouring glass on their own.
-   */
+  /** Cracks (and eventually shatters) a Vidro cell hit by an impact. See systems/fire.ts. */
   shatterGlass(x: number, y: number): void {
-    const i = this.index(x, y);
-    if (this.meta[i] + 1 >= GLASS_SHATTER_HITS) {
-      this.set(x, y, MaterialId.Sand);
-    } else {
-      this.meta[i]++;
-      this.wake(x, y);
-    }
+    shatterGlassImpl(this, x, y);
   }
 
-  /**
-   * Flies every in-flight `Debris` chunk one tick: gravity, drag, then a
-   * sub-stepped sweep along its velocity so a fast chunk can't tunnel
-   * through a thin wall. A chunk is deposited back onto the grid — as its
-   * own material — when it slows below DEBRIS_SETTLE_SPEED, when it runs
-   * into something still standing, when it leaves the play area through the
-   * floor/ceiling, or when its failsafe life runs out. Landing in Água or
-   * Lava just splashes it in (deposited on top); landing on Fogo torches a
-   * flammable chunk instead of stacking it.
-   */
+  /** Flies every in-flight Debris chunk one tick under gravity and drag. See systems/fire.ts. */
   advanceDebris(): void {
-    if (this.debris.length === 0) return;
-    const next: Debris[] = [];
-    for (const d of this.debris) {
-      d.life--;
-      if (this.gravityEnabled) d.vy += DEBRIS_GRAVITY;
-      d.vx *= DEBRIS_DRAG;
-      d.vy *= DEBRIS_DRAG;
-
-      const speed = Math.hypot(d.vx, d.vy);
-      if (d.life <= 0 || speed < DEBRIS_SETTLE_SPEED) {
-        this.depositDebris(d);
-        continue;
-      }
-
-      const steps = Math.max(1, Math.ceil(speed));
-      const sx = d.vx / steps;
-      const sy = d.vy / steps;
-      let landed = false;
-      for (let s = 0; s < steps; s++) {
-        const nx = d.x + sx;
-        const ny = d.y + sy;
-        const gx = Math.round(nx);
-        const gy = Math.round(ny);
-        if (gx < 0 || gx >= this.width) {
-          // Flew off the side — just deposit where it last was.
-          this.depositDebris(d);
-          landed = true;
-          break;
-        }
-        if (gy < 0) {
-          d.x = nx;
-          d.y = 0;
-          d.vy = Math.abs(d.vy) * 0.3; // clip off the ceiling
-          continue;
-        }
-        if (gy >= this.height) {
-          this.depositDebris(d);
-          landed = true;
-          break;
-        }
-        const hitId = this.material[this.index(gx, gy)] as MaterialId;
-        if (hitId === MaterialId.Empty) {
-          d.x = nx;
-          d.y = ny;
-          continue;
-        }
-        if (hitId === MaterialId.Fire && MATERIALS[d.material].flammable) {
-          this.igniteAt(Math.round(d.x), Math.round(d.y));
-          landed = true;
-          break;
-        }
-        if (hitId === MaterialId.Glass) {
-          this.shatterGlass(gx, gy);
-          // keep going — it punched through
-          d.x = nx;
-          d.y = ny;
-          continue;
-        }
-        // Ran into something standing — settle against it.
-        this.depositDebris(d);
-        landed = true;
-        break;
-      }
-      if (!landed) next.push(d);
-    }
-    this.debris = next;
+    advanceDebrisImpl(this);
   }
 
-  /**
-   * Puts one chunk of debris back on the grid as its own material. Prefers
-   * the exact cell it came to rest in; failing that (already filled), spirals
-   * outward for the nearest Empty cell, then as a last resort stacks
-   * straight up. A chunk that finds nowhere at all is simply lost — rare,
-   * and better than corrupting a settled cell.
-   */
+  /** Puts one chunk of debris back on the grid as its own material. See systems/fire.ts. */
   depositDebris(d: Debris): void {
-    const place = (x: number, y: number): boolean => {
-      if (!this.inBounds(x, y) || this.material[this.index(x, y)] !== MaterialId.Empty) return false;
-      this.set(x, y, d.material, d.meta);
-      return true;
-    };
-    const gx = Math.round(d.x);
-    const gy = Math.round(d.y);
-    if (place(gx, gy)) return;
-    for (let ring = 1; ring <= 4; ring++) {
-      for (let oy = -ring; oy <= ring; oy++) {
-        for (let ox = -ring; ox <= ring; ox++) {
-          if (Math.abs(ox) !== ring && Math.abs(oy) !== ring) continue;
-          if (place(gx + ox, gy + oy)) return;
-        }
-      }
-    }
-    for (let up = 1; up <= 8; up++) if (place(gx, gy - up)) return;
+    depositDebrisImpl(this, d);
   }
 
-  /** Ages out every active Flash and combat-hit marker — see the struct comment. */
+  /** Ages out every active Flash and combat-hit marker. See systems/fire.ts. */
   advanceFlashes(): void {
-    if (this.flashes.length > 0) {
-      const next: Flash[] = [];
-      for (const f of this.flashes) { f.life--; if (f.life > 0) next.push(f); }
-      this.flashes = next;
-    }
-    if (this.hits.length > 0) {
-      const next: Flash[] = [];
-      for (const f of this.hits) { f.life--; if (f.life > 0) next.push(f); }
-      this.hits = next;
-    }
+    advanceFlashesImpl(this);
   }
+
 
   /** Vida's own generation-by-generation automaton — see systems/life.ts. */
   stepLifeGeneration(): void {
@@ -2263,800 +1637,105 @@ export class SimGrid {
    * heat goes back to being neutral for growth (it has its own problems —
    * spontaneous fires — instead).
    */
+  /** How much temperature holds plant reproduction back or helps it along. See systems/plants.ts. */
   growthFactor(): number {
-    if (this.temp <= COLD_3) return 0.15;
-    if (this.temp <= COLD_2) return 0.4;
-    if (this.temp <= COLD_1) return 0.7;
-    if (isProsperous(this.temp)) return 1.6;
-    return 1;
+    return growthFactorImpl(this);
   }
 
+  /** Planta: water-driven spread, occasional bloom. See systems/plants.ts. */
   stepOrganic(x: number, y: number): void {
-    this.processed[this.index(x, y)] = 1;
-
-    let nearWater = false;
-    const emptySpots: [number, number][] = [];
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const nId = this.get(nx, ny);
-      if (nId === MaterialId.Water) nearWater = true;
-      else if (nId === MaterialId.Empty) emptySpots.push([nx, ny]);
-    }
-
-    if (nearWater && emptySpots.length > 0 && Math.random() < GROWTH_CHANCE * this.growthFactor()) {
-      const [gx, gy] = emptySpots[Math.floor(Math.random() * emptySpots.length)];
-      // In the prosperous band, a spreading Planta sometimes blooms into a
-      // Flor cell instead of plain leaf — a visible sign it's thriving.
-      if (isProsperous(this.temp) && Math.random() < FLOWER_BLOOM_CHANCE) {
-        this.set(gx, gy, MaterialId.Flor, Math.floor(Math.random() * 4));
-      } else {
-        this.set(gx, gy, MaterialId.Plant);
-      }
-    } else if (isProsperous(this.temp) && emptySpots.length > 0 && Math.random() < PLANT_PROSPEROUS_BLOOM_CHANCE) {
-      // Planta itself blossoms directly in the prosperous climate, even
-      // without touching Água to trigger its usual water-driven spread —
-      // a mature, already-settled patch with no water nearby still gets to
-      // flower once the climate is ideal, instead of only ever blooming as
-      // a side effect of active growth.
-      this.stampProsperousBloom(x, y);
-    }
+    stepOrganicImpl(this, x, y);
   }
 
-  /**
-   * Stamps a small one-shot growth reaching out from an already-mature
-   * Planta cell blooming directly in the prosperous climate — alternating
-   * between a little flower cluster and a twisted bare branch instead of
-   * always the same shape, and only up/sideways (never downward, since a
-   * plant doesn't sprout growth into the ground). See
-   * PLANT_BLOOM_FLOWER_PATTERNS / PLANT_BLOOM_BRANCH_PATTERNS.
-   */
+  /** Stamps a small one-shot growth from a Planta blooming in the prosperous climate. See systems/plants.ts. */
   stampProsperousBloom(x: number, y: number): void {
-    const patterns = Math.random() < 0.5 ? PLANT_BLOOM_FLOWER_PATTERNS : PLANT_BLOOM_BRANCH_PATTERNS;
-    const pattern = patterns[Math.floor(Math.random() * patterns.length)];
-    for (const [dx, dy, isFlower] of pattern) {
-      const gx = x + dx;
-      const gy = y + dy;
-      if (!this.inBounds(gx, gy) || this.get(gx, gy) !== MaterialId.Empty) continue;
-      if (isFlower) {
-        this.set(gx, gy, MaterialId.Flor, Math.floor(Math.random() * 4));
-      } else {
-        this.set(gx, gy, MaterialId.Sprout, 0);
-      }
-    }
+    stampProsperousBloomImpl(this, x, y);
   }
 
-  /** Terra wicks up touching water and turns to Barro (Mud). */
+  /** Terra wicks up touching water into Barro (Mud). See systems/plants.ts. */
   stepDirt(x: number, y: number): void {
-    if (Math.random() >= MUD_FORM_CHANCE) return;
-    for (const [dx, dy] of NEIGHBORS_4) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      if (this.get(nx, ny) === MaterialId.Water) {
-        this.set(x, y, MaterialId.Mud);
-        this.set(nx, ny, MaterialId.Empty);
-        return;
-      }
-    }
+    stepDirtImpl(this, x, y);
   }
 
-  /**
-   * Seeds germinate differently depending on which soil they land on. On
-   * dry Terra they become a Broto (Sprout) that grows cell by cell up to a
-   * random budget — see `stepSprout`. On Barro (already-wet soil) they
-   * instead stamp one small random branch-and-flower shape in a single
-   * step (see `stampFlower`) — real growth simulation isn't needed there
-   * since the result must stay tiny (never more than 3 rows tall) no
-   * matter what, and a one-shot stamp guarantees that where a probabilistic
-   * grower could only make it likely.
-   */
+  /** Semente germinates into a Broto or a one-shot flower stamp. See systems/plants.ts. */
   stepSeed(x: number, y: number): void {
-    // Touching Planta, Broto, Madeira or Flor from any side — not just
-    // resting straight on top — instead of soil: there's nothing for it to
-    // germinate into there, so it's absorbed harmlessly instead of piling
-    // up against them. Checked on all 8 neighbors (not just straight down)
-    // because an irregularly-shaped plant clump can just as easily block a
-    // seed from the side or a diagonal nook as from directly underneath.
-    // Broto matters here as much as the mature growths: dropping a big
-    // batch of Sementes at once over a growing patch, some land straight on
-    // young Brotos rather than the Plantas/Flores they'll eventually
-    // become — without this they'd sit there forever, since a Broto is
-    // neither soil to germinate into nor one of the mature growths that
-    // absorbs them.
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const nId = this.get(nx, ny);
-      if (nId === MaterialId.Plant || nId === MaterialId.Wood || nId === MaterialId.Flor || nId === MaterialId.Sprout) {
-        this.set(x, y, MaterialId.Empty);
-        return;
-      }
-    }
-
-    let onMud = false;
-    let onDirt = false;
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const nId = this.get(nx, ny);
-      if (nId === MaterialId.Mud) onMud = true;
-      else if (nId === MaterialId.Dirt) onDirt = true;
-    }
-    if (!onMud && !onDirt) return;
-    if (Math.random() >= GERMINATE_CHANCE * this.growthFactor()) return;
-
-    // A forester's seedling grows a full tree even on damp ground, where a
-    // wild Semente would only ever stamp a little flower.
-    const forester = (this.meta[this.index(x, y)] & FOREST_SEED_META) !== 0;
-    if (onMud && !forester) {
-      this.stampFlower(x, y);
-    } else if (forester) {
-      const budget = Math.min(SPROUT_BUDGET_MASK, FOREST_SEED_BUDGET + Math.floor(Math.random() * 8));
-      this.set(x, y, MaterialId.Sprout, budget | SPROUT_FOREST_FLAG);
-    } else {
-      const budget = SPROUT_BUDGET_MIN + Math.floor(Math.random() * (SPROUT_BUDGET_MAX - SPROUT_BUDGET_MIN));
-      this.set(x, y, MaterialId.Sprout, budget);
-    }
+    stepSeedImpl(this, x, y);
   }
 
-  /** Stamps one random small branch-and-flower pattern rooted at (x, y) — see FLOWER_PATTERNS, or the taller FLOWER_PATTERNS_PROSPEROUS while conditions are thriving. */
+  /** Stamps one random small branch-and-flower pattern rooted at (x, y). See systems/plants.ts. */
   stampFlower(x: number, y: number): void {
-    this.set(x, y, MaterialId.Sprout, 0);
-    const patterns = isProsperous(this.temp) ? FLOWER_PATTERNS_PROSPEROUS : FLOWER_PATTERNS;
-    const pattern = patterns[Math.floor(Math.random() * patterns.length)];
-    for (const [dx, dy, isFlower] of pattern) {
-      const gx = x + dx;
-      const gy = y + dy;
-      if (!this.inBounds(gx, gy) || this.get(gx, gy) !== MaterialId.Empty) continue;
-      if (isFlower) {
-        this.set(gx, gy, MaterialId.Flor, Math.floor(Math.random() * 4));
-      } else {
-        this.set(gx, gy, MaterialId.Sprout, 0);
-      }
-    }
+    stampFlowerImpl(this, x, y);
   }
 
-  /**
-   * A germinated Sprout grows toward open space above it — mostly
-   * straight up, sometimes branching sideways — instead of Planta's
-   * uniform blob-in-any-empty-neighbor spread, so different seeds come out
-   * as different little irregular shapes. Both the parent and the new cell
-   * spend one unit of the shared growth budget (carried in `meta`), so a
-   * sprout can neither branch forever nor chain arbitrarily deep — once
-   * the budget hits zero it's normally a mature, static plant.
-   *
-   * That cap isn't permanent, though: a plant that finished growing (or
-   * was one-shot stamped by a Semente germinating on Barro — see
-   * stampFlower, which also builds out of budget-0 Sprout cells) while the
-   * climate was anything but ideal doesn't stay stunted forever if the
-   * climate later turns prosperous. A budget-exhausted Sprout sitting in
-   * the prosperous band gets a slow trickle of bonus budget instead,
-   * letting it resume growing exactly like it would have if it had
-   * germinated in good conditions to begin with.
-   */
-  /** Cells of trunk (Madeira flagged TREE_TRUNK) plus Broto/Planta stacked straight below (x, y), down to soil — how high up its own stem this cell sits. Capped. */
+  /** Cells of trunk/stem stacked straight below (x, y), down to soil. See systems/plants.ts. */
   stemBelow(x: number, y: number): number {
-    let n = 0;
-    for (let d = 1; d <= 10; d++) {
-      const ny = y + d;
-      if (!this.inBounds(x, ny)) break;
-      const j = this.index(x, ny);
-      const m = this.material[j];
-      if (m === MaterialId.Sprout || m === MaterialId.Plant) { n++; continue; }
-      if (m === MaterialId.Wood && (this.meta[j] & TREE_TRUNK_META) !== 0) { n++; continue; }
-      break;
-    }
-    return n;
+    return stemBelowImpl(this, x, y);
   }
 
-  /** Broto/Planta/Flor cells stacked straight above (x, y) — the crown carried over this stem cell. Capped. */
+  /** Broto/Planta/Flor cells stacked straight above (x, y). See systems/plants.ts. */
   crownAbove(x: number, y: number): number {
-    let n = 0;
-    for (let d = 1; d <= 8; d++) {
-      const ny = y - d;
-      if (!this.inBounds(x, ny)) break;
-      const m = this.material[this.index(x, ny)];
-      if (m === MaterialId.Sprout || m === MaterialId.Plant || m === MaterialId.Flor) n++;
-      else break;
-    }
-    return n;
+    return crownAboveImpl(this, x, y);
   }
 
+  /** A germinated Sprout grows toward open space, wild or tended into a tree. See systems/plants.ts. */
   stepSprout(x: number, y: number, i: number): void {
-    this.processed[i] = 1;
-    const raw = this.meta[i];
-    let budget = raw & SPROUT_BUDGET_MASK;
-    // Whether this cell (or the regrowth event it descends from) already
-    // spent its one prosperous catch-up bonus — see the flag's write site
-    // below for why it has to propagate to every cell grown afterward, not
-    // just block the exact cell that rolled it.
-    let regrown = (raw & SPROUT_REGROWN_FLAG) !== 0;
-    const forest = (raw & SPROUT_FOREST_FLAG) !== 0; // a Lenhador's tended tree
-
-    // Lignify: a low cell of a tall plant, rooted near soil with a real crown
-    // of leaves above it, slowly turns woody — so a grown tree reads as a
-    // brown trunk under a green canopy instead of one green blob. Checked
-    // before the budget gate so a finished tree still hardens its trunk.
-    const stem = this.stemBelow(x, y);
-    if (stem < TREE_TRUNK_HEIGHT && this.crownAbove(x, y) >= TREE_CROWN_FOR_BARK && Math.random() < TREE_HARDEN_CHANCE) {
-      this.set(x, y, MaterialId.Wood, TREE_TRUNK_META);
-      return;
-    }
-
-    if (budget <= 0 && (regrown || !isProsperous(this.temp))) return;
-
-    // Mud counts as moisture too — it's Terra that already absorbed its
-    // neighboring Water (see stepDirt), so a sprout rooted in Barro stays
-    // "watered" even after the puddle beside it has been consumed. Checked
-    // out to 2 cells (not just direct neighbors) so a shoot can still reach
-    // its roots' moisture a couple of rows up, instead of stalling the
-    // instant it grows one cell away from the water/mud below it.
-    let nearMoisture = forest; // the forester keeps its saplings watered
-    for (let dy = -2; dy <= 2 && !nearMoisture; dy++) {
-      for (let dx = -2; dx <= 2; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        const nx = x + dx;
-        const ny = y + dy;
-        if (!this.inBounds(nx, ny)) continue;
-        const nId = this.get(nx, ny);
-        if (nId === MaterialId.Water || nId === MaterialId.Mud) {
-          nearMoisture = true;
-          break;
-        }
-      }
-    }
-    // A cell sitting on its own stem (Broto/Planta/trunk right below) can
-    // reach further down that stem to its roots' water — that's what lets a
-    // tree keep growing tall well above the damp ground it's rooted in,
-    // instead of every shoot topping out two cells over the soil.
-    if (!nearMoisture) {
-      for (let d = 1; d <= 6; d++) {
-        const ny = y + d;
-        if (!this.inBounds(x, ny)) break;
-        const m = this.material[this.index(x, ny)];
-        if (m === MaterialId.Water || m === MaterialId.Mud) { nearMoisture = true; break; }
-        const stem = m === MaterialId.Sprout || m === MaterialId.Plant ||
-          (m === MaterialId.Wood && (this.meta[this.index(x, ny)] & TREE_TRUNK_META) !== 0);
-        if (!stem) break;
-      }
-    }
-    if (!nearMoisture) return;
-
-    if (budget <= 0) {
-      if (Math.random() >= SPROUT_PROSPEROUS_REGROWTH_CHANCE) return;
-      // A one-time catch-up, not a fountain: this cell and every cell it
-      // grows from here on carry the "already regrown" flag forward, so
-      // repeatedly leaving and re-entering the prosperous climate can't
-      // keep re-triggering fresh bonus growth on the same lineage forever
-      // — each originally-dormant cell gets exactly one bonus round, ever.
-      budget = SPROUT_REGROWTH_BONUS;
-      regrown = true;
-      this.meta[i] = budget | SPROUT_REGROWN_FLAG | (forest ? SPROUT_FOREST_FLAG : 0);
-    }
-
-    if (Math.random() >= GROWTH_CHANCE * this.growthFactor()) return;
-    const flags = (regrown ? SPROUT_REGROWN_FLAG : 0) | (forest ? SPROUT_FOREST_FLAG : 0);
-
-    // A tended tree: a clean vertical trunk, then a crown stamped in one go, so
-    // it reads as a real tree rather than a random bush.
-    if (forest) {
-      if (this.crownAbove(x, y) > 0) return; // this cell is inside the crown already
-      if (stem < TREE_CROWN_START) {
-        // still growing the bare trunk, straight up
-        if (this.inBounds(x, y - 1) && this.get(x, y - 1) === MaterialId.Empty) {
-          this.set(x, y - 1, MaterialId.Sprout, ((budget - 1) & SPROUT_BUDGET_MASK) | flags);
-          this.meta[i] = flags; // this cell is trunk now — done, ready to lignify
-        }
-        return;
-      }
-      // reached crown height — stamp the foliage around the tip
-      for (const [dx, dy] of TREE_CROWN_SHAPE) {
-        const cx = x + dx;
-        const cy = y + dy;
-        if (this.inBounds(cx, cy) && this.get(cx, cy) === MaterialId.Empty) {
-          this.set(cx, cy, MaterialId.Sprout, flags); // budget 0 — a settled leaf
-        }
-      }
-      this.meta[i] = flags;
-      return;
-    }
-
-    // Wild Broto: bushy weighted spread, cloning its budget at every branch.
-    const candidates: [number, number][] = [];
-    for (const [dx, dy, weight] of (stem < TREE_TRUNK_HEIGHT ? TREE_TRUNK_DIRECTIONS : SPROUT_DIRECTIONS)) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny) || this.get(nx, ny) !== MaterialId.Empty) continue;
-      for (let w = 0; w < weight; w++) candidates.push([nx, ny]);
-    }
-    if (candidates.length === 0) return;
-    const [gx, gy] = candidates[Math.floor(Math.random() * candidates.length)];
-    const childMeta = ((budget - 1) & SPROUT_BUDGET_MASK) | flags;
-    this.set(gx, gy, MaterialId.Sprout, childMeta);
-    this.meta[i] = childMeta;
+    stepSproutImpl(this, x, y, i);
   }
 
-  /**
-   * Trigo. `meta` is a ripeness clock: it ticks up (climate-scaled), the
-   * renderer greens it low and golds it high. A stalk needs its roots near
-   * soil — the bottom cell must sit on Terra/Barro/another wheat cell, or it
-   * withers. With enough ripeness and headroom it grows one cell taller, up
-   * to WHEAT_MAX_HEIGHT. Ripe heads (meta ≥ WHEAT_RIPE) occasionally fling a
-   * shoot onto adjacent bare soil, so a sown row fills into a field.
-   */
+  /** Trigo: ripens, grows taller, self-seeds when ripe. See systems/plants.ts. */
   stepWheat(x: number, y: number, i: number): void {
-    this.processed[i] = 1;
-
-    // Rooted? The cell directly below must be soil or more wheat (a taller
-    // segment standing on a lower one). Anything else underfoot — air, water,
-    // a wall it grew off the edge of — and the stalk withers.
-    const bi = this.inBounds(x, y + 1) ? this.index(x, y + 1) : -1;
-    const below = bi >= 0 ? (this.material[bi] as MaterialId) : MaterialId.Stone;
-    const onStoreFloor = bi >= 0 &&
-      (this.meta[bi] & HOUSE_WALL_META) !== 0 && (this.meta[bi] & HOUSE_KIND_MASK) === HOUSE_FLOOR;
-    const rooted =
-      below === MaterialId.Dirt || below === MaterialId.Mud || below === MaterialId.Wheat ||
-      below === MaterialId.Sand || // takes to loose sand too, just poorly
-      onStoreFloor;                // grain stacked on a storehouse floor keeps
-    if (!rooted) {
-      if (Math.random() < WHEAT_WITHER_CHANCE) this.set(x, y, MaterialId.Empty);
-      return;
-    }
-
-    let ripe = this.meta[i];
-    if (ripe < 255 && Math.random() < this.growthFactor()) {
-      ripe = Math.min(255, ripe + WHEAT_RIPEN_PER_TICK);
-      this.meta[i] = ripe;
-    }
-
-    // Grow taller: only from a cell that's ripened a bit, only if this stalk
-    // is under WHEAT_MAX_HEIGHT and the cell above is clear.
-    if (ripe >= WHEAT_GROW_AT && this.get(x, y - 1) === MaterialId.Empty && Math.random() < WHEAT_GROW_CHANCE * this.growthFactor()) {
-      let stalk = 1;
-      for (let d = 1; d < WHEAT_MAX_HEIGHT; d++) {
-        if (this.get(x, y + d) === MaterialId.Wheat) stalk++;
-        else break;
-      }
-      if (stalk < WHEAT_MAX_HEIGHT) this.set(x, y - 1, MaterialId.Wheat, 0);
-    }
-
-    // A ripe head sows itself into an adjacent empty cell that has soil under
-    // it — but not in under a house, and not once the field's at its limit.
-    if (
-      ripe >= WHEAT_RIPE && !this.roofedOver(x, y) &&
-      this.cropCensus < Math.max(1, this.farmerCensus) * WHEAT_PER_FARMER + 40 &&
-      Math.random() < WHEAT_SEED_CHANCE * this.growthFactor()
-    ) {
-      const spots: [number, number][] = [];
-      for (const [dx, dy] of [[-1, 0], [1, 0], [-1, 1], [1, 1]] as const) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (!this.inBounds(nx, ny) || this.get(nx, ny) !== MaterialId.Empty) continue;
-        if (this.roofedOver(nx, ny)) continue;
-        const g = this.inBounds(nx, ny + 1) ? this.get(nx, ny + 1) : MaterialId.Stone;
-        if (g === MaterialId.Dirt || g === MaterialId.Mud) spots.push([nx, ny]);
-      }
-      if (spots.length > 0) {
-        const [sx, sy] = spots[Math.floor(Math.random() * spots.length)];
-        this.set(sx, sy, MaterialId.Wheat, 0);
-      }
-    }
+    stepWheatImpl(this, x, y, i);
   }
 
-  /** One grain of Salt fully saturates exactly one touching (not-yet-salty) Water cell, 1:1, then is spent. */
+
+  /** One grain of Salt fully saturates one touching Água cell (or thaws Gelo it lands on). See systems/reactions.ts. */
   stepSalt(x: number, y: number, i: number): void {
-    for (const [dx, dy] of NEIGHBORS_4) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const wi = this.index(nx, ny);
-      if (this.material[wi] === MaterialId.Water && this.meta[wi] < 255) {
-        this.meta[wi] = 255;
-        this.material[i] = MaterialId.Empty;
-        this.meta[i] = 0;
-        this.wake(x, y);
-        return;
-      }
-      // Salt thaws Gelo it lands on — the ice melts to brine and the grain
-      // dissolves into it. (A real winter trick: salt the ice and it goes.)
-      if (this.material[wi] === MaterialId.Ice && Math.random() < 0.5) {
-        this.set(nx, ny, MaterialId.Water, 255);
-        this.material[i] = MaterialId.Empty;
-        this.meta[i] = 0;
-        this.wake(x, y);
-        return;
-      }
-    }
+    stepSaltImpl(this, x, y, i);
   }
 
-  /**
-   * Metal touching Water rusts: a slow, per-tick chance for the Metal cell
-   * itself to degrade straight into a Dirt particle (which then falls like
-   * any other Powder). The Water is never consumed — rusting just keeps
-   * happening for as long as it stays in contact — and only happens while
-   * that contact lasts, so a dried-out patch of metal stops corroding.
-   * Salty Water rusts it several times faster than fresh Water.
-   */
+  /** Metal touching Água slowly rusts into Terra. See systems/reactions.ts. */
   stepMetal(x: number, y: number): void {
-    for (const [dx, dy] of NEIGHBORS_4) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      if (this.get(nx, ny) !== MaterialId.Water) continue;
-      const salinity = this.meta[this.index(nx, ny)] / 255;
-      const chance = RUST_CHANCE * (1 + salinity * (RUST_SALT_MULTIPLIER - 1));
-      if (Math.random() < chance) {
-        this.set(x, y, MaterialId.Dirt);
-      }
-      return;
-    }
+    stepMetalImpl(this, x, y);
   }
 
-  /**
-   * Gelo melts back into Água when touching Fogo or Lava — checked first,
-   * since heat always wins over freezing. Otherwise it slowly spreads:
-   * touching fresh Água (salinity 0) has a per-tick chance to freeze that
-   * neighbor into more Gelo. Salty Água never freezes.
-   */
+  /** Gelo melts near heat, spreads onto touching fresh Água. See systems/reactions.ts. */
   stepIce(x: number, y: number): void {
-    for (const [dx, dy] of NEIGHBORS_4) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const nId = this.get(nx, ny);
-      if ((nId === MaterialId.Fire || nId === MaterialId.Lava) && Math.random() < ICE_MELT_CHANCE) {
-        this.set(x, y, MaterialId.Water);
-        return;
-      }
-    }
-    // Ambient heat melts it too, with no Fogo/Lava required — starts the
-    // moment the room is above AMBIENT_ICE_MELT_TEMP and climbs smoothly
-    // from there, instead of jumping between fixed tiers.
-    if (this.temp > AMBIENT_ICE_MELT_TEMP) {
-      const excess = this.temp - AMBIENT_ICE_MELT_TEMP;
-      const chance = Math.min(AMBIENT_ICE_MELT_CAP, excess * AMBIENT_ICE_MELT_PER_DEGREE);
-      if (Math.random() < chance) {
-        this.set(x, y, MaterialId.Water);
-        return;
-      }
-    }
-    for (const [dx, dy] of NEIGHBORS_4) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const ni = this.index(nx, ny);
-      if (this.material[ni] === MaterialId.Water && this.meta[ni] === 0 && Math.random() < ICE_FREEZE_CHANCE) {
-        this.set(nx, ny, MaterialId.Ice);
-      }
-    }
+    stepIceImpl(this, x, y);
   }
 
-  /** Below COLD_1, plant matter starts frosting over: one touching Empty cell has a chance each tick to become Gelo, a rime layer creeping in from the cold. */
+  /** Below COLD_1, plant matter frosts a touching Empty cell into Gelo. See systems/reactions.ts. */
   frostOver(x: number, y: number): void {
-    const chance =
-      this.temp <= COLD_3 ? PLANT_FROST_3 :
-      this.temp <= COLD_2 ? PLANT_FROST_2 :
-      PLANT_FROST_1;
-    if (Math.random() >= chance) return;
-    const emptyNeighbors: [number, number][] = [];
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (this.inBounds(nx, ny) && this.get(nx, ny) === MaterialId.Empty) emptyNeighbors.push([nx, ny]);
-    }
-    if (emptyNeighbors.length === 0) return;
-    const [fx, fy] = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
-    this.set(fx, fy, MaterialId.Ice);
+    frostOverImpl(this, x, y);
   }
 
-  /**
-   * Lava: touching Water cools it down instantly into Pedra (and boils the
-   * water away) instead of melting anything that tick — real lava does the
-   * same thing, quenching into rock the moment it hits water. Otherwise
-   * it's hot enough to ignite anything flammable around it exactly like
-   * Fogo does (Pólvora included, which detonates instead of just burning),
-   * and it melts Pedra, Metal and Areia on contact into more Lava — each
-   * at its own per-tick chance, so Metal liquefies fastest, Areia in the
-   * middle, and Pedra (the most heat-resistant of the three) slowest.
-   */
+  /** Lava: quenches into Pedra on Água, ignites/melts what's around it. See systems/reactions.ts. */
   stepLava(x: number, y: number): void {
-    for (const [dx, dy] of NEIGHBORS_4) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      if (this.get(nx, ny) === MaterialId.Water) {
-        this.set(x, y, MaterialId.Stone);
-        this.set(nx, ny, MaterialId.Empty);
-        return;
-      }
-    }
-
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const nDef = MATERIALS[this.get(nx, ny)];
-      if (nDef.flammable && Math.random() < nDef.ignitionChance) this.igniteAt(nx, ny);
-    }
-
-    for (const [dx, dy] of NEIGHBORS_4) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const nId = this.get(nx, ny);
-      // Sand by the lava mostly fuses to Glass; only sometimes does it melt on
-      // through into more Lava.
-      if (nId === MaterialId.Sand && Math.random() < HEAT_FUSE_GLASS) { this.set(nx, ny, MaterialId.Glass); continue; }
-      const chance =
-        nId === MaterialId.Metal ? LAVA_MELT_METAL :
-        nId === MaterialId.Sand ? LAVA_MELT_SAND :
-        nId === MaterialId.Stone ? LAVA_MELT_STONE :
-        0;
-      if (chance > 0 && Math.random() < chance) this.set(nx, ny, MaterialId.Lava);
-    }
+    stepLavaImpl(this, x, y);
   }
 
-  /**
-   * Clone starts locked onto nothing (`meta` 0, the same value as
-   * MaterialId.Empty — its "not cloning anything yet" sentinel). The first
-   * tick any other material (not Empty, not another Clone) touches one of
-   * its 4 sides, it locks onto that material id permanently, no matter what
-   * happens to the original touching cell afterward.
-   *
-   * An unlocked Clone touching an *already-locked* Clone instead slowly
-   * inherits that neighbor's lock (at CLONE_PROPAGATE_CHANCE, much rarer
-   * than an instant direct touch) — so a whole painted blob of Clone
-   * gradually catches the same lock from wherever it first touched
-   * something, spreading one connected cell at a time rather than jumping
-   * to a disconnected clump elsewhere on the grid. It never overwrites a
-   * Clone that's already locked onto something of its own.
-   *
-   * Once locked, every tick a Clone has a flat chance to spawn one more
-   * unit of its material into a touching empty cell — a slow, permanent
-   * spring of whatever it first tasted.
-   */
+  /** Clone: locks onto a touching material, then spawns more of it once wired into an active circuit. See systems/electricity.ts. */
   stepClone(x: number, y: number, i: number): void {
-    if ((this.meta[i] & CLONE_LOCK_MASK) === MaterialId.Empty) {
-      const candidates: MaterialId[] = [];
-      const lockedCloneNeighbors: MaterialId[] = [];
-      for (const [dx, dy] of NEIGHBORS_4) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (!this.inBounds(nx, ny)) continue;
-        const ni = this.index(nx, ny);
-        const nId = this.material[ni] as MaterialId;
-        if (nId === MaterialId.Clone) {
-          const nLock = this.meta[ni] & CLONE_LOCK_MASK;
-          if (nLock !== MaterialId.Empty) lockedCloneNeighbors.push(nLock as MaterialId);
-        } else if (nId !== MaterialId.Empty && nId !== MaterialId.Wire && nId !== MaterialId.Lever) {
-          // Fio/Alavanca wire a Clone into a circuit — they're control
-          // cells, not something to clone, so they never count as a
-          // touch (a Clone hooked up to a switch would otherwise have a
-          // chance to lock onto "Fio" itself instead of the material it's
-          // actually sitting next to).
-          candidates.push(nId);
-        }
-      }
-      // Eletricidade has no physical form, so it's never written into
-      // `material` (see the Pulse comment) — a Clone can only "touch" it by
-      // checking whether a live charge currently happens to be passing
-      // through one of its 4 neighbor cells this tick.
-      if (this.pulses.some((p) => Math.abs(p.x - x) + Math.abs(p.y - y) === 1)) {
-        candidates.push(MaterialId.Electricity);
-      }
-      if (candidates.length > 0) {
-        this.meta[i] = (this.meta[i] & ~CLONE_LOCK_MASK) | candidates[Math.floor(Math.random() * candidates.length)];
-        return;
-      }
-      if (lockedCloneNeighbors.length > 0 && Math.random() < CLONE_PROPAGATE_CHANCE) {
-        this.meta[i] = (this.meta[i] & ~CLONE_LOCK_MASK) | lockedCloneNeighbors[Math.floor(Math.random() * lockedCloneNeighbors.length)];
-      }
-      return;
-    }
-
-    // Wired to a Fio/Alavanca, it only spawns while that circuit is on;
-    // left alone (touching neither), it just runs as always. A connected
-    // clump of Clone is one body for this, exactly like a Porta slab (see
-    // bodyCircuitState) — linked and switched together even for the cells
-    // that aren't themselves touching the wire, not each cell independently
-    // deciding for itself. Either way, CLONE_LINKED_META / CLONE_ON_META
-    // (above the locked-material bits — see the mask) get set to match so
-    // the renderer can show the same verdict (see PixiStage) instead of it
-    // just silently stopping with no visible tell.
-    const { linked, active } = this.bodyCircuitState(x, y, MaterialId.Clone, this.cloneCache);
-    const next = (this.meta[i] & CLONE_LOCK_MASK) | (linked ? CLONE_LINKED_META : 0) | (active ? CLONE_ON_META : 0);
-    if (this.meta[i] !== next) { this.meta[i] = next; this.wake(x, y); }
-    if (!active) return;
-    if (Math.random() >= CLONE_CHANCE) return;
-    const emptyNeighbors: [number, number][] = [];
-    for (const [dx, dy] of NEIGHBORS_4) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (this.inBounds(nx, ny) && this.get(nx, ny) === MaterialId.Empty) emptyNeighbors.push([nx, ny]);
-    }
-    if (emptyNeighbors.length === 0) return;
-    const [gx, gy] = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
-    const clonedId = (this.meta[i] & CLONE_LOCK_MASK) as MaterialId;
-    if (clonedId === MaterialId.Electricity) {
-      // Same as the Eletricidade brush (see paintCell): drops a fresh
-      // free-falling charge rather than writing into `material`.
-      this.pulses.push({ x: gx, y: gy, dx: 0, dy: 1, steps: 0, inConductor: false, life: PULSE_AIR_LIFE });
-    } else {
-      this.set(gx, gy, clonedId, this.metaFor(clonedId));
-    }
+    stepCloneImpl(this, x, y, i);
   }
 
-  /** Acid spends one charge per tick attempting to dissolve a touching neighbor; tougher materials are more likely to survive the attempt. */
+  /** Acid spends one charge per tick attempting to dissolve a touching neighbor. See systems/reactions.ts. */
   stepAcid(x: number, y: number, i: number): void {
-    const targets: [number, number][] = [];
-    for (const [dx, dy] of NEIGHBORS_4) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const nId = this.get(nx, ny);
-      if (MATERIALS[nId].acidResistance > 0) targets.push([nx, ny]);
-    }
-    if (targets.length === 0) return;
-
-    const [tx, ty] = targets[Math.floor(Math.random() * targets.length)];
-    const resistance = MATERIALS[this.get(tx, ty)].acidResistance;
-    if (Math.random() < 1 / resistance) {
-      this.set(tx, ty, MaterialId.Empty);
-    }
-    this.meta[i]--;
-    if (this.meta[i] <= 0) {
-      this.material[i] = MaterialId.Empty;
-      this.meta[i] = 0;
-      this.wake(x, y);
-    }
+    stepAcidImpl(this, x, y, i);
   }
 
-  /**
-   * Advances every charge one step. A charge inside a conductor prefers
-   * continuing straight so it "goes in a line", but follows a bend if the
-   * wire turns, and never immediately doubles back the way it came.
-   * Reaching the end of the conductor "sai no final": Gunpowder/Óleo there
-   * ignite, Empty space lets it resume falling, anything else inert just
-   * absorbs the charge. `PULSE_MAX_STEPS` only guards against a charge
-   * stuck looping forever inside a closed metal ring, not normal travel.
-   *
-   * A free-falling charge is different: it dissipates like a fire running
-   * out of fuel (`life`, ticking down every tick). Touching another charge
-   * only pauses that decay (PULSE_TOUCH_BONUS can't outpace the per-tick
-   * loss) instead of restoring it, so a dense cluster can hold on a little
-   * longer than a lone spark but never grows or sustains itself — the whole
-   * burst still visibly thins out and fizzles within a handful of ticks. It
-   * also nudges sideways at random, and occasionally covers 2 rows in one
-   * tick, so a burst of charges spreads into a small, quick-fading cone
-   * instead of a rigid beam, with only a few stragglers ever reaching the
-   * ground.
-   */
+  /** Advances every in-flight Eletricidade charge one step. See systems/electricity.ts. */
   advancePulses(): void {
-    if (this.pulses.length === 0) return;
-    const posKey = (x: number, y: number) => x * this.height + y;
-    const positions = new Set(this.pulses.map((p) => posKey(p.x, p.y)));
-    const next: Pulse[] = [];
-    for (const p of this.pulses) {
-      p.steps++;
-      if (p.steps > PULSE_MAX_STEPS) continue;
-
-      if (p.inConductor) {
-        let advanced = false;
-        for (const [ddx, ddy] of this.pulseDirCandidates(p.dx, p.dy)) {
-          const nx = p.x + ddx;
-          const ny = p.y + ddy;
-          if (!this.inBounds(nx, ny) || !this.conducts(nx, ny)) continue;
-          next.push({ x: nx, y: ny, dx: ddx, dy: ddy, steps: p.steps, inConductor: true, life: p.life });
-          advanced = true;
-          break;
-        }
-        if (advanced) continue;
-
-        const ex = p.x + p.dx;
-        const ey = p.y + p.dy;
-        if (!this.inBounds(ex, ey)) continue;
-        const exitId = this.get(ex, ey);
-        const exitDef = MATERIALS[exitId];
-        if (exitDef.flammable) this.igniteAt(ex, ey);
-        else if (exitId === MaterialId.Glass) this.shatterGlass(ex, ey);
-        else if (exitId === MaterialId.Empty) {
-          next.push({ x: ex, y: ey, dx: 0, dy: 1, steps: p.steps, inConductor: false, life: PULSE_AIR_LIFE });
-        }
-        // Anything else inert simply absorbs the charge here.
-        continue;
-      }
-
-      // Free-falling: always loses 1 tick of life, but gains a smaller
-      // bonus back if another charge is touching it right now — a lone
-      // spark still fizzles out almost instantly, and even a dense burst
-      // only staves off dissipation, it doesn't live forever, since drift
-      // keeps breaking contacts apart tick by tick.
-      let touching = false;
-      for (const [dx, dy] of NEIGHBORS_8) {
-        if (positions.has(posKey(p.x + dx, p.y + dy))) {
-          touching = true;
-          break;
-        }
-      }
-      const life = Math.min(PULSE_AIR_LIFE, p.life - 1 + (touching ? PULSE_TOUCH_BONUS : 0));
-      if (life <= 0) continue;
-
-      // Pulled into any touching conductor, ignites any touching flammable.
-      let reacted = false;
-      for (const [dx, dy] of NEIGHBORS_8) {
-        const nx = p.x + dx;
-        const ny = p.y + dy;
-        if (!this.inBounds(nx, ny)) continue;
-        const nId = this.get(nx, ny);
-        const def = MATERIALS[nId];
-        if (def.conductive && this.conducts(nx, ny)) {
-          next.push({ x: nx, y: ny, dx, dy, steps: p.steps, inConductor: true, life });
-          reacted = true;
-          break;
-        }
-        if (def.flammable) {
-          this.igniteAt(nx, ny);
-          reacted = true;
-          break;
-        }
-        if (nId === MaterialId.Glass) {
-          this.shatterGlass(nx, ny);
-          reacted = true;
-          break;
-        }
-      }
-      if (reacted) continue;
-
-      // Otherwise keeps falling, with an occasional random sideways nudge
-      // (falling back to straight down if that column is blocked), and a
-      // chance to cover 2 rows in one tick instead of 1 — both faster and
-      // reaching further from where it started before it dissipates.
-      const rows = Math.random() < PULSE_LEAP_CHANCE ? 2 : 1;
-      const ty = p.y + rows;
-      let tx = p.x;
-      if (Math.random() < PULSE_DRIFT_CHANCE) {
-        const driftX = p.x + (Math.random() < 0.5 ? -1 : 1) * rows;
-        if (this.inBounds(driftX, ty) && this.get(driftX, ty) === MaterialId.Empty) tx = driftX;
-      }
-      if (this.inBounds(tx, ty) && this.get(tx, ty) === MaterialId.Empty) {
-        next.push({ x: tx, y: ty, dx: tx - p.x, dy: rows, steps: p.steps, inConductor: false, life });
-      } else if (rows === 2 && this.inBounds(p.x, p.y + 1) && this.get(p.x, p.y + 1) === MaterialId.Empty) {
-        // The 2-row leap landed somewhere blocked — fall back to a normal single-row step instead of just stopping.
-        next.push({ x: p.x, y: p.y + 1, dx: 0, dy: 1, steps: p.steps, inConductor: false, life });
-      }
-      // Blocked by something inert (or the floor) with nothing nearby to
-      // react to — the charge has nowhere left to go and simply ends.
-    }
-    this.pulses = next;
+    advancePulsesImpl(this);
   }
 
-  /**
-   * Whether a charge can pass through this cell right now. Metal (and any
-   * other always-conductive material) simply can; Water is a conductor but
-   * not a reliable one — plain Water only carries the charge some of the
-   * time, while salty Water carries it almost every time, so a saltier
-   * puddle reads as visibly "better wired" than a fresh one.
-   */
+  /** Whether a charge can pass through this cell right now. See systems/electricity.ts. */
   conducts(x: number, y: number): boolean {
-    const id = this.get(x, y);
-    const def = MATERIALS[id];
-    if (!def.conductive) return false;
-    if (id === MaterialId.Water) {
-      const salinity = this.meta[this.index(x, y)] / 255;
-      const chance = WATER_BASE_CONDUCT_CHANCE + (1 - WATER_BASE_CONDUCT_CHANCE) * salinity;
-      return Math.random() < chance;
-    }
-    return true;
+    return conductsImpl(this, x, y);
   }
 
-  /** Straight ahead first, then every other direction except doubling straight back. */
+  /** Straight ahead first, then every other direction except doubling straight back. See systems/electricity.ts. */
   pulseDirCandidates(dx: number, dy: number): readonly (readonly [number, number])[] {
-    const rest = NEIGHBORS_8.filter(([ddx, ddy]) => !(ddx === dx && ddy === dy) && !(ddx === -dx && ddy === -dy));
-    return [[dx, dy], ...rest];
+    return pulseDirCandidatesImpl(dx, dy);
   }
 
   // ── Creatures & Magia ──────────────────────────────────────────────────
@@ -3109,180 +1788,19 @@ export class SimGrid {
     stepFishImpl(this, x, y, i);
   }
 
-  /**
-   * Magia: a mote that drifts up and wanders, and each tick reaches for one
-   * random neighbour and tries to turn it toward life and order (see
-   * `transmute`). It carries a lifespan in `meta`; every successful
-   * transmutation costs it extra life on top of the steady per-tick drain,
-   * so one mote can only work so much magic before it winks out — leaving a
-   * Flor behind now and then when it does.
-   */
+  /** Magia: a mote that transmutes and conjures. See systems/magic.ts. */
   stepMagic(x: number, y: number, i: number): void {
-    this.processed[i] = 1;
-    let life = this.meta[i];
-
-    if (life <= 1) {
-      // Only leaves a bloom if it fizzles resting against something solid —
-      // a flower left hanging in open air looks wrong.
-      const onSurface = ([[0, 1], [-1, 0], [1, 0], [0, -1]] as const).some(([dx, dy]) => {
-        const sx = x + dx;
-        const sy = y + dy;
-        if (!this.inBounds(sx, sy)) return true;
-        const sId = this.get(sx, sy);
-        return sId !== MaterialId.Empty && sId !== MaterialId.Magic;
-      });
-      if (onSurface && Math.random() < MAGIC_BLOOM_ON_DEATH) {
-        this.set(x, y, MaterialId.Flor, Math.floor(Math.random() * 4));
-      } else {
-        this.set(x, y, MaterialId.Empty);
-        this.flashes.push({ x, y, life: FLASH_LIFE, maxLife: FLASH_LIFE });
-      }
-      return;
-    }
-
-    const [ndx, ndy] = NEIGHBORS_8[Math.floor(Math.random() * NEIGHBORS_8.length)];
-    const nx = x + ndx;
-    const ny = y + ndy;
-    if (this.inBounds(nx, ny)) {
-      if (this.transmute(nx, ny)) life = Math.max(1, life - MAGIC_CAST_COST);
-      else if (Math.random() < MAGIC_CONJURE_CHANCE) this.conjureCreature(x, y);
-    }
-
-    life--;
-    // Wanders in every direction with only a faint upward lean, so a mote
-    // works the patch it was cast on instead of racing to the ceiling.
-    const dirs = [[0, -1], [-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1], [0, 1]] as const;
-    const [mx, my] = dirs[Math.floor(Math.random() * dirs.length)];
-    const tx = x + mx;
-    const ty = y + my;
-    if (this.inBounds(tx, ty) && this.get(tx, ty) === MaterialId.Empty) {
-      this.swap(x, y, tx, ty);
-      this.meta[this.index(tx, ty)] = life;
-    } else {
-      this.meta[i] = life;
-    }
+    stepMagicImpl(this, x, y, i);
   }
 
-  /** One enchantment: nudges the cell at (x, y) toward life/order. Returns whether it actually changed anything (a miss costs the mote no extra life). */
+  /** One enchantment nudging a cell toward life/order. See systems/magic.ts. */
   transmute(x: number, y: number): boolean {
-    const i = this.index(x, y);
-    const id = this.material[i] as MaterialId;
-    switch (id) {
-      case MaterialId.Fire:
-        if (Math.random() < 0.6) this.set(x, y, MaterialId.Empty);
-        else this.set(x, y, MaterialId.Flor, Math.floor(Math.random() * 4));
-        return true;
-      case MaterialId.Lava:
-        this.set(x, y, MaterialId.Stone);
-        return true;
-      case MaterialId.Acid:
-      case MaterialId.AcidVapor:
-      case MaterialId.Steam:
-        this.set(x, y, MaterialId.Water);
-        return true;
-      case MaterialId.Gunpowder:
-      case MaterialId.C4:
-        this.set(x, y, MaterialId.Sand);
-        return true;
-      case MaterialId.Stone:
-        if (Math.random() < 0.5) {
-          this.set(x, y, MaterialId.Dirt);
-          return true;
-        }
-        return false;
-      case MaterialId.Sand:
-        if (Math.random() < 0.25) {
-          this.set(x, y, MaterialId.Seed);
-          return true;
-        }
-        return false;
-      case MaterialId.Dirt:
-        this.set(x, y, MaterialId.Plant);
-        return true;
-      case MaterialId.Mud:
-        this.set(x, y, MaterialId.Sprout, SPROUT_BUDGET_MIN);
-        return true;
-      case MaterialId.Warrior:
-      case MaterialId.Skeleton: {
-        // Magia doesn't unmake a fighter — it empowers it: twice the size,
-        // twice the bite. Once only.
-        if ((this.hp[i] & HP_EMPOWERED) !== 0) return false;
-        this.hp[i] = HP_EMPOWERED | Math.min(HP_POINTS_MASK, (this.hp[i] & HP_POINTS_MASK) * 2);
-        this.flashes.push({ x, y, life: FLASH_LIFE, maxLife: FLASH_LIFE });
-        return true;
-      }
-      case MaterialId.Wood:
-        if (Math.random() < 0.4) {
-          this.set(x, y, MaterialId.Plant);
-          return true;
-        }
-        return false;
-      case MaterialId.Ice:
-        if (Math.random() < 0.5) {
-          this.set(x, y, MaterialId.Water);
-          return true;
-        }
-        return false;
-      case MaterialId.Plant:
-        if (Math.random() < 0.5) {
-          this.set(x, y, MaterialId.Flor, Math.floor(Math.random() * 4));
-          return true;
-        }
-        return false;
-      case MaterialId.Sprout:
-        if ((this.meta[i] & SPROUT_BUDGET_MASK) === 0) {
-          this.meta[i] = SPROUT_REGROWTH_BONUS + 4;
-          this.wake(x, y);
-          return true;
-        }
-        return false;
-      case MaterialId.Water: {
-        let wc = 0;
-        for (const [dx, dy] of NEIGHBORS_8) {
-          const ax = x + dx;
-          const ay = y + dy;
-          if (this.inBounds(ax, ay) && this.get(ax, ay) === MaterialId.Water) wc++;
-        }
-        if (wc >= 5 && Math.random() < 0.05) {
-          this.material[i] = MaterialId.Fish;
-          this.meta[i] = packCreature(1, 0, CREATURE_FED_MAX);
-          this.wake(x, y);
-          return true;
-        }
-        return false;
-      }
-      default:
-        return false;
-    }
+    return transmuteImpl(this, x, y);
   }
 
-  /** Rarely, a mote conjures a creature that fits its surroundings — a Formiga onto firm ground by greenery, or a Peixe into a body of water. Never into open air. */
+  /** Rarely conjures a creature fitting its surroundings. See systems/magic.ts. */
   conjureCreature(x: number, y: number): void {
-    const spot = this.randomEmptyNeighbor(x, y);
-    if (!spot) return;
-    const [sx, sy] = spot;
-    let nearSoil = false;
-    let water = 0;
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const ax = sx + dx;
-      const ay = sy + dy;
-      if (!this.inBounds(ax, ay)) continue;
-      const aId = this.get(ax, ay);
-      if (
-        aId === MaterialId.Dirt || aId === MaterialId.Mud ||
-        aId === MaterialId.Plant || aId === MaterialId.Sprout || aId === MaterialId.Flor
-      ) {
-        nearSoil = true;
-      } else if (aId === MaterialId.Water) {
-        water++;
-      }
-    }
-    const solidBelow = this.inBounds(sx, sy + 1) && this.get(sx, sy + 1) !== MaterialId.Empty;
-    if (water >= 4) {
-      this.set(sx, sy, MaterialId.Fish, this.metaFor(MaterialId.Fish));
-    } else if (nearSoil && solidBelow) {
-      this.set(sx, sy, MaterialId.Ant, this.metaFor(MaterialId.Ant));
-    }
+    conjureCreatureImpl(this, x, y);
   }
 
   // ── O povo: Construtor, Lenhador, Plantador, Guerreiro ─────────────────────
@@ -5106,213 +3624,46 @@ export class SimGrid {
     return this.houseGhost(x, y) || this.isTrunk(x, y) || this.isOpenDoor(x, y);
   }
 
-  /**
-   * Whether (x, y) touches a Fio or Alavanca directly — i.e. whether it's
-   * wired into a circuit at all, as opposed to standing alone. Clone/Bloco
-   * de Calor/Bloco de Frio check this first: touching nothing conductive,
-   * they just run as always (their original, circuit-free behavior);
-   * touching a Fio or Alavanca opts them into `circuitPowered` instead, on
-   * only while that circuit actually is.
-   */
+  /** Whether (x, y) touches a Fio or Alavanca directly. See systems/electricity.ts. */
   circuitConnected(x: number, y: number): boolean {
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx, ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const m = this.material[this.index(nx, ny)];
-      if (m === MaterialId.Wire || m === MaterialId.Lever) return true;
-    }
-    return false;
+    return circuitConnectedImpl(this, x, y);
   }
 
-  /**
-   * Shared by Bloco de Calor / Bloco de Frio: works out whether this tick's
-   * heat/cold contribution should count, and leaves CIRCUIT_LINKED_META /
-   * CIRCUIT_ON_META set to match so the renderer can show the same verdict
-   * (see PixiStage) instead of the block just silently stopping with no
-   * visible tell. A connected clump of the same block is one body for this,
-   * exactly like a Porta slab (see bodyCircuitState) — switched together
-   * even for cells that aren't themselves touching the wire, not each cell
-   * independently deciding for itself. Returns whether it's active this
-   * tick.
-   */
+  /** Shared by Bloco de Calor / Bloco de Frio: whether this tick's contribution should count. See systems/electricity.ts. */
   stepCircuitBlock(x: number, y: number, i: number, matId: MaterialId): boolean {
-    const { linked, active } = this.bodyCircuitState(x, y, matId, this.blockCache);
-    const next = (linked ? CIRCUIT_LINKED_META : 0) | (active ? CIRCUIT_ON_META : 0);
-    if (this.meta[i] !== next) { this.meta[i] = next; this.wake(x, y); }
-    return active;
+    return stepCircuitBlockImpl(this, x, y, i, matId);
   }
 
-  /**
-   * Whether (x, y) — a Fio deciding its own state, or a Porta checking
-   * what's feeding it — is fed power this tick. Touching an on Alavanca, or
-   * a live Eletricidade charge riding this very cell or sitting right beside
-   * it, is enough on its own — "beside" matters because a free-falling
-   * charge can never actually land *inside* a Fio's cell (Fio is solid, so
-   * the charge just stops dead in the empty cell touching it, the same way
-   * it'd stop against any other solid); requiring an exact overlap would
-   * mean only a charge painted directly on top of a Fio ever lit it up, and
-   * one that fell onto it from above never would. Failing that direct
-   * touch, it traces outward through connected Fio (never through another
-   * Porta or Alavanca — those don't conduct past themselves) looking for an
-   * on Alavanca or a charge touching any cell of that run — a charge
-   * landing anywhere along a run of Fio powers the *whole* run, exactly
-   * like an on Alavanca would, even though the physical spark itself
-   * doesn't travel any further than the one cell it's stopped against (Fio
-   * isn't `conductive`). The whole run this search touches is settled at
-   * once (see `circuitCache`), and every trace starts fresh from the actual
-   * switches and charges each tick — so a loop of Fio (or a run an Alavanca
-   * just switched off, or a charge that's since moved on or dissipated)
-   * can never light itself by "confirming" its neighbor's bit the way a
-   * plain adjacency check would, and power drops the instant nothing's
-   * actually touching any more.
-   */
+  /** Whether (x, y) is fed power this tick. See systems/electricity.ts. */
   circuitPowered(x: number, y: number): boolean {
-    if (this.pulseAt(x, y)) return true; // a charge riding this very cell is its own live source
-    const startI = this.index(x, y);
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = x + dx, ny = y + dy;
-      if (!this.inBounds(nx, ny)) continue;
-      const j = this.index(nx, ny);
-      const m = this.material[j];
-      if (m === MaterialId.Lever && (this.meta[j] & CIRCUIT_ON_META) !== 0) return true;
-      if (this.pulseAt(nx, ny)) return true; // a charge touching us from any side — whether riding a neighboring Fio or just stopped dead against us — counts same as landing square on us
-    }
-    const cached = this.circuitCache.get(startI);
-    if (cached !== undefined) return cached;
-    const visited = new Set<number>([startI]);
-    const stack = [startI];
-    let found = false;
-    let budget = CIRCUIT_FLOOD_CAP;
-    while (stack.length > 0 && budget-- > 0 && !found) {
-      const i = stack.pop()!;
-      const cx = i % this.width, cy = (i / this.width) | 0;
-      for (const [dx, dy] of NEIGHBORS_8) {
-        const nx = cx + dx, ny = cy + dy;
-        if (!this.inBounds(nx, ny)) continue;
-        const j = this.index(nx, ny);
-        const m = this.material[j];
-        if (m === MaterialId.Lever && (this.meta[j] & CIRCUIT_ON_META) !== 0) { found = true; break; }
-        if (this.pulseAt(nx, ny)) { found = true; break; } // a charge touching any cell of this run, from any side, powers the whole run
-        if (m !== MaterialId.Wire || visited.has(j)) continue;
-        visited.add(j);
-        stack.push(j);
-      }
-    }
-    for (const v of visited) this.circuitCache.set(v, found);
-    return found;
+    return circuitPoweredImpl(this, x, y);
   }
 
-  /** Whether a live Eletricidade charge is sitting at (x, y) right now — Eletricidade has no physical form (see paintCell), so this is the only way to "see" it touching a cell. */
+  /** Whether a live Eletricidade charge is sitting at (x, y) right now. See systems/electricity.ts. */
   pulseAt(x: number, y: number): boolean {
-    for (const p of this.pulses) if (p.x === x && p.y === y) return true;
-    return false;
+    return pulseAtImpl(this, x, y);
   }
 
-  /** A Fio lights up the instant it touches power, and goes dark the instant nothing feeds it — no lingering charge. */
+  /** A Fio lights up the instant it touches power. See systems/electricity.ts. */
   stepWire(x: number, y: number, i: number): void {
-    this.processed[i] = 1;
-    const powered = this.circuitPowered(x, y);
-    if (((this.meta[i] & CIRCUIT_ON_META) !== 0) !== powered) this.wake(x, y);
-    this.meta[i] = powered ? CIRCUIT_ON_META : 0;
+    stepWireImpl(this, x, y, i);
   }
 
-  /**
-   * A connected slab of Porta is one body, not a grid of independent cells:
-   * open the instant *any* cell of it is individually fed (`circuitPowered`
-   * — touching an Alavanca/Fio directly), not just the cells actually
-   * touching one. Traces outward through connected Porta only (a Fio's own
-   * reach through Porta stops dead — see circuitPowered — so a door doesn't
-   * accidentally wire two separate doors together through a shared Fio;
-   * this walk is the one that unions a single door's own cells). Settled
-   * once per connected slab per tick (see `doorCache`).
-   */
+  /** A connected slab of Porta is one body — open the instant any cell of it is fed. See systems/electricity.ts. */
   doorPowered(x: number, y: number): boolean {
-    const startI = this.index(x, y);
-    const cached = this.doorCache.get(startI);
-    if (cached !== undefined) return cached;
-    const visited = new Set<number>([startI]);
-    const stack = [startI];
-    let found = false;
-    let budget = CIRCUIT_FLOOD_CAP;
-    while (stack.length > 0 && budget-- > 0) {
-      const i = stack.pop()!;
-      const cx = i % this.width, cy = (i / this.width) | 0;
-      if (this.circuitPowered(cx, cy)) found = true;
-      for (const [dx, dy] of NEIGHBORS_8) {
-        const nx = cx + dx, ny = cy + dy;
-        if (!this.inBounds(nx, ny)) continue;
-        const j = this.index(nx, ny);
-        if (this.material[j] !== MaterialId.Door || visited.has(j)) continue;
-        visited.add(j);
-        stack.push(j);
-      }
-    }
-    for (const v of visited) this.doorCache.set(v, found);
-    return found;
+    return doorPoweredImpl(this, x, y);
   }
 
-  /**
-   * Generic body-union power state for a connected clump of same-material
-   * cells that only gate on a circuit when actually touched (Bloco de
-   * Calor/Frio, Clone) — one body, exactly like a Porta slab (see
-   * doorPowered), not a grid of cells each independently deciding for
-   * itself whether it happens to be the one touching a Fio/Alavanca. Traces
-   * outward through connected `matId` cells: linked the moment *any* cell
-   * of the clump touches a Fio/Alavanca (circuitConnected), and — only once
-   * linked — active if *any* cell of it is individually fed
-   * (circuitPowered), not just the cells actually touching the wire. A
-   * clump nobody's wired up at all just runs as always (linked false,
-   * active true). Settled once per connected clump per tick in whichever
-   * `cache` the caller passes (each material kind gets its own, since a
-   * given grid index only ever holds one at a time but different callers
-   * shouldn't stomp each other's memoized verdicts); packs both booleans
-   * into one int since a Map of plain objects would mean an allocation per
-   * cell every tick.
-   */
+  /** Generic body-union power state for a connected clump of same-material cells. See systems/electricity.ts. */
   bodyCircuitState(x: number, y: number, matId: MaterialId, cache: Map<number, number>): { linked: boolean; active: boolean } {
-    const startI = this.index(x, y);
-    const cached = cache.get(startI);
-    if (cached !== undefined) return { linked: (cached & 1) !== 0, active: (cached & 2) !== 0 };
-    const visited = new Set<number>([startI]);
-    const stack = [startI];
-    let linked = false;
-    let active = false;
-    let budget = CIRCUIT_FLOOD_CAP;
-    while (stack.length > 0 && budget-- > 0) {
-      const i = stack.pop()!;
-      const cx = i % this.width, cy = (i / this.width) | 0;
-      if (this.circuitConnected(cx, cy)) {
-        linked = true;
-        if (this.circuitPowered(cx, cy)) active = true;
-      }
-      for (const [dx, dy] of NEIGHBORS_8) {
-        const nx = cx + dx, ny = cy + dy;
-        if (!this.inBounds(nx, ny)) continue;
-        const j = this.index(nx, ny);
-        if (this.material[j] !== matId || visited.has(j)) continue;
-        visited.add(j);
-        stack.push(j);
-      }
-    }
-    if (!linked) active = true; // untouched by any Fio/Alavanca: runs unconditionally, same as always
-    const packed = (linked ? 1 : 0) | (active ? 2 : 0);
-    for (const v of visited) cache.set(v, packed);
-    return { linked, active };
+    return bodyCircuitStateImpl(this, x, y, matId, cache);
   }
 
-  /**
-   * A Porta goes intangible (see `isGhost`) and lights a shade brighter —
-   * the renderer reads the same bit — for as long as it's powered by a
-   * touching Alavanca or Fio, and shuts the instant that power's gone. It
-   * doesn't animate open; that recolor and the change in what can walk
-   * through it are the only tells.
-   */
+  /** A Porta goes intangible and lights a shade brighter while powered. See systems/electricity.ts. */
   stepDoor(x: number, y: number, i: number): void {
-    this.processed[i] = 1;
-    const open = this.doorPowered(x, y);
-    if (((this.meta[i] & CIRCUIT_ON_META) !== 0) !== open) this.wake(x, y);
-    this.meta[i] = open ? CIRCUIT_ON_META : 0;
+    stepDoorImpl(this, x, y, i);
   }
+
 
   /** Loose (cut, not trunk / not structural) Madeira within `r` of (x, y). */
   looseWoodNear(x: number, y: number, r: number): number {
