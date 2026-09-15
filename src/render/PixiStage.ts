@@ -5,7 +5,7 @@ import { MATERIALS } from "../sim/materials";
 import { EXTREME_COLD, EXTREME_HOT, COLD_1, COLD_3, PROSPEROUS_LOW, PROSPEROUS_TEMP, PROSPEROUS_HIGH, HOT_2, HOT_3, isProsperous } from "../sim/temperature";
 import {
   GLASS_SHATTER_HITS, MAGIC_LIFE, WHEAT_RIPE, CIRCUIT_ON_META, LEVER_ARM_META,
-  CIRCUIT_LINKED_META, CLONE_LINKED_META, CLONE_ON_META,
+  CIRCUIT_LINKED_META, CLONE_LINKED_META, CLONE_ON_META, FAN_LINKED_META, FAN_ON_META,
 } from "../sim/metaBits";
 import {
   HOUSE_WALL_META, HOUSE_ANCHOR_META, HOUSE_KIND_MASK, HOUSE_WALL, HOUSE_WINDOW,
@@ -52,6 +52,10 @@ const SHRAPNEL_COLOR: readonly [number, number, number] = (() => {
 })();
 /** How strongly Shrapnel's color blends into whatever's already drawn beneath it — purely decorative debris, so it reads as translucent rather than a solid opaque dot. */
 const SHRAPNEL_ALPHA = 0.55;
+/** A Ventilador's drifting wind motes — a pale, cool near-white so a draft of moving air reads as distinct from Fumaça/Vapor or any actual material. */
+const WIND_PUFF_COLOR: readonly [number, number, number] = [220, 232, 240];
+/** Same blending idea as Shrapnel's alpha, but much fainter — a wind mote is barely-there, just enough of a hint that a draft is moving through, not a visible object in its own right. */
+const WIND_PUFF_ALPHA = 0.16;
 
 /**
  * Background color anchors, coldest to hottest — [temperature, [r,g,b]].
@@ -480,6 +484,38 @@ export class PixiStage {
         if ((meta[i] & CLONE_LINKED_META) !== 0) {
           if ((meta[i] & CLONE_ON_META) !== 0) { r += 60; g += 60; b += 60; } else { r *= 0.35; g *= 0.35; b *= 0.35; }
         }
+      } else if (id === MaterialId.LightningRod) {
+        // A lattice-tower texture — crossed diagonal struts, like a real
+        // grounding mast's frame, so a painted mass of it reads as an
+        // actual structure rather than a flat block.
+        const lx = i % width;
+        const ly = (i / width) | 0;
+        const diag1 = ((lx + ly) % 5 + 5) % 5 === 0;
+        const diag2 = ((lx - ly) % 5 + 5) % 5 === 0;
+        if (diag1 || diag2) { r += 55; g += 60; b += 70; } else { r *= 0.8; g *= 0.84; b *= 0.9; }
+      } else if (id === MaterialId.Fan) {
+        // A perforated grille housing — a fine mesh of little holes, like
+        // the guard over a real fan — with a soft diagonal glint sweeping
+        // across it over time to read as blades spinning behind the grille.
+        // The actual draft direction reads from the wind motes it streams,
+        // not this texture.
+        const flx = i % width;
+        const fly = (i / width) | 0;
+        const isHole = flx % 3 === 1 && fly % 3 === 1;
+        if (isHole) { r *= 0.5; g *= 0.58; b *= 0.68; } else { r *= 0.94; g *= 0.97; b *= 1.0; }
+        const glintPhase = this.grid.tick % 12;
+        if (((flx - fly - glintPhase) % 12 + 12) % 12 < 2) { r += 26; g += 28; b += 30; }
+        // Same idea as Bloco de Calor/Frio on top of that: standalone
+        // (never touched a Fio/Alavanca) it's always simply on, no tell
+        // needed. Wired up, it dims dead while switched off and brightens
+        // while on.
+        if ((meta[i] & FAN_LINKED_META) !== 0) {
+          if ((meta[i] & FAN_ON_META) !== 0) { r += 30; g += 32; b += 34; } else { r *= 0.4; g *= 0.4; b *= 0.4; }
+        }
+      } else if (id === MaterialId.DefenseTower) {
+        // Inert gunmetal until wired up — like Porta, only powered does it
+        // actually watch for a Esqueleto, so the glow is the only tell.
+        if ((meta[i] & CIRCUIT_ON_META) !== 0) { r += 45; g += 55; b += 35; } else { r *= 0.6; g *= 0.6; b *= 0.6; }
       }
       // Liquids and moving creatures constantly swap cells, so grain keyed
       // on grid position (not particle identity) would flicker as they
@@ -602,6 +638,22 @@ export class PixiStage {
       this.pixels[p] = clamp8(this.pixels[p] + (sr - this.pixels[p]) * t);
       this.pixels[p + 1] = clamp8(this.pixels[p + 1] + (sg - this.pixels[p + 1]) * t);
       this.pixels[p + 2] = clamp8(this.pixels[p + 2] + (sb - this.pixels[p + 2]) * t);
+      this.pixels[p + 3] = 255;
+    }
+
+    // A Ventilador's drifting wind motes — same translucent-overlay idea as
+    // Shrapnel, so the draft itself is visible on screen even over a
+    // stretch of open air with nothing in it to actually blow.
+    const [wr, wg, wb] = WIND_PUFF_COLOR;
+    for (const w of this.grid.activeWindPuffs) {
+      const gx = Math.round(w.x);
+      const gy = Math.round(w.y);
+      if (!this.grid.inBounds(gx, gy)) continue;
+      const p = this.grid.index(gx, gy) * 4;
+      const t = WIND_PUFF_ALPHA * (w.life / w.maxLife);
+      this.pixels[p] = clamp8(this.pixels[p] + (wr - this.pixels[p]) * t);
+      this.pixels[p + 1] = clamp8(this.pixels[p + 1] + (wg - this.pixels[p + 1]) * t);
+      this.pixels[p + 2] = clamp8(this.pixels[p + 2] + (wb - this.pixels[p + 2]) * t);
       this.pixels[p + 3] = 255;
     }
 

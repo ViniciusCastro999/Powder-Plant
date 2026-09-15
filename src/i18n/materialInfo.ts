@@ -165,6 +165,18 @@ const EN: InfoMap = {
     description: "A wall that opens while powered.",
     interactions: ["Lets folk straight through."],
   },
+  [MaterialId.LightningRod]: {
+    description: "Pulls in stray electricity.",
+    interactions: ["Grounds it safely before it can start a fire."],
+  },
+  [MaterialId.Fan]: {
+    description: "Blows a steady draft.",
+    interactions: ["Right-click to flip which way it faces."],
+  },
+  [MaterialId.DefenseTower]: {
+    description: "Shoots anything undead in range.",
+    interactions: ["Only works while powered."],
+  },
 };
 
 const PT: InfoMap = {
@@ -320,6 +332,18 @@ const PT: InfoMap = {
     description: "Uma parede que abre enquanto energizada.",
     interactions: ["Deixa o povo passar direto."],
   },
+  [MaterialId.LightningRod]: {
+    description: "Atrai eletricidade perdida.",
+    interactions: ["Aterra ela antes que cause um incêndio."],
+  },
+  [MaterialId.Fan]: {
+    description: "Sopra um vento constante.",
+    interactions: ["Clique com o botão direito para virar de lado."],
+  },
+  [MaterialId.DefenseTower]: {
+    description: "Atira em qualquer morto-vivo por perto.",
+    interactions: ["Só funciona enquanto energizada."],
+  },
 };
 
 const JA: InfoMap = {
@@ -474,6 +498,18 @@ const JA: InfoMap = {
   [MaterialId.Door]: {
     description: "通電中は開く壁。",
     interactions: ["住民を通り抜けさせる。"],
+  },
+  [MaterialId.LightningRod]: {
+    description: "迷った電気を引き寄せる。",
+    interactions: ["火事になる前に安全に逃がす。"],
+  },
+  [MaterialId.Fan]: {
+    description: "一定の風を送る。",
+    interactions: ["右クリックで向きを変える。"],
+  },
+  [MaterialId.DefenseTower]: {
+    description: "近くの不死者を撃つ。",
+    interactions: ["通電中だけ動く。"],
   },
 };
 

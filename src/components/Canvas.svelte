@@ -20,7 +20,10 @@
     onCount?: (count: number) => void;
     onTemperature?: (celsius: number) => void;
   }
-  let { selectedMaterial, brushSize, brushShape, paused = false, gravityOn = true, onCount, onTemperature }: Props = $props();
+  let {
+    selectedMaterial, brushSize, brushShape, paused = false, gravityOn = true,
+    onCount, onTemperature,
+  }: Props = $props();
 
   let container: HTMLDivElement;
   let grid: SimGrid | undefined;
@@ -159,12 +162,21 @@
 
   /** Read-only echo of toggleLever's own "nudge to the nearest Alavanca within 2 cells" search, so the context-menu handler can tell whether a right-click will land on one without actually flipping it (that happens in onPointerDown, once, via toggleLever itself). */
   function nearLever(x: number, y: number): boolean {
+    return nearMaterial(x, y, MaterialId.Lever);
+  }
+
+  /** Same idea as nearLever, but for toggleFan's right-click-flips-direction fixture. */
+  function nearFan(x: number, y: number): boolean {
+    return nearMaterial(x, y, MaterialId.Fan);
+  }
+
+  function nearMaterial(x: number, y: number, id: MaterialId): boolean {
     if (!grid) return false;
     for (let r = 0; r <= 2; r++) {
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
           if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-          if (grid.get(x + dx, y + dy) === MaterialId.Lever) return true;
+          if (grid.get(x + dx, y + dy) === id) return true;
         }
       }
     }
@@ -190,13 +202,13 @@
     const cell = cellAt(e.clientX, e.clientY);
     if (!cell || !grid) return;
 
-    // Right-click on a placed Alavanca flips it on/off, whatever tool is
-    // currently selected — a switch anyone can reach without first
-    // swapping back to the Alavanca brush. Over empty ground or any other
-    // material it's a no-op, and the click falls through to its usual
-    // meaning for whatever tool is selected (a shape tool's right-click
-    // abort, mainly).
-    if (e.button === 2 && grid.toggleLever(cell[0], cell[1])) return;
+    // Right-click on a placed Alavanca flips it on/off, and on a Ventilador
+    // flips which way it blows, whatever tool is currently selected — a
+    // switch anyone can reach without first swapping back to that brush.
+    // Over empty ground or any other material it's a no-op, and the click
+    // falls through to its usual meaning for whatever tool is selected (a
+    // shape tool's right-click abort, mainly).
+    if (e.button === 2 && (grid.toggleLever(cell[0], cell[1]) || grid.toggleFan(cell[0], cell[1]))) return;
 
     const p = localPoint(e.clientX, e.clientY);
 
@@ -284,8 +296,8 @@
   onpointerleave={(e) => { hoverCell = null; onPointerUp(e); }}
   oncontextmenu={(e) => {
     const cell = cellAt(e.clientX, e.clientY);
-    const onLever = !!(cell && nearLever(cell[0], cell[1]));
-    if (brushShape === BrushShape.Line || onLever) e.preventDefault();
+    const onToggleable = !!(cell && (nearLever(cell[0], cell[1]) || nearFan(cell[0], cell[1])));
+    if (brushShape === BrushShape.Line || onToggleable) e.preventDefault();
   }}
 >
   {#if cursorRing || (showsPreview && previewStart && previewCurrent)}

@@ -162,6 +162,41 @@ export const enum MaterialId {
    * through it are the only tells. See grid.ts circuitPowered / isGhost.
    */
   Door = 42,
+  /**
+   * A normal paintable Sólido, like Vidro or Metal — paint a single cell or
+   * a whole mass of it. Pulls in any free-falling Eletricidade charge
+   * within reach and grounds it safely the moment it arrives, instead of
+   * leaving it to drift into Pólvora, Óleo or Gás and touch it off; the
+   * more connected mass it has, the further out it reaches. Has no effect
+   * on a charge already travelling through a conductor. See
+   * systems/electronics.ts stepLightningRod.
+   */
+  LightningRod = 43,
+  /**
+   * A normal paintable Sólido, like Vidro or Metal — paint a single cell or
+   * a whole wall of it. A connected clump is one fixture (same one-body idea
+   * as Bloco de Calor/Frio): it just always runs unless wired to a
+   * Fio/Alavanca, in which case the whole clump switches together. It blows
+   * a steady wind in one of 8 directions chosen from the brush before
+   * painting (right-click rotates a whole placed clump 45° at a time,
+   * cycling all the way around), pushing any Pó, Fogo or Vapor along ahead
+   * of it and leaving a visible trail of drifting motes so the draft itself
+   * reads on screen — and the more of it there is, the further and more
+   * reliably it blows. See systems/electronics.ts stepFan.
+   */
+  Fan = 44,
+  /**
+   * A static fixture stamped as a fixed crenellated-turret shape in one
+   * click (see SINGLE_DROP_MATERIALS / dropDefenseTower / DEFENSE_TOWER_SHAPE)
+   * — a real little tower, several times the footprint of a single Pip
+   * cell. The whole clump is one body: it only switches on while powered by
+   * a touching Alavanca or Fio, exactly like a Porta, with no standalone
+   * mode (unlike Bloco de Calor/Frio, an unwired tower never fires). While
+   * on, every cell of it independently strikes the nearest Esqueleto within
+   * range, the same one point a hit as a Guerreiro, without needing to
+   * stand next to it. See systems/electronics.ts stepDefenseTower.
+   */
+  DefenseTower = 45,
 }
 
 export const enum BrushShape {

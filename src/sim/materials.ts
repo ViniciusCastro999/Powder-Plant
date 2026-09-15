@@ -643,6 +643,51 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     conductive: false,
     spontaneousIgniteTemp: 110,
   },
+  [MaterialId.LightningRod]: {
+    id: MaterialId.LightningRod,
+    name: "Para-raio",
+    category: MaterialCategory.Solid,
+    color: [150, 156, 168], // pale galvanized metal
+    density: 9,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    // Immune, like Alavanca — a safety fixture shouldn't dissolve away.
+    acidResistance: 6,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.Fan]: {
+    id: MaterialId.Fan,
+    name: "Ventilador",
+    category: MaterialCategory.Solid,
+    color: [196, 218, 232], // pale, light blue housing; the renderer adds a slowly turning blade texture on top
+    density: 8,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    acidResistance: 4,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.DefenseTower]: {
+    id: MaterialId.DefenseTower,
+    name: "Torre",
+    category: MaterialCategory.Solid,
+    color: [92, 98, 84], // gunmetal
+    density: 9,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    // Immune, like the other circuit fixtures — a defense that could just
+    // melt away wouldn't be much of one.
+    acidResistance: 6,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
 };
 
 export const MATERIAL_LIST: MaterialDef[] = Object.values(MATERIALS);
@@ -657,7 +702,7 @@ export const MATERIAL_LIST: MaterialDef[] = Object.values(MATERIALS);
  */
 export const SINGLE_DROP_MATERIALS: readonly MaterialId[] = [
   MaterialId.Mason, MaterialId.Lumberjack, MaterialId.Farmer, MaterialId.Warrior, MaterialId.Skeleton,
-  MaterialId.Lever,
+  MaterialId.Lever, MaterialId.DefenseTower,
 ];
 
 export interface PaletteCategory {
@@ -678,11 +723,13 @@ export interface PaletteCategory {
  * automatically shows up in both places.
  */
 /**
- * Five player-facing groups: the three matter states (Pó / Sólidos / Líquidos),
- * everything alive (plants, animals and the Pips), and the odd meta-materials
- * (Especiais). Trigo isn't here — only a Fazendeiro grows it. The eraser, drag
- * brush and gravity toggle aren't materials at all; the UI keeps them in their
- * own always-visible tools panel.
+ * Eight player-facing groups: the three matter states (Pó / Sólidos /
+ * Líquidos), plants, wildlife and o povo split apart instead of one crowded
+ * "Vida" bucket, the circuit fixtures grouped as their own "Elétricos" tab,
+ * and whatever's left over in "Especiais". Trigo isn't here — only a
+ * Fazendeiro grows it. The eraser, drag brush and gravity toggle aren't
+ * materials at all; the UI keeps them in their own always-visible tools
+ * panel.
  */
 export const PALETTE_CATEGORIES: PaletteCategory[] = [
   {
@@ -707,23 +754,39 @@ export const PALETTE_CATEGORIES: PaletteCategory[] = [
     materials: [MaterialId.Water, MaterialId.Oil, MaterialId.Acid, MaterialId.Lava],
   },
   {
-    id: "vida",
-    label: "Vida",
+    id: "plantas",
+    label: "Plantas",
     icon: "plant",
+    materials: [MaterialId.Plant, MaterialId.Seed, MaterialId.Vida],
+  },
+  {
+    id: "fauna",
+    label: "Fauna",
+    icon: "bird",
+    materials: [MaterialId.Ant, MaterialId.Bird, MaterialId.Fish],
+  },
+  {
+    id: "povo",
+    label: "Povo",
+    icon: "folk",
     materials: [
-      MaterialId.Plant, MaterialId.Seed, MaterialId.Vida,
-      MaterialId.Ant, MaterialId.Bird, MaterialId.Fish, MaterialId.Skeleton,
-      MaterialId.Mason, MaterialId.Lumberjack, MaterialId.Farmer, MaterialId.Warrior,
+      MaterialId.Mason, MaterialId.Lumberjack, MaterialId.Farmer, MaterialId.Warrior, MaterialId.Skeleton,
+    ],
+  },
+  {
+    id: "eletricos",
+    label: "Elétricos",
+    icon: "electricity",
+    materials: [
+      MaterialId.Electricity, MaterialId.Lever, MaterialId.Wire, MaterialId.Door,
+      MaterialId.LightningRod, MaterialId.Fan, MaterialId.DefenseTower,
     ],
   },
   {
     id: "especiais",
     label: "Especiais",
-    icon: "electricity",
-    materials: [
-      MaterialId.Fire, MaterialId.Electricity, MaterialId.Clone, MaterialId.Magic, MaterialId.CombustibleGas,
-      MaterialId.Lever, MaterialId.Wire, MaterialId.Door,
-    ],
+    icon: "fire",
+    materials: [MaterialId.Fire, MaterialId.Clone, MaterialId.Magic, MaterialId.CombustibleGas],
   },
 ];
 
@@ -777,4 +840,7 @@ export const ICON_BY_MATERIAL: Record<MaterialId, string> = {
   [MaterialId.Lever]: "lever",
   [MaterialId.Wire]: "wire",
   [MaterialId.Door]: "door",
+  [MaterialId.LightningRod]: "lightning-rod",
+  [MaterialId.Fan]: "fan",
+  [MaterialId.DefenseTower]: "defense-tower",
 };

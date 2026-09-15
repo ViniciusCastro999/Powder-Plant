@@ -46,3 +46,24 @@ export const CLONE_ON_META = 0x80;
  * `stepMagic`.
  */
 export const MAGIC_LIFE = 200;
+
+/**
+ * A Ventilador's `meta` bits: unlike Fio/Porta/Bloco de Calor-Frio it needs
+ * three things at once — which of 8 directions it blows (3 bits, an index
+ * into FAN_DIR_VECTORS, set at paint time from SimGrid.fanDirection and
+ * rotatable afterward for a whole connected clump with a right-click — see
+ * `toggleFan`), whether that clump is wired into a circuit at all, and
+ * whether it's currently on — so direction gets its own bits instead of
+ * overlapping CIRCUIT_ON_META/CIRCUIT_LINKED_META the way Bloco de
+ * Calor/Frio safely can (a block that's just always on has no separate
+ * "which way" to track).
+ */
+export const FAN_DIR_MASK = 0x07;
+/** The eight directions a Ventilador can face, N first then clockwise, indexed by FAN_DIR_MASK — see stepFan. */
+export const FAN_DIR_VECTORS: readonly (readonly [number, number])[] = [
+  [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1],
+];
+/** Set once the fan clump touches a Fio/Alavanca at all — see stepFan / fanBody. Same meaning as CIRCUIT_LINKED_META, just moved up past FAN_DIR_MASK's 3 bits. */
+export const FAN_LINKED_META = 0x08;
+/** Only meaningful once FAN_LINKED_META is set: whether the clump is currently powered. Same meaning as CIRCUIT_ON_META, moved up past FAN_DIR_MASK. */
+export const FAN_ON_META = 0x10;

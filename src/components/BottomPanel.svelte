@@ -202,6 +202,8 @@
       <span class="size-value">{brushSize}</span>
     </div>
   </div>
+
+
 </footer>
 
 <style>

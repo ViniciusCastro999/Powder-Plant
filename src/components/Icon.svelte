@@ -214,5 +214,19 @@
   {:else if name === "door"}
     <path d="M6 21 V4 A2 2 0 0 1 8 2 H16 A2 2 0 0 1 18 4 V21 Z" />
     <circle cx="14.5" cy="12.5" r="1" fill="currentColor" stroke="none" />
+  {:else if name === "lightning-rod"}
+    <path d="M12 22 V6" />
+    <circle cx="12" cy="4" r="1.3" fill="currentColor" stroke="none" />
+    <path d="M17.5 7 L14.5 12 L17 12 L14 18" stroke-width="1.4" />
+  {:else if name === "fan"}
+    <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
+    <path d="M12 10 C12 10 10.5 3.5 15.5 3.5 C16.5 7.5 13.2 10.2 12 10 Z" />
+    <path d="M13.6 13.1 C13.6 13.1 20 15.5 17.8 20 C13.8 19.2 12.4 14.5 13.6 13.1 Z" />
+    <path d="M10.4 13.1 C10.4 13.1 5 17 7.6 20.7 C11.4 19.5 11.5 14.6 10.4 13.1 Z" />
+  {:else if name === "defense-tower"}
+    <path d="M8 21 V12 H16 V21" />
+    <path d="M7 12 H9 V10 H11 V12 H13 V10 H15 V12 H17" />
+    <path d="M12 10 V5" stroke-width="1.6" />
+    <circle cx="12" cy="3.7" r="1" fill="currentColor" stroke="none" />
   {/if}
 </svg>

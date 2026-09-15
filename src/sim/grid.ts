@@ -3,7 +3,7 @@ import { MATERIALS, SINGLE_DROP_MATERIALS } from "./materials";
 import { NEUTRAL_TEMP, EXTREME_COLD, EXTREME_HOT, COLD_1, COLD_2, COLD_3 } from "./temperature";
 import { rleEncode, rleDecode, SCHEMA_VERSION, type MapSnapshot } from "./storage";
 import type { HousePlan } from "./houseBlueprints";
-import { CIRCUIT_ON_META, LEVER_ARM_META, MAGIC_LIFE } from "./metaBits";
+import { CIRCUIT_ON_META, LEVER_ARM_META, MAGIC_LIFE, FAN_DIR_MASK } from "./metaBits";
 import { NEIGHBORS_8 } from "./neighbors";
 import { stepLifeGeneration as stepLifeGenerationImpl } from "./systems/life";
 import {
@@ -22,6 +22,10 @@ import {
   pulseAt as pulseAtImpl, stepWire as stepWireImpl, doorPowered as doorPoweredImpl,
   bodyCircuitState as bodyCircuitStateImpl, stepDoor as stepDoorImpl,
 } from "./systems/electricity";
+import {
+  stepLightningRod as stepLightningRodImpl, stepFan as stepFanImpl,
+  advanceWindPuffs as advanceWindPuffsImpl, stepDefenseTower as stepDefenseTowerImpl,
+} from "./systems/electronics";
 import {
   stepFire as stepFireImpl, tryMoveFire as tryMoveFireImpl, igniteAt as igniteAtImpl,
   detonate as detonateImpl, applyBlastImpulse as applyBlastImpulseImpl,
@@ -156,8 +160,6 @@ export const PULSE_AIR_LIFE = 6;
  * starburst) and still shatters Glass on contact, but never moves grid
  * material itself.
  */
-/** Per-tick chance a Gás cell that hasn't been ignited disperses into the air and vanishes — emitted as a puff like Fogo, and gone within about a second if nothing sets it off. */
-const GAS_DISSIPATE_CHANCE = 0.015;
 // GLASS_SHATTER_HITS lives in metaBits.ts — the renderer needs it too.
 /** Ticks a detonation's initial bright Flash lasts before fully fading — a couple of frames, just long enough to read as a flash rather than a single-frame strobe. */
 export const FLASH_LIFE = 4;
@@ -215,6 +217,8 @@ export const FLASH_LIFE = 4;
 export const DETONATIONS_PER_TICK_CAP = 240;
 /** Fraction of a Vida brush stroke that actually gets painted — see the comment on VIDA in paintCell. */
 const VIDA_PAINT_DENSITY = 0.4;
+/** Fraction of an Eletricidade brush stroke that actually drops a charge — a big brush painting a filled area would otherwise spawn one pulse per cell it covers, dumping a huge simultaneous burst; thinning it out the same way Vida's stroke is thinned gives a lighter, more natural-looking spark shower instead. */
+const ELECTRICITY_PAINT_DENSITY = 0.35;
 /**
  * How many weighted hot/cold pixels it takes to fully saturate temperature
  * to EXTREME_HOT/EXTREME_COLD — an absolute count, deliberately *not* a
@@ -353,8 +357,19 @@ const LEVER_FRAME: readonly [number, number][] = [
 ];
 const LEVER_KNOB_ON: readonly [number, number][] = [[1, 2], [2, 2]];
 const LEVER_KNOB_OFF: readonly [number, number][] = [[1, 5], [2, 5]];
+/** A Torre de defesa's fixed footprint — a small crenellated turret, three wide and six tall (17 cells, several times the size of the old plain block), reading as an actual tower silhouette rather than a flat square. The gap in the top row is the crenellation notch. See `dropDefenseTower`. */
+const DEFENSE_TOWER_SHAPE: readonly [number, number][] = [
+  [0, 0], [2, 0],
+  [0, 1], [1, 1], [2, 1],
+  [0, 2], [1, 2], [2, 2],
+  [0, 3], [1, 3], [2, 3],
+  [0, 4], [1, 4], [2, 4],
+  [0, 5], [1, 5], [2, 5],
+];
 /** Cap on how many connected Alavanca cells one toggleLever flip visits — a perf budget, well past the size of any lever fixture actually placed. */
 const LEVER_FLOOD_CAP = 64;
+/** Cap on how many connected Ventilador cells one toggleFan flip visits — a perf budget, well past any fan a player would actually paint. */
+const FAN_TOGGLE_FLOOD_CAP = 20000;
 
 /** The four trades of o povo (the Guerreiro included — it's one of the folk, it just fights instead of building). */
 export const FOLK_IDS: readonly MaterialId[] = [
@@ -444,6 +459,11 @@ export interface Pulse {
   inConductor: boolean;
   /** Ticks left before a free-falling charge dissipates — reset to PULSE_AIR_LIFE whenever another charge is touching it, which is what lets a dense swarm punch further than a lone spark. Unused once inConductor. */
   life: number;
+  /** Set for one tick by stepLightningRod right after it moves this charge toward a rod. advancePulses checks it so a pulled charge isn't ALSO given its normal random free-fall step in the same tick — running both at once fought each other (gravity yanking it back down right after the rod pulled it sideways or up) and made the pull look like a jittery bounce instead of one smooth, deliberate motion. */
+  rodPulled?: boolean;
+  /** The specific rod cell this charge locked onto the first tick it came into a Para-raio's range — picked once, at random, from every rod cell within reach, and kept until grounded (see stepLightningRod). Without a persistent per-charge target, distance to the shape's actual nearest cell always resolves to the same single point (its closest edge) for any charge approaching from roughly the same direction, so a whole falling burst would funnel into one exact spot and visibly queue up there instead of spreading across the rod the way something actually being drawn toward a large object would. */
+  rodTargetX?: number;
+  rodTargetY?: number;
 }
 
 /**
@@ -509,6 +529,25 @@ export interface Debris {
   meta: number;
   /** Failsafe countdown — deposited unconditionally when it hits 0 (see DEBRIS_MAX_LIFE). */
   life: number;
+}
+
+/**
+ * A single drifting mote of a Ventilador's draft — purely decorative, like
+ * Shrapnel, so the wind itself reads on screen even where it has nothing to
+ * actually push (open air, or a stretch with no Gás/Fogo in its path). Never
+ * written into the material grid, real float position and constant
+ * velocity, fades out as `life` runs down. See systems/electronics.ts
+ * stepFan / advanceWindPuffs.
+ */
+export interface WindPuff {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  /** The spawning fan body's leaderIndex — lets stepFan count how many motes THIS body already has in flight, so several fans (a tiny one and a huge one, say) each get to fill their own share of the population instead of competing for one shared pool, where a small fan's fast-turnover motes could crowd out a big one's slower, longer-lived ones. */
+  owner: number;
 }
 
 /**
@@ -585,6 +624,8 @@ export class SimGrid {
   flashes: Flash[] = [];
   /** Brief red flash cells where a blow just landed — a combat hit marker, purely decorative. Same struct as `Flash`. */
   hits: Flash[] = [];
+  /** Drifting motes of a Ventilador's draft, purely decorative — see `WindPuff`. */
+  windPuffs: WindPuff[] = [];
   /** Global temperature in Celsius — see `updateTemperature`. Starts at the neutral baseline since nothing hot or cold has run yet. */
   temp = NEUTRAL_TEMP;
   /** Weighted count of Fogo/Lava cells seen so far this tick's main scan — reset and accumulated in `step()`, consumed by `updateTemperature`. An absolute count, not a ratio — see HOT_PIXELS_FOR_MAX. */
@@ -601,6 +642,14 @@ export class SimGrid {
   cloneCache = new Map<number, number>();
   /** Same as `cloneCache`, but for connected clumps of Bloco de Calor/Frio (see bodyCircuitState) — HeatBlock and ColdBlock never share a cell so one cache safely serves both. Cleared at the top of every `step()`. */
   blockCache = new Map<number, number>();
+  /** This tick's linked/active/size verdict for every connected clump of Ventilador — see fanBody in systems/electronics.ts. Cleared at the top of every `step()`. */
+  fanCache = new Map<number, { linked: boolean; active: boolean; size: number; leaderIndex: number; cells: readonly (readonly [number, number])[]; gust: number }>();
+  /** This tick's powered verdict for every connected clump of Torre de defesa — a clump is one body, active if *any* cell of it is individually fed, same idea as doorCache but never "runs standalone" the way a Bloco de Calor/Frio can. Cleared at the top of every `step()`. */
+  towerCache = new Map<number, boolean>();
+  /** This tick's shape (size, leader cell, bounding box) for every connected clump of Para-raio — see rodBody in systems/electronics.ts: more mass pulls in a charge from further out, and only the clump's leader cell actually performs the pull. Cleared at the top of every `step()`. */
+  rodCache = new Map<number, { size: number; leaderIndex: number; cells: readonly (readonly [number, number])[]; minX: number; maxX: number; minY: number; maxY: number }>();
+  /** Direction newly-painted Ventilador cells face (an index into FAN_DIR_VECTORS, 0-7), chosen from the brush before placing — see BottomPanel's direction picker and `metaFor`. Right-click still rotates a whole placed clump afterward (see `toggleFan`). */
+  fanDirection = 2;
   tick = 0;
   /** Rolling census (refreshed every CENSUS_INTERVAL ticks) the trades use to cap themselves: houses to the head count, crops to the farmer count. */
   houseCensus = 0;
@@ -653,6 +702,7 @@ export class SimGrid {
     this.debris = [];
     this.flashes = [];
     this.hits = [];
+    this.windPuffs = [];
     this.temp = NEUTRAL_TEMP;
     this.hotAccum = 0;
     this.coldAccum = 0;
@@ -728,6 +778,11 @@ export class SimGrid {
   /** Read-only positions (plus fade state) of fresh combat-hit markers, for the renderer to flash red. */
   get activeHits(): readonly { x: number; y: number; life: number; maxLife: number }[] {
     return this.hits;
+  }
+
+  /** Read-only positions (plus fade state) of a Ventilador's drifting wind motes, for the renderer to overlay. */
+  get activeWindPuffs(): readonly { x: number; y: number; life: number; maxLife: number }[] {
+    return this.windPuffs;
   }
 
   /** Current global temperature in Celsius — see `updateTemperature`. */
@@ -894,6 +949,7 @@ export class SimGrid {
       return packCreature(Math.random() < 0.5 ? 1 : -1, 0, CREATURE_FED_MAX);
     }
     if (id === MaterialId.Magic) return MAGIC_LIFE;
+    if (id === MaterialId.Fan) return this.fanDirection & FAN_DIR_MASK;
     return 0;
   }
 
@@ -912,6 +968,21 @@ export class SimGrid {
    * Água (one displaced cell is nothing) as well as into open space —
    * otherwise you could never drop a fish into a pool.
    */
+  /**
+   * Same as `paintCell`, but thins out Eletricidade first — used by the
+   * multi-cell brush strokes (`paint`, `paintRect`), where painting solid
+   * would drop one pulse per cell the stroke covers, dumping a huge
+   * simultaneous burst from a single brush dab. `paintCell` itself stays
+   * fully deterministic (always drops exactly the cell it's given) since
+   * plenty of callers — every regression script that sets up a single
+   * charge for a test, `paintLine`'s point-by-point walk via `paint` aside
+   * — rely on one call reliably placing one charge.
+   */
+  private paintCellForStroke(x: number, y: number, id: MaterialId): void {
+    if (id === MaterialId.Electricity && Math.random() >= ELECTRICITY_PAINT_DENSITY) return;
+    this.paintCell(x, y, id);
+  }
+
   paintCell(x: number, y: number, id: MaterialId): void {
     if (!this.inBounds(x, y)) return;
     if (id === MaterialId.Electricity) {
@@ -949,7 +1020,7 @@ export class SimGrid {
     for (let dy = -rInt; dy <= rInt; dy++) {
       for (let dx = -rInt; dx <= rInt; dx++) {
         if (dx * dx + dy * dy > r2) continue;
-        this.paintCell(cx + dx, cy + dy, id);
+        this.paintCellForStroke(cx + dx, cy + dy, id);
       }
     }
   }
@@ -963,6 +1034,7 @@ export class SimGrid {
    */
   dropOne(cx: number, cy: number, id: MaterialId): void {
     if (id === MaterialId.Lever) { this.dropLever(cx, cy); return; }
+    if (id === MaterialId.DefenseTower) { this.dropDefenseTower(cx, cy); return; }
     for (let r = 0; r <= 2; r++) {
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
@@ -1004,6 +1076,25 @@ export class SimGrid {
     }
   }
 
+  /** Stamps DEFENSE_TOWER_SHAPE — a small crenellated turret — anchored at or near (cx, cy), at the nearest spot within two steps whose whole footprint is clear. */
+  dropDefenseTower(cx: number, cy: number): void {
+    for (let r = 0; r <= 2; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const ax = cx + dx, ay = cy + dy;
+          let clear = true;
+          for (const [ox, oy] of DEFENSE_TOWER_SHAPE) {
+            if (!this.inBounds(ax + ox, ay + oy) || this.get(ax + ox, ay + oy) !== MaterialId.Empty) { clear = false; break; }
+          }
+          if (!clear) continue;
+          for (const [ox, oy] of DEFENSE_TOWER_SHAPE) this.set(ax + ox, ay + oy, MaterialId.DefenseTower, 0);
+          return;
+        }
+      }
+    }
+  }
+
   /** Stamps a filled circle of `radius` at every step along the segment, for the "line" brush. */
   paintLine(x0: number, y0: number, x1: number, y1: number, radius: number, id: MaterialId): void {
     if (SINGLE_DROP_MATERIALS.includes(id)) { this.dropOne(x0, y0, id); return; }
@@ -1039,7 +1130,7 @@ export class SimGrid {
     const maxY = Math.max(y0, y1);
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
-        this.paintCell(x, y, id);
+        this.paintCellForStroke(x, y, id);
       }
     }
   }
@@ -1122,6 +1213,55 @@ export class SimGrid {
     return true;
   }
 
+  /**
+   * Right-click on (or near) a Ventilador rotates which way it blows 45°
+   * clockwise (see FAN_DIR_VECTORS) — eight clicks cycle all the way
+   * around. Like toggleLever, nudges to the nearest Ventilador within 2
+   * cells if the click didn't land exactly on one. Returns whether it
+   * actually found and rotated one.
+   */
+  toggleFan(x: number, y: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    if (this.get(x, y) !== MaterialId.Fan) {
+      let nx0 = -1, ny0 = -1;
+      outer: for (let r = 1; r <= 2; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+            const cx = x + dx, cy = y + dy;
+            if (this.inBounds(cx, cy) && this.get(cx, cy) === MaterialId.Fan) { nx0 = cx; ny0 = cy; break outer; }
+          }
+        }
+      }
+      if (nx0 < 0) return false;
+      x = nx0; y = ny0;
+    }
+    // A connected clump of Ventilador is one fixture (see fanBody) — flip
+    // the whole thing together, not just the one cell that got clicked.
+    const startI = this.index(x, y);
+    const visited = new Set<number>([startI]);
+    const stack = [startI];
+    let budget = FAN_TOGGLE_FLOOD_CAP;
+    while (stack.length > 0 && budget-- > 0) {
+      const i = stack.pop()!;
+      const cx = i % this.width, cy = (i / this.width) | 0;
+      for (const [dx, dy] of NEIGHBORS_8) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!this.inBounds(nx, ny)) continue;
+        const j = this.index(nx, ny);
+        if (this.material[j] !== MaterialId.Fan || visited.has(j)) continue;
+        visited.add(j);
+        stack.push(j);
+      }
+    }
+    for (const i of visited) {
+      const dir = ((this.meta[i] & FAN_DIR_MASK) + 1) & 7;
+      this.meta[i] = (this.meta[i] & ~FAN_DIR_MASK) | dir;
+      this.wake(i % this.width, (i / this.width) | 0);
+    }
+    return true;
+  }
+
   swap(ax: number, ay: number, bx: number, by: number): void {
     const ai = this.index(ax, ay);
     const bi = this.index(bx, by);
@@ -1166,6 +1306,9 @@ export class SimGrid {
     if (this.doorCache.size > 0) this.doorCache.clear();
     if (this.cloneCache.size > 0) this.cloneCache.clear();
     if (this.blockCache.size > 0) this.blockCache.clear();
+    if (this.fanCache.size > 0) this.fanCache.clear();
+    if (this.towerCache.size > 0) this.towerCache.clear();
+    if (this.rodCache.size > 0) this.rodCache.clear();
     if (this.tick % CENSUS_INTERVAL === 1) this.takeCensus();
 
     // Bottom-to-top so a cell that falls this tick isn't immediately
@@ -1202,15 +1345,6 @@ export class SimGrid {
             }
             break;
           case MaterialCategory.Gas:
-            // Gás (unlike Vapor / Vapor de Ácido, which condense back by
-            // temperature) has no lasting form — every tick, moving or not,
-            // an un-ignited cell has a chance to disperse into the air, so a
-            // puff fades on its own instead of piling up under the ceiling
-            // forever.
-            if (id === MaterialId.CombustibleGas && Math.random() < GAS_DISSIPATE_CHANCE) {
-              this.set(x, y, MaterialId.Empty);
-              break;
-            }
             if (this.gravityEnabled && this.stillTicks[i] < SLEEP_THRESHOLD) {
               if (this.stepGas(x, y, def.density)) this.stillTicks[i] = 0;
               else if (this.stillTicks[i] < 255) this.stillTicks[i]++;
@@ -1260,6 +1394,9 @@ export class SimGrid {
         else if (id === MaterialId.Clone) this.stepClone(x, y, i);
         else if (id === MaterialId.Wire) this.stepWire(x, y, i);
         else if (id === MaterialId.Door) this.stepDoor(x, y, i);
+        else if (id === MaterialId.LightningRod) this.stepLightningRod(x, y, i);
+        else if (id === MaterialId.Fan) this.stepFan(x, y, i);
+        else if (id === MaterialId.DefenseTower) this.stepDefenseTower(x, y, i);
 
         // Ambient temperature effects — only make sense once the cell has
         // survived whatever the reactions above just did to it.
@@ -1295,6 +1432,7 @@ export class SimGrid {
     this.advanceShrapnel();
     this.advanceDebris();
     this.advanceFlashes();
+    this.advanceWindPuffs();
     this.stepLifeGeneration();
     this.updateTemperature();
   }
@@ -2024,6 +2162,26 @@ export class SimGrid {
   /** A Porta goes intangible and lights a shade brighter while powered. See systems/electricity.ts. */
   stepDoor(x: number, y: number, i: number): void {
     stepDoorImpl(this, x, y, i);
+  }
+
+  /** Pulls in any free-falling Eletricidade charge within range and grounds it. See systems/electronics.ts. */
+  stepLightningRod(x: number, y: number, i: number): void {
+    stepLightningRodImpl(this, x, y, i);
+  }
+
+  /** Blows Gás/Vapor/Fogo along its facing direction, with a visible trail of wind motes. See systems/electronics.ts. */
+  stepFan(x: number, y: number, i: number): void {
+    stepFanImpl(this, x, y, i);
+  }
+
+  /** Advances every drifting wind mote one tick. See systems/electronics.ts. */
+  advanceWindPuffs(): void {
+    advanceWindPuffsImpl(this);
+  }
+
+  /** While powered, spots and shoots the nearest Esqueleto within range. See systems/electronics.ts. */
+  stepDefenseTower(x: number, y: number, i: number): void {
+    stepDefenseTowerImpl(this, x, y, i);
   }
 
 

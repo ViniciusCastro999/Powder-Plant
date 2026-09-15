@@ -17,6 +17,8 @@ const CLONE_PROPAGATE_CHANCE = 0.04;
 const PULSE_MAX_STEPS = 4000;
 /** Extra ticks of life a charge regains (capped at PULSE_AIR_LIFE) on a tick another charge is touching it. Deliberately <= the 1/tick decay, so touching can only pause dissipation, never grow it — a dense cluster's total life can't climb back up, only hold steady at best, so it still visibly thins out instead of reading as "more electricity" than a lone spark. */
 const PULSE_TOUCH_BONUS = 1;
+/** Per-tick chance a free-falling charge that's touching another one annihilates instead — a crowded burst thins itself out fast, rather than the touch bonus alone just slowing how quickly it fades. */
+const PULSE_ANNIHILATE_CHANCE = 0.18;
 /** Per-tick chance a free-falling charge nudges sideways instead of falling straight down. */
 const PULSE_DRIFT_CHANCE = 0.22;
 /** Per-tick chance a free-falling charge covers 2 rows instead of 1. */
@@ -131,6 +133,18 @@ export function advancePulses(grid: SimGrid): void {
     p.steps++;
     if (p.steps > PULSE_MAX_STEPS) continue;
 
+    // A Para-raio already moved this charge toward itself earlier this same
+    // tick (see stepLightningRod) — let that stand as the tick's one move
+    // instead of also running the normal free-fall step on top of it,
+    // which used to fight the pull (gravity yanking it back down right
+    // after the rod pulled it sideways or up) and made the approach look
+    // like a jittery bounce instead of one smooth, deliberate curve.
+    if (p.rodPulled) {
+      p.rodPulled = false;
+      next.push(p);
+      continue;
+    }
+
     if (p.inConductor) {
       let advanced = false;
       for (const [ddx, ddy] of pulseDirCandidates(p.dx, p.dy)) {
@@ -169,6 +183,13 @@ export function advancePulses(grid: SimGrid): void {
         break;
       }
     }
+    // A crowded cluster doesn't just fade slower than a lone spark, it
+    // actively cancels itself out — a charge touching another one has a
+    // real chance of annihilating outright, so a big painted burst thins
+    // down toward a handful of survivors within a tick or two instead of
+    // the touch bonus merely stretching out how long the whole dense mass
+    // hangs around.
+    if (touching && Math.random() < PULSE_ANNIHILATE_CHANCE) continue;
     const life = Math.min(PULSE_AIR_LIFE, p.life - 1 + (touching ? PULSE_TOUCH_BONUS : 0));
     if (life <= 0) continue;
 
