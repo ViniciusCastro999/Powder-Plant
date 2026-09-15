@@ -159,11 +159,23 @@ const EN: InfoMap = {
   },
   [MaterialId.Wire]: {
     description: "Carries power.",
-    interactions: ["From a Lever to a Door."],
+    interactions: ["From a Lever to a Gate."],
   },
-  [MaterialId.Door]: {
-    description: "A wall that opens while powered.",
-    interactions: ["Lets folk straight through."],
+  [MaterialId.GateGeneral]: {
+    description: "Open until powered — then blocks Powder, Liquid AND Folk/Wildlife at once.",
+    interactions: ["Also blocks the wind itself while active."],
+  },
+  [MaterialId.GateCreature]: {
+    description: "Open until powered — then blocks only Folk and Wildlife.",
+    interactions: ["Lets Powder and Liquid through either way.", "Also blocks the wind itself while active."],
+  },
+  [MaterialId.GateLiquid]: {
+    description: "Open until powered — then blocks only Liquid.",
+    interactions: ["Lets Powder and Folk/Wildlife through either way.", "Also blocks the wind itself while active."],
+  },
+  [MaterialId.GatePowder]: {
+    description: "Open until powered — then blocks only Powder.",
+    interactions: ["Lets Liquid and Folk/Wildlife through either way.", "Also blocks the wind itself while active."],
   },
   [MaterialId.LightningRod]: {
     description: "Pulls in stray electricity.",
@@ -176,6 +188,14 @@ const EN: InfoMap = {
   [MaterialId.DefenseTower]: {
     description: "Shoots anything undead in range.",
     interactions: ["Only works while powered."],
+  },
+  [MaterialId.Drain]: {
+    description: "Sucks in touching Liquid and makes it vanish.",
+    interactions: ["Connect a Pipe to route the liquid out somewhere else instead."],
+  },
+  [MaterialId.Pipe]: {
+    description: "A conduit for a connected Drain's liquid.",
+    interactions: ["Ends where it touches open air."],
   },
 };
 
@@ -326,11 +346,23 @@ const PT: InfoMap = {
   },
   [MaterialId.Wire]: {
     description: "Leva energia.",
-    interactions: ["De uma Alavanca até uma Porta."],
+    interactions: ["De uma Alavanca até um Portão."],
   },
-  [MaterialId.Door]: {
-    description: "Uma parede que abre enquanto energizada.",
-    interactions: ["Deixa o povo passar direto."],
+  [MaterialId.GateGeneral]: {
+    description: "Aberto até ser energizado — aí bloqueia Pó, Líquido E Povo/Fauna de uma vez.",
+    interactions: ["Também bloqueia o próprio vento enquanto ativado."],
+  },
+  [MaterialId.GateCreature]: {
+    description: "Aberto até ser energizado — aí bloqueia só Povo e Fauna.",
+    interactions: ["Deixa Pó e Líquido passarem de qualquer jeito.", "Também bloqueia o próprio vento enquanto ativado."],
+  },
+  [MaterialId.GateLiquid]: {
+    description: "Aberto até ser energizado — aí bloqueia só Líquido.",
+    interactions: ["Deixa Pó e Povo/Fauna passarem de qualquer jeito.", "Também bloqueia o próprio vento enquanto ativado."],
+  },
+  [MaterialId.GatePowder]: {
+    description: "Aberto até ser energizado — aí bloqueia só Pó.",
+    interactions: ["Deixa Líquido e Povo/Fauna passarem de qualquer jeito.", "Também bloqueia o próprio vento enquanto ativado."],
   },
   [MaterialId.LightningRod]: {
     description: "Atrai eletricidade perdida.",
@@ -343,6 +375,14 @@ const PT: InfoMap = {
   [MaterialId.DefenseTower]: {
     description: "Atira em qualquer morto-vivo por perto.",
     interactions: ["Só funciona enquanto energizada."],
+  },
+  [MaterialId.Drain]: {
+    description: "Suga Líquido que encoste nele e some com ele.",
+    interactions: ["Conecte um Cano para direcionar o líquido para outro lugar em vez de sumir."],
+  },
+  [MaterialId.Pipe]: {
+    description: "Um conduto para o líquido de um Ralo conectado.",
+    interactions: ["Termina onde encosta em ar aberto."],
   },
 };
 
@@ -493,11 +533,23 @@ const JA: InfoMap = {
   },
   [MaterialId.Wire]: {
     description: "電力を運ぶ。",
-    interactions: ["レバーからドアまで。"],
+    interactions: ["レバーからゲートまで。"],
   },
-  [MaterialId.Door]: {
-    description: "通電中は開く壁。",
-    interactions: ["住民を通り抜けさせる。"],
+  [MaterialId.GateGeneral]: {
+    description: "通電するまでは開いている。通電すると粉体・液体・住民/動物すべてを一度にブロックする。",
+    interactions: ["通電中は風そのものもブロックする。"],
+  },
+  [MaterialId.GateCreature]: {
+    description: "通電するまでは開いている。通電すると住民と動物だけをブロックする。",
+    interactions: ["粉体と液体はどちらでも通り抜ける。", "通電中は風そのものもブロックする。"],
+  },
+  [MaterialId.GateLiquid]: {
+    description: "通電するまでは開いている。通電すると液体だけをブロックする。",
+    interactions: ["粉体と住民/動物はどちらでも通り抜ける。", "通電中は風そのものもブロックする。"],
+  },
+  [MaterialId.GatePowder]: {
+    description: "通電するまでは開いている。通電すると粉体だけをブロックする。",
+    interactions: ["液体と住民/動物はどちらでも通り抜ける。", "通電中は風そのものもブロックする。"],
   },
   [MaterialId.LightningRod]: {
     description: "迷った電気を引き寄せる。",
@@ -510,6 +562,14 @@ const JA: InfoMap = {
   [MaterialId.DefenseTower]: {
     description: "近くの不死者を撃つ。",
     interactions: ["通電中だけ動く。"],
+  },
+  [MaterialId.Drain]: {
+    description: "触れた液体を吸い込んで消す。",
+    interactions: ["パイプをつなぐと、消す代わりに別の場所へ液体を送れる。"],
+  },
+  [MaterialId.Pipe]: {
+    description: "つながった排水口の液体を通す管。",
+    interactions: ["開いた空間に触れた場所で終わる。"],
   },
 };
 

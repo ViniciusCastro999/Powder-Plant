@@ -211,9 +211,26 @@
     <path d="M3 12 H7 L9 7 L13 17 L15 12 H21" />
     <circle cx="3" cy="12" r="1.4" fill="currentColor" stroke="none" />
     <circle cx="21" cy="12" r="1.4" fill="currentColor" stroke="none" />
-  {:else if name === "door"}
-    <path d="M6 21 V4 A2 2 0 0 1 8 2 H16 A2 2 0 0 1 18 4 V21 Z" />
-    <circle cx="14.5" cy="12.5" r="1" fill="currentColor" stroke="none" />
+  {:else if name === "gate"}
+    <path d="M4 21 V5 M20 21 V5 M4 8 L20 5 M4 16 L20 13" />
+    <path d="M4 21 H20" stroke-width="1.4" />
+  {:else if name === "gate-general"}
+    <path d="M5 21 V4 M19 21 V4 M5 4 H19" stroke-width="1.6" />
+    <path d="M8 5 V21 M11 5 V21 M14 5 V21 M17 5 V21" stroke-width="1.3" />
+  {:else if name === "gate-creature"}
+    <path d="M5 21 V4 M19 21 V4 M5 4 H19" stroke-width="1.6" />
+    <path d="M6 6 L18 18 M18 6 L6 18 M6 11 L13 4 M11 20 L18 13" stroke-width="1.1" />
+  {:else if name === "gate-liquid"}
+    <path d="M5 21 V4 M19 21 V4 M5 4 H19" stroke-width="1.6" />
+    <path d="M5 9 C8 7 10 11 13 9 C16 7 18 11 19 10" stroke-width="1.2" />
+    <path d="M5 15 C8 13 10 17 13 15 C16 13 18 17 19 16" stroke-width="1.2" />
+  {:else if name === "gate-powder"}
+    <path d="M5 21 V4 M19 21 V4 M5 4 H19" stroke-width="1.6" />
+    <circle cx="9" cy="9" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="8" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="13" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="8" cy="16" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="16" cy="17" r="0.9" fill="currentColor" stroke="none" />
   {:else if name === "lightning-rod"}
     <path d="M12 22 V6" />
     <circle cx="12" cy="4" r="1.3" fill="currentColor" stroke="none" />
@@ -228,5 +245,12 @@
     <path d="M7 12 H9 V10 H11 V12 H13 V10 H15 V12 H17" />
     <path d="M12 10 V5" stroke-width="1.6" />
     <circle cx="12" cy="3.7" r="1" fill="currentColor" stroke="none" />
+  {:else if name === "drain"}
+    <circle cx="12" cy="12" r="8" />
+    <path d="M12 6 V10 M12 14 V18 M6 12 H10 M14 12 H18 M7.8 7.8 L10.2 10.2 M13.8 13.8 L16.2 16.2 M16.2 7.8 L13.8 10.2 M10.2 13.8 L7.8 16.2" stroke-width="1.3" />
+  {:else if name === "pipe"}
+    <path d="M3 9 H15 A4 4 0 0 1 19 13 V19" stroke-width="2.2" />
+    <path d="M3 6 H15 A7 7 0 0 1 22 13 V19" stroke-width="1" opacity="0.5" />
+    <path d="M3 12 H15 A1 1 0 0 1 16 13 V19" stroke-width="1" opacity="0.5" />
   {/if}
 </svg>

@@ -19,17 +19,26 @@ import {
   stepClone as stepCloneImpl, advancePulses as advancePulsesImpl, conducts as conductsImpl,
   pulseDirCandidates as pulseDirCandidatesImpl, circuitConnected as circuitConnectedImpl,
   stepCircuitBlock as stepCircuitBlockImpl, circuitPowered as circuitPoweredImpl,
-  pulseAt as pulseAtImpl, stepWire as stepWireImpl, doorPowered as doorPoweredImpl,
-  bodyCircuitState as bodyCircuitStateImpl, stepDoor as stepDoorImpl,
+  pulseAt as pulseAtImpl, stepWire as stepWireImpl,
+  bodyCircuitState as bodyCircuitStateImpl,
 } from "./systems/electricity";
 import {
   stepLightningRod as stepLightningRodImpl, stepFan as stepFanImpl,
   advanceWindPuffs as advanceWindPuffsImpl, stepDefenseTower as stepDefenseTowerImpl,
 } from "./systems/electronics";
 import {
+  stepGate as stepGateImpl, isGateMaterial as isGateMaterialImpl,
+  gateBlocksCategory as gateBlocksCategoryImpl, gateSkipLanding as gateSkipLandingImpl,
+} from "./systems/gates";
+import {
+  stepDrain as stepDrainImpl, advancePipeFlows as advancePipeFlowsImpl,
+  advanceSuctionMotes as advanceSuctionMotesImpl,
+} from "./systems/drains";
+import {
   stepFire as stepFireImpl, tryMoveFire as tryMoveFireImpl, igniteAt as igniteAtImpl,
   detonate as detonateImpl, applyBlastImpulse as applyBlastImpulseImpl,
   isFusableExplosive as isFusableExplosiveImpl, collectExplosivePocket as collectExplosivePocketImpl,
+  explosiveBodySize as explosiveBodySizeImpl,
   canDetonate as canDetonateImpl, stepFuse as stepFuseImpl, floodFuseConnected as floodFuseConnectedImpl,
   spawnShrapnelBurst as spawnShrapnelBurstImpl, advanceShrapnel as advanceShrapnelImpl,
   shatterGlass as shatterGlassImpl, advanceDebris as advanceDebrisImpl, depositDebris as depositDebrisImpl,
@@ -79,7 +88,7 @@ import {
   masonSurvey as masonSurveyImpl, houseFootprintClear as houseFootprintClearImpl,
   gradeStrip as gradeStripImpl, groundLevel as groundLevelImpl, treeCrown as treeCrownImpl,
   isTrunk as isTrunkImpl, treeBase as treeBaseImpl, isMatureTree as isMatureTreeImpl,
-  isOpenDoor as isOpenDoorImpl, isGhost as isGhostImpl,
+  isOpenGate as isOpenGateImpl, isGhost as isGhostImpl,
 } from "./folk/houses";
 
 /**
@@ -371,6 +380,49 @@ const LEVER_FLOOD_CAP = 64;
 /** Cap on how many connected Ventilador cells one toggleFan flip visits — a perf budget, well past any fan a player would actually paint. */
 const FAN_TOGGLE_FLOOD_CAP = 20000;
 
+/**
+ * Every material that stamps a fixed multi-cell footprint in one click
+ * instead of painting solid, keyed to that exact footprint (offsets from
+ * its anchor) — the single source of truth both `dropLever`/
+ * `dropDefenseTower` place from and the brush outline preview (Canvas.svelte)
+ * draws from, so the preview can never drift out of sync with where the
+ * piece actually lands. Alavanca's footprint is its housing (LEVER_FRAME)
+ * plus the knob's resting spot (LEVER_KNOB_OFF) — the union of everywhere
+ * it ever occupies, not just one state of it.
+ */
+export const FIXED_SHAPES: Partial<Record<MaterialId, readonly (readonly [number, number])[]>> = {
+  [MaterialId.Lever]: [...LEVER_FRAME, ...LEVER_KNOB_OFF],
+  [MaterialId.DefenseTower]: DEFENSE_TOWER_SHAPE,
+};
+
+/**
+ * Finds where a FIXED_SHAPES piece would actually land if dropped at
+ * (cx, cy) right now — the nearest anchor within two steps whose whole
+ * footprint is genuinely clear, same ring search `dropLever`/
+ * `dropDefenseTower` use to place it for real (they call this directly),
+ * or null if nothing in range fits. Read-only: doesn't touch the grid, so
+ * the brush preview can call this every frame the cursor moves without
+ * placing anything.
+ */
+function findShapeAnchor(grid: SimGrid, id: MaterialId, cx: number, cy: number): [number, number] | null {
+  const shape = FIXED_SHAPES[id];
+  if (!shape) return null;
+  for (let r = 0; r <= 2; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        const ax = cx + dx, ay = cy + dy;
+        let clear = true;
+        for (const [ox, oy] of shape) {
+          if (!grid.inBounds(ax + ox, ay + oy) || grid.get(ax + ox, ay + oy) !== MaterialId.Empty) { clear = false; break; }
+        }
+        if (clear) return [ax, ay];
+      }
+    }
+  }
+  return null;
+}
+
 /** The four trades of o povo (the Guerreiro included — it's one of the folk, it just fights instead of building). */
 export const FOLK_IDS: readonly MaterialId[] = [
   MaterialId.Mason, MaterialId.Lumberjack, MaterialId.Farmer, MaterialId.Warrior,
@@ -551,6 +603,37 @@ export interface WindPuff {
 }
 
 /**
+ * A slug of Líquido a Ralo has sucked up and is routing through a
+ * connected Cano to an actual opening, instead of just consuming it — see
+ * systems/drains.ts stepDrain/advancePipeFlows. Physically real, not
+ * decorative: it carries the genuine material (and its meta — a salted
+ * Água's salinity, say) and re-deposits it as an ordinary grid cell once
+ * it reaches the end of `path`; it just isn't itself a grid cell while
+ * it's in transit, since Cano is a solid tube it travels *through*.
+ */
+export interface PipeFlow {
+  /** The connected run of Cano cells from the entry (touching the Ralo) to the exit (touching open air), walked one cell at a time. */
+  path: readonly (readonly [number, number])[];
+  /** Which segment of `path` this flow is currently crossing (path[index] → path[index + 1]). */
+  index: number;
+  /** 0..1 progress across the current segment, for a smooth sub-cell crawl instead of a visible jump each time it crosses a cell boundary. */
+  t: number;
+  speed: number;
+  material: MaterialId;
+  meta: number;
+}
+
+/** A purely decorative mote drifting toward an active Ralo — no physical effect on anything, just the visual tell that it's drawing something in. See systems/drains.ts. */
+export interface SuctionMote {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+}
+
+/**
  * Falling-sand grid: material id and per-cell meta (burn countdown, water
  * salinity, acid charge, electricity life — meaning depends on the cell's
  * material) live in flat typed arrays instead of a Cell[][] of objects, so
@@ -626,6 +709,10 @@ export class SimGrid {
   hits: Flash[] = [];
   /** Drifting motes of a Ventilador's draft, purely decorative — see `WindPuff`. */
   windPuffs: WindPuff[] = [];
+  /** Líquido currently in transit through a Cano network, physically real (see `PipeFlow`) — not a grid cell, since it's travelling *through* solid pipe. */
+  pipeFlows: PipeFlow[] = [];
+  /** Decorative motes drifting toward an active Ralo, purely cosmetic — see `SuctionMote`. */
+  suctionMotes: SuctionMote[] = [];
   /** Global temperature in Celsius — see `updateTemperature`. Starts at the neutral baseline since nothing hot or cold has run yet. */
   temp = NEUTRAL_TEMP;
   /** Weighted count of Fogo/Lava cells seen so far this tick's main scan — reset and accumulated in `step()`, consumed by `updateTemperature`. An absolute count, not a ratio — see HOT_PIXELS_FOR_MAX. */
@@ -636,8 +723,10 @@ export class SimGrid {
   detonationBudget = DETONATIONS_PER_TICK_CAP;
   /** This tick's powered/unpowered verdict for every Fio/Porta cell circuitPowered has already traced, keyed by grid index — a whole connected run gets settled once by the cell that happens to be visited first instead of repeating the same walk per cell. Cleared at the top of every `step()`. */
   circuitCache = new Map<number, boolean>();
-  /** This tick's open/shut verdict for every Porta cell doorPowered has already traced, keyed by grid index — see doorPowered: a connected slab of Porta is one body, open if *any* cell of it is individually fed, not just the cells actually touching a Fio/Alavanca. Cleared at the top of every `step()`. */
-  doorCache = new Map<number, boolean>();
+  /** This tick's active/inactive verdict for every Portão cell gateBodyActive has already traced, keyed by grid index — a connected slab of the SAME Portão variant is one body, active (blocking) if *any* cell of it is individually fed, not just the cells actually touching a Fio/Alavanca. Cleared at the top of every `step()`. */
+  gateCache = new Map<number, boolean>();
+  /** This tick's connected-body size for every explosive cell explosiveBodySize has already flooded, keyed by grid index — how much a single detonation pop's own blast force scales up by (see systems/fire.ts detonate/BODY_BONUS_COEFF). Cleared at the top of every `step()`, so as a body is actually consumed pop by pop, the next tick's fresh flood measures whatever's genuinely still connected. */
+  explosiveBodyCache = new Map<number, number>();
   /** This tick's linked/active verdict for every locked Clone cell cloneCircuitState has already traced, keyed by grid index — see cloneCircuitState: a connected clump of Clone is one body, exactly like a Porta slab, not a grid of independent cells. Packs both booleans into one int (bit 0 = linked, bit 1 = active) to avoid an object per cell. Cleared at the top of every `step()`. */
   cloneCache = new Map<number, number>();
   /** Same as `cloneCache`, but for connected clumps of Bloco de Calor/Frio (see bodyCircuitState) — HeatBlock and ColdBlock never share a cell so one cache safely serves both. Cleared at the top of every `step()`. */
@@ -783,6 +872,16 @@ export class SimGrid {
   /** Read-only positions (plus fade state) of a Ventilador's drifting wind motes, for the renderer to overlay. */
   get activeWindPuffs(): readonly { x: number; y: number; life: number; maxLife: number }[] {
     return this.windPuffs;
+  }
+
+  /** Read-only in-transit Líquido travelling through a Cano network, for the renderer to draw moving inside the pipe. */
+  get activePipeFlows(): readonly PipeFlow[] {
+    return this.pipeFlows;
+  }
+
+  /** Read-only positions (plus fade state) of a Ralo's decorative suction motes, for the renderer to overlay. */
+  get activeSuctionMotes(): readonly { x: number; y: number; life: number; maxLife: number }[] {
+    return this.suctionMotes;
   }
 
   /** Current global temperature in Celsius — see `updateTemperature`. */
@@ -1052,47 +1151,24 @@ export class SimGrid {
 
   /** Stamps LEVER_SHAPE, anchored at or near (cx, cy) — the nearest spot within two steps whose whole footprint is clear. Every cell starts off (CIRCUIT_ON_META clear), flagged LEVER_ARM_META or not per the shape. */
   dropLever(cx: number, cy: number): void {
-    for (let r = 0; r <= 2; r++) {
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-          const ax = cx + dx;
-          const ay = cy + dy;
-          let clear = true;
-          for (const [ox, oy] of LEVER_FRAME) {
-            if (!this.inBounds(ax + ox, ay + oy) || this.get(ax + ox, ay + oy) !== MaterialId.Empty) { clear = false; break; }
-          }
-          if (clear) {
-            for (const [kox, koy] of LEVER_KNOB_OFF) {
-              if (!this.inBounds(ax + kox, ay + koy) || this.get(ax + kox, ay + koy) !== MaterialId.Empty) { clear = false; break; }
-            }
-          }
-          if (!clear) continue;
-          for (const [ox, oy] of LEVER_FRAME) this.set(ax + ox, ay + oy, MaterialId.Lever, 0);
-          for (const [kox, koy] of LEVER_KNOB_OFF) this.set(ax + kox, ay + koy, MaterialId.Lever, LEVER_ARM_META); // starts off
-          return;
-        }
-      }
-    }
+    const anchor = findShapeAnchor(this, MaterialId.Lever, cx, cy);
+    if (!anchor) return;
+    const [ax, ay] = anchor;
+    for (const [ox, oy] of LEVER_FRAME) this.set(ax + ox, ay + oy, MaterialId.Lever, 0);
+    for (const [kox, koy] of LEVER_KNOB_OFF) this.set(ax + kox, ay + koy, MaterialId.Lever, LEVER_ARM_META); // starts off
   }
 
   /** Stamps DEFENSE_TOWER_SHAPE — a small crenellated turret — anchored at or near (cx, cy), at the nearest spot within two steps whose whole footprint is clear. */
   dropDefenseTower(cx: number, cy: number): void {
-    for (let r = 0; r <= 2; r++) {
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-          const ax = cx + dx, ay = cy + dy;
-          let clear = true;
-          for (const [ox, oy] of DEFENSE_TOWER_SHAPE) {
-            if (!this.inBounds(ax + ox, ay + oy) || this.get(ax + ox, ay + oy) !== MaterialId.Empty) { clear = false; break; }
-          }
-          if (!clear) continue;
-          for (const [ox, oy] of DEFENSE_TOWER_SHAPE) this.set(ax + ox, ay + oy, MaterialId.DefenseTower, 0);
-          return;
-        }
-      }
-    }
+    const anchor = findShapeAnchor(this, MaterialId.DefenseTower, cx, cy);
+    if (!anchor) return;
+    const [ax, ay] = anchor;
+    for (const [ox, oy] of DEFENSE_TOWER_SHAPE) this.set(ax + ox, ay + oy, MaterialId.DefenseTower, 0);
+  }
+
+  /** Where a FIXED_SHAPES piece would actually land if dropped at (cx, cy) right now, or null if it's not that kind of material or nothing in range fits — read-only, for the brush outline preview. See `findShapeAnchor`. */
+  findShapeAnchor(id: MaterialId, cx: number, cy: number): [number, number] | null {
+    return findShapeAnchor(this, id, cx, cy);
   }
 
   /** Stamps a filled circle of `radius` at every step along the segment, for the "line" brush. */
@@ -1303,7 +1379,8 @@ export class SimGrid {
     this.coldAccum = 0;
     this.detonationBudget = DETONATIONS_PER_TICK_CAP;
     if (this.circuitCache.size > 0) this.circuitCache.clear();
-    if (this.doorCache.size > 0) this.doorCache.clear();
+    if (this.gateCache.size > 0) this.gateCache.clear();
+    if (this.explosiveBodyCache.size > 0) this.explosiveBodyCache.clear();
     if (this.cloneCache.size > 0) this.cloneCache.clear();
     if (this.blockCache.size > 0) this.blockCache.clear();
     if (this.fanCache.size > 0) this.fanCache.clear();
@@ -1393,10 +1470,11 @@ export class SimGrid {
         else if (def.explosive && this.meta[i] > 0) this.stepFuse(x, y, i);
         else if (id === MaterialId.Clone) this.stepClone(x, y, i);
         else if (id === MaterialId.Wire) this.stepWire(x, y, i);
-        else if (id === MaterialId.Door) this.stepDoor(x, y, i);
+        else if (isGateMaterialImpl(id)) this.stepGate(x, y, i);
         else if (id === MaterialId.LightningRod) this.stepLightningRod(x, y, i);
         else if (id === MaterialId.Fan) this.stepFan(x, y, i);
         else if (id === MaterialId.DefenseTower) this.stepDefenseTower(x, y, i);
+        else if (id === MaterialId.Drain) this.stepDrain(x, y, i);
 
         // Ambient temperature effects — only make sense once the cell has
         // survived whatever the reactions above just did to it.
@@ -1433,6 +1511,8 @@ export class SimGrid {
     this.advanceDebris();
     this.advanceFlashes();
     this.advanceWindPuffs();
+    this.advancePipeFlows();
+    this.advanceSuctionMotes();
     this.stepLifeGeneration();
     this.updateTemperature();
   }
@@ -1560,8 +1640,25 @@ export class SimGrid {
 
   tryMove(fx: number, fy: number, tx: number, ty: number, density: number): boolean {
     if (!this.inBounds(tx, ty)) return false;
-    const targetId = this.get(tx, ty);
-    if (this.processed[this.index(tx, ty)]) return false;
+    // An open Portão is never actually a swap target — it's a fixed
+    // structure, not something that should go trading places with every
+    // grain of sand that drifts past it. Instead, exactly like Povo
+    // phasing through a house wall (see isGhost/folkThroughHouse), this
+    // looks straight past any run of consecutive Portão cells that aren't
+    // currently blocking this mover's own category, landing on whatever
+    // real cell lies beyond them instead — so the gate itself never
+    // budges, but Água can glide right through an open Portão Líquidos
+    // that a grain of Areia would just as happily glide through too, and
+    // both stop dead at one that's actively blocking them.
+    let landX = tx, landY = ty;
+    if (isGateMaterialImpl(this.get(landX, landY))) {
+      const movingCategory = MATERIALS[this.get(fx, fy)].category;
+      const landed = gateSkipLandingImpl(this, fx, fy, tx, ty, movingCategory);
+      if (!landed) return false;
+      [landX, landY] = landed;
+    }
+    const targetId = this.get(landX, landY);
+    if (this.processed[this.index(landX, landY)]) return false;
     if (!this.canDisplace(targetId, density)) return false;
     if (targetId !== MaterialId.Empty) {
       // Sinking through a liquid isn't instant — how quickly depends on how
@@ -1571,12 +1668,12 @@ export class SimGrid {
       // saturated it is), so anything — including more salt — sinks a
       // little slower through brine than through plain water.
       const into = MATERIALS[targetId];
-      const targetIndex = this.index(tx, ty);
+      const targetIndex = this.index(landX, landY);
       const salinityBonus = targetId === MaterialId.Water ? (this.meta[targetIndex] / 255) * 1.5 : 0;
       const sinkChance = (density - (into.density + salinityBonus)) / SINK_DENSITY_SCALE;
       if (Math.random() > sinkChance) return false;
     }
-    this.swap(fx, fy, tx, ty);
+    this.swap(fx, fy, landX, landY);
     return true;
   }
 
@@ -1613,6 +1710,11 @@ export class SimGrid {
   /** The small local pocket a single detonation consumes. See systems/fire.ts. */
   collectExplosivePocket(cx: number, cy: number): [number, number][] {
     return collectExplosivePocketImpl(this, cx, cy);
+  }
+
+  /** How many cells of connected explosive (x, y) is currently part of — feeds a detonation's own blast force. See systems/fire.ts. */
+  explosiveBodySize(x: number, y: number): number {
+    return explosiveBodySizeImpl(this, x, y);
   }
 
   /** Spends one pop of this tick's detonation budget, if any is left. See systems/fire.ts. */
@@ -2114,12 +2216,12 @@ export class SimGrid {
     return isMatureTreeImpl(this, tx, ty);
   }
 
-  /** Whether (x, y) is a Porta currently powered open. See folk/houses.ts. */
-  isOpenDoor(x: number, y: number): boolean {
-    return isOpenDoorImpl(this, x, y);
+  /** Whether (x, y) is a Portão folk/Esqueleto can currently just walk through. See folk/houses.ts. */
+  isOpenGate(x: number, y: number): boolean {
+    return isOpenGateImpl(this, x, y);
   }
 
-  /** A house wall/roof, a living tree trunk, or a powered-open Porta — folk pass straight through. See folk/houses.ts. */
+  /** A house wall/roof, a living tree trunk, or a Portão not currently blocking Povo/Fauna — folk pass straight through. See folk/houses.ts. */
   isGhost(x: number, y: number): boolean {
     return isGhostImpl(this, x, y);
   }
@@ -2149,19 +2251,19 @@ export class SimGrid {
     stepWireImpl(this, x, y, i);
   }
 
-  /** A connected slab of Porta is one body — open the instant any cell of it is fed. See systems/electricity.ts. */
-  doorPowered(x: number, y: number): boolean {
-    return doorPoweredImpl(this, x, y);
-  }
-
   /** Generic body-union power state for a connected clump of same-material cells. See systems/electricity.ts. */
   bodyCircuitState(x: number, y: number, matId: MaterialId, cache: Map<number, number>): { linked: boolean; active: boolean } {
     return bodyCircuitStateImpl(this, x, y, matId, cache);
   }
 
-  /** A Porta goes intangible and lights a shade brighter while powered. See systems/electricity.ts. */
-  stepDoor(x: number, y: number, i: number): void {
-    stepDoorImpl(this, x, y, i);
+  /** A connected slab of the same Portão variant is one body — activates (starts blocking) the instant any cell of it is fed. See systems/gates.ts. */
+  stepGate(x: number, y: number, i: number): void {
+    stepGateImpl(this, x, y, i);
+  }
+
+  /** Whether the material at (x, y) is a Portão currently blocking `category` — see systems/gates.ts. */
+  gateBlocksCategory(x: number, y: number, category: MaterialCategory): boolean {
+    return gateBlocksCategoryImpl(this, x, y, category);
   }
 
   /** Pulls in any free-falling Eletricidade charge within range and grounds it. See systems/electronics.ts. */
@@ -2182,6 +2284,21 @@ export class SimGrid {
   /** While powered, spots and shoots the nearest Esqueleto within range. See systems/electronics.ts. */
   stepDefenseTower(x: number, y: number, i: number): void {
     stepDefenseTowerImpl(this, x, y, i);
+  }
+
+  /** Sucks in touching Líquido, routing it through a connected Cano if one reaches an opening. See systems/drains.ts. */
+  stepDrain(x: number, y: number, i: number): void {
+    stepDrainImpl(this, x, y, i);
+  }
+
+  /** Advances every in-transit PipeFlow one tick along its path. See systems/drains.ts. */
+  advancePipeFlows(): void {
+    advancePipeFlowsImpl(this);
+  }
+
+  /** Advances every decorative Ralo suction mote one tick. See systems/drains.ts. */
+  advanceSuctionMotes(): void {
+    advanceSuctionMotesImpl(this);
   }
 
 

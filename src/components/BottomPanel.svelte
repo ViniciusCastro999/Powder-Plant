@@ -24,7 +24,6 @@
     onclear: () => void;
     onhints: () => void;
     onmaps: () => void;
-    ontour: () => void;
   }
   let {
     selected = $bindable(),
@@ -37,7 +36,6 @@
     onclear,
     onhints,
     onmaps,
-    ontour,
   }: Props = $props();
 
   /** Which category's tile grid is currently expanded — a single-open accordion (never fully collapsed, so the footer's height stays constant) starting on whichever category the initial selection belongs to. */
@@ -172,9 +170,6 @@
         aria-pressed={paused}
       >
         <Icon name={paused ? "play" : "pause"} size={15} />
-      </button>
-      <button class="icon-btn" onclick={ontour} title={t("welcomeTour")} aria-label={t("welcomeTour")}>
-        <Icon name="sparkle" size={15} />
       </button>
       <button class="icon-btn" onclick={onhints} title={t("hints")} aria-label={t("hints")}>
         <Icon name="help" size={15} />

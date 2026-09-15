@@ -629,19 +629,96 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     conductive: false,
     spontaneousIgniteTemp: NEVER_SPONTANEOUS,
   },
-  [MaterialId.Door]: {
-    id: MaterialId.Door,
-    name: "Porta",
+  [MaterialId.GateGeneral]: {
+    id: MaterialId.GateGeneral,
+    name: "Portão Geral",
     category: MaterialCategory.Solid,
-    color: [104, 70, 46], // stained wood; the renderer lightens it while open
-    density: 8,
-    flammable: true,
-    burnTicks: 200,
-    ignitionChance: 0.05,
+    color: [96, 104, 118], // cold gunmetal-blue — the imposing "blocks everything" gate
+    density: 9,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
     explosive: false,
-    acidResistance: 4,
+    // Immune, like the other circuit fixtures (Alavanca, Para-raio) — a
+    // resistance above 0 still means Ácido eventually eats through given
+    // enough exposure (that's what happened last time), and a gate isn't
+    // meant to ever fail that way at all. 0 is the actual "not even a
+    // valid target" value — see stepAcid's own `acidResistance > 0` check.
+    acidResistance: 0,
     conductive: false,
-    spontaneousIgniteTemp: 110,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.GateCreature]: {
+    id: MaterialId.GateCreature,
+    name: "Portão Povo e Fauna",
+    category: MaterialCategory.Solid,
+    color: [150, 112, 72], // warm fence-brown — the "living things" gate
+    density: 9,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    acidResistance: 0,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.GateLiquid]: {
+    id: MaterialId.GateLiquid,
+    name: "Portão Líquidos",
+    category: MaterialCategory.Solid,
+    color: [70, 124, 168], // water-blue — the "liquids" gate
+    density: 9,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    acidResistance: 0,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.GatePowder]: {
+    id: MaterialId.GatePowder,
+    name: "Portão Pó",
+    category: MaterialCategory.Solid,
+    color: [182, 152, 104], // sandy tan — the "powders" gate
+    density: 9,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    acidResistance: 0,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.Drain]: {
+    id: MaterialId.Drain,
+    name: "Ralo",
+    category: MaterialCategory.Solid,
+    color: [88, 96, 100], // dark grate-iron
+    density: 9,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    // Immune, like the other circuit fixtures — a drain that dissolved or
+    // melted wouldn't stay a drain for long.
+    acidResistance: 0,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.Pipe]: {
+    id: MaterialId.Pipe,
+    name: "Cano",
+    category: MaterialCategory.Solid,
+    color: [120, 128, 134], // duller galvanized tube
+    density: 9,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    acidResistance: 0,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
   },
   [MaterialId.LightningRod]: {
     id: MaterialId.LightningRod,
@@ -778,8 +855,20 @@ export const PALETTE_CATEGORIES: PaletteCategory[] = [
     label: "Elétricos",
     icon: "electricity",
     materials: [
-      MaterialId.Electricity, MaterialId.Lever, MaterialId.Wire, MaterialId.Door,
+      MaterialId.Electricity, MaterialId.Lever, MaterialId.Wire,
       MaterialId.LightningRod, MaterialId.Fan, MaterialId.DefenseTower,
+      MaterialId.Drain, MaterialId.Pipe,
+    ],
+  },
+  {
+    id: "portoes",
+    label: "Portões",
+    icon: "gate",
+    // Geral first (the "blocks everything" one players reach for by
+    // default), then the three single-category ones in the same order the
+    // categories are always listed elsewhere (Povo/Fauna, Líquidos, Pó).
+    materials: [
+      MaterialId.GateGeneral, MaterialId.GateCreature, MaterialId.GateLiquid, MaterialId.GatePowder,
     ],
   },
   {
@@ -839,8 +928,13 @@ export const ICON_BY_MATERIAL: Record<MaterialId, string> = {
   [MaterialId.Flor]: "plant",
   [MaterialId.Lever]: "lever",
   [MaterialId.Wire]: "wire",
-  [MaterialId.Door]: "door",
+  [MaterialId.GateGeneral]: "gate-general",
+  [MaterialId.GateCreature]: "gate-creature",
+  [MaterialId.GateLiquid]: "gate-liquid",
+  [MaterialId.GatePowder]: "gate-powder",
   [MaterialId.LightningRod]: "lightning-rod",
   [MaterialId.Fan]: "fan",
   [MaterialId.DefenseTower]: "defense-tower",
+  [MaterialId.Drain]: "drain",
+  [MaterialId.Pipe]: "pipe",
 };

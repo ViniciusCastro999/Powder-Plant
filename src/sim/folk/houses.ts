@@ -5,7 +5,7 @@ import {
 } from "../grid";
 import { MaterialId, MaterialCategory } from "../types";
 import { MATERIALS } from "../materials";
-import { CIRCUIT_ON_META } from "../metaBits";
+import { isGateMaterial } from "../systems/gates";
 import {
   HOUSE_WALL_META, HOUSE_ANCHOR_META, HOUSE_KIND_MASK, HOUSE_FLOOR, HOUSE_DECK, HOUSE_STAIR,
   HOUSE_WALL, HOUSE_WALLS, HOUSE_WALL_MATERIAL, HOUSE_WALL_ICE, HOUSE_WALL_WOOD, HOUSE_WALL_BRICK,
@@ -803,18 +803,18 @@ export function isMatureTree(grid: SimGrid, tx: number, ty: number): boolean {
     return grid.treeCrown(tx, grid.treeBase(tx, ty)) >= LUMBERJACK_MIN_TREE;
   }
 
-  /** Whether (x, y) is a Porta currently powered open. */
-export function isOpenDoor(grid: SimGrid, x: number, y: number): boolean {
-    return grid.inBounds(x, y) && grid.material[grid.index(x, y)] === MaterialId.Door &&
-      (grid.meta[grid.index(x, y)] & CIRCUIT_ON_META) !== 0;
+  /** Whether (x, y) is a Portão a folk (or Esqueleto) can currently just walk through — any of the four variants, as long as it isn't actively blocking Povo/Fauna right now (an unpowered gate never blocks anyone; Portão Líquidos/Pó never block Povo/Fauna even powered). */
+export function isOpenGate(grid: SimGrid, x: number, y: number): boolean {
+    return grid.inBounds(x, y) && isGateMaterial(grid.material[grid.index(x, y)]) &&
+      !grid.gateBlocksCategory(x, y, MaterialCategory.Creature);
   }
 
   /**
    * Whichever kind of "there, but not really" cell a folk simply walks
-   * through: a house wall/roof, a living tree trunk, or a powered-open
-   * Porta. Every obstacle check in folkWalk treats all three identically —
-   * this is the one place that says so.
+   * through: a house wall/roof, a living tree trunk, or a Portão not
+   * currently blocking Povo/Fauna. Every obstacle check in folkWalk treats
+   * all three identically — this is the one place that says so.
    */
 export function isGhost(grid: SimGrid, x: number, y: number): boolean {
-    return grid.houseGhost(x, y) || grid.isTrunk(x, y) || grid.isOpenDoor(x, y);
+    return grid.houseGhost(x, y) || grid.isTrunk(x, y) || grid.isOpenGate(x, y);
   }

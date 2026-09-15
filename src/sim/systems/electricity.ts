@@ -378,41 +378,6 @@ export function stepWire(grid: SimGrid, x: number, y: number, i: number): void {
 }
 
 /**
- * A connected slab of Porta is one body, not a grid of independent cells:
- * open the instant *any* cell of it is individually fed (`circuitPowered`
- * — touching an Alavanca/Fio directly), not just the cells actually
- * touching one. Traces outward through connected Porta only (a Fio's own
- * reach through Porta stops dead — see circuitPowered — so a door doesn't
- * accidentally wire two separate doors together through a shared Fio;
- * this walk is the one that unions a single door's own cells). Settled
- * once per connected slab per tick (see `doorCache`).
- */
-export function doorPowered(grid: SimGrid, x: number, y: number): boolean {
-  const startI = grid.index(x, y);
-  const cached = grid.doorCache.get(startI);
-  if (cached !== undefined) return cached;
-  const visited = new Set<number>([startI]);
-  const stack = [startI];
-  let found = false;
-  let budget = CIRCUIT_FLOOD_CAP;
-  while (stack.length > 0 && budget-- > 0) {
-    const i = stack.pop()!;
-    const cx = i % grid.width, cy = (i / grid.width) | 0;
-    if (circuitPowered(grid, cx, cy)) found = true;
-    for (const [dx, dy] of NEIGHBORS_8) {
-      const nx = cx + dx, ny = cy + dy;
-      if (!grid.inBounds(nx, ny)) continue;
-      const j = grid.index(nx, ny);
-      if (grid.material[j] !== MaterialId.Door || visited.has(j)) continue;
-      visited.add(j);
-      stack.push(j);
-    }
-  }
-  for (const v of visited) grid.doorCache.set(v, found);
-  return found;
-}
-
-/**
  * Generic body-union power state for a connected clump of same-material
  * cells that only gate on a circuit when actually touched (Bloco de
  * Calor/Frio, Clone) — one body, exactly like a Porta slab (see
@@ -463,16 +428,3 @@ export function bodyCircuitState(
   return { linked, active };
 }
 
-/**
- * A Porta goes intangible (see `isGhost`) and lights a shade brighter —
- * the renderer reads the same bit — for as long as it's powered by a
- * touching Alavanca or Fio, and shuts the instant that power's gone. It
- * doesn't animate open; that recolor and the change in what can walk
- * through it are the only tells.
- */
-export function stepDoor(grid: SimGrid, x: number, y: number, i: number): void {
-  grid.processed[i] = 1;
-  const open = doorPowered(grid, x, y);
-  if (((grid.meta[i] & CIRCUIT_ON_META) !== 0) !== open) grid.wake(x, y);
-  grid.meta[i] = open ? CIRCUIT_ON_META : 0;
-}

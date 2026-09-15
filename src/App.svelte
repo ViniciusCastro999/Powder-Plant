@@ -66,9 +66,8 @@
     onclear={() => canvasRef?.clear()}
     onhints={() => (hintsOpen = true)}
     onmaps={() => (mapsOpen = true)}
-    ontour={() => (onboardingOpen = true)}
   />
-  <HintsModal open={hintsOpen} onclose={() => (hintsOpen = false)} />
+  <HintsModal open={hintsOpen} onclose={() => (hintsOpen = false)} ontour={() => (onboardingOpen = true)} />
   <MapsModal
     open={mapsOpen}
     onclose={() => (mapsOpen = false)}

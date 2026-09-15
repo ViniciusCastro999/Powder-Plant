@@ -155,13 +155,18 @@ export const enum MaterialId {
    */
   Wire = 41,
   /**
-   * A Solid wall that goes intangible to folk and creatures — walked
-   * through exactly like a house wall — for as long as it's powered by a
-   * touching Alavanca or Fio, and lights a shade brighter while it is. It
-   * doesn't animate open; the color shift and the change in what can pass
-   * through it are the only tells. See grid.ts circuitPowered / isGhost.
+   * A normal paintable Sólido gate — open (passable to everything) while
+   * unpowered, and while powered by a touching Alavanca or Fio, blocks Pó,
+   * Líquido AND Povo/Fauna all at once (the other three Portões below each
+   * block just one of those). A blocked category can't enter or pass
+   * through the cell at all (Pó/Líquido/Gás skip clean past it toward
+   * whatever's beyond, the same way Povo phases through a house wall,
+   * rather than physically swapping into it); an unblocked category always
+   * passes through it, powered or not. Also blocks the wind itself (and
+   * its visible motes) while powered, regardless of which category is
+   * actually blocked — see systems/gates.ts.
    */
-  Door = 42,
+  GateGeneral = 42,
   /**
    * A normal paintable Sólido, like Vidro or Metal — paint a single cell or
    * a whole mass of it. Pulls in any free-falling Eletricidade charge
@@ -197,6 +202,34 @@ export const enum MaterialId {
    * stand next to it. See systems/electronics.ts stepDefenseTower.
    */
   DefenseTower = 45,
+  /** Same paintable-gate idea as Portão Geral, but powered blocks ONLY Povo and Fauna (every Creature — Formiga/Pássaro/Peixe and every Pip). See systems/gates.ts. */
+  GateCreature = 46,
+  /** Same paintable-gate idea as Portão Geral, but powered blocks ONLY Líquido. See systems/gates.ts. */
+  GateLiquid = 47,
+  /** Same paintable-gate idea as Portão Geral, but powered blocks ONLY Pó. See systems/gates.ts. */
+  GatePowder = 48,
+  /**
+   * A normal paintable Sólido — immune to Ácido, Lava and fire alike. Any
+   * Líquido touching it has a small, weak chance each tick of being sucked
+   * in and vanishing — unless it's also touching a connected Cano network
+   * with an actual opening to empty air, in which case the liquid instead
+   * flows visibly through the pipe (see systems/drains.ts) and reappears
+   * at the far end, rather than just disappearing. Also drifts a faint,
+   * purely decorative trickle of motes toward itself (no physical effect
+   * on anything) as a visual tell that it's actively drawing something in.
+   * Switches on/off exactly like Ventilador: a connected clump is one
+   * fixture, running unconditionally unless wired to a Fio/Alavanca, in
+   * which case the whole clump switches together.
+   */
+  Drain = 49,
+  /**
+   * A normal paintable Sólido — the same Ácido/Lava/fire immunity as Ralo.
+   * Carries no charge or current of its own; it only matters as the
+   * conduit a connected Ralo routes sucked-up Líquido through on its way
+   * back out into the open, cell by connected cell, instead of just
+   * consuming it. See systems/drains.ts.
+   */
+  Pipe = 50,
 }
 
 export const enum BrushShape {

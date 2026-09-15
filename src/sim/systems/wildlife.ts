@@ -7,6 +7,7 @@ import { HOUSE_WALL_META } from "../houseBlueprints";
 import {
   CREATURE_FED_MAX, CREATURE_STARVE_DEATH_CHANCE, packCreature, creatureFacing, creatureFed, creatureTimer,
 } from "../creatureMeta";
+import { isGateMaterial, gateSkipLanding } from "./gates";
 
 /*
  * ── Creatures (Formiga, Pássaro, Peixe) ───────────────────────────────────
@@ -260,7 +261,17 @@ export function stepAnt(grid: SimGrid, x: number, y: number, i: number): void {
     grid.meta[i] = packCreature(-facing, 0, fed);
     return;
   }
-  if (fwdId === MaterialId.Empty) {
+  // A Portão not currently blocking Povo/Fauna is never actually a step
+  // target itself (it's a fixed structure — see gateSkipLanding) — this
+  // looks straight through it for the real open cell beyond, the same way
+  // an ant would walk through any other doorway.
+  if (isGateMaterial(fwdId)) {
+    const landed = gateSkipLanding(grid, x, y, fwd, y, MaterialCategory.Creature);
+    if (landed && grid.get(landed[0], landed[1]) === MaterialId.Empty) {
+      grid.moveCreature(x, y, landed[0], landed[1], packCreature(facing, 0, fed));
+      return;
+    }
+  } else if (fwdId === MaterialId.Empty) {
     const belowFwd = grid.inBounds(fwd, y + 1) ? grid.get(fwd, y + 1) : MaterialId.Stone;
     const target: [number, number] = belowFwd === MaterialId.Empty ? [fwd, y + 1] : [fwd, y];
     grid.moveCreature(x, y, target[0], target[1], packCreature(facing, 0, fed));
@@ -455,9 +466,21 @@ export function stepBird(grid: SimGrid, x: number, y: number, i: number): void {
     if (mx === 0 && my === 0) continue;
     const nx = x + mx;
     const ny = y + my;
-    if (grid.inBounds(nx, ny) && grid.get(nx, ny) === MaterialId.Empty) {
+    if (!grid.inBounds(nx, ny)) continue;
+    const nId = grid.get(nx, ny);
+    if (nId === MaterialId.Empty) {
       grid.moveCreature(x, y, nx, ny, packCreature(facing, 0, fed));
       return;
+    }
+    // Same "never actually a step target" treatment as Formiga — a Portão
+    // not currently blocking Povo/Fauna is looked straight through for the
+    // real open cell beyond it (see gateSkipLanding).
+    if (isGateMaterial(nId)) {
+      const landed = gateSkipLanding(grid, x, y, nx, ny, MaterialCategory.Creature);
+      if (landed && grid.get(landed[0], landed[1]) === MaterialId.Empty) {
+        grid.moveCreature(x, y, landed[0], landed[1], packCreature(facing, 0, fed));
+        return;
+      }
     }
   }
   grid.meta[i] = packCreature(-facing, 0, fed);

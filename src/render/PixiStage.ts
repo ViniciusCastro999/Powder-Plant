@@ -56,6 +56,10 @@ const SHRAPNEL_ALPHA = 0.55;
 const WIND_PUFF_COLOR: readonly [number, number, number] = [220, 232, 240];
 /** Same blending idea as Shrapnel's alpha, but much fainter — a wind mote is barely-there, just enough of a hint that a draft is moving through, not a visible object in its own right. */
 const WIND_PUFF_ALPHA = 0.16;
+/** A pale, cool near-white for a Ralo's decorative suction motes — same spirit as WIND_PUFF_COLOR, "bem pouca e fraca". */
+const SUCTION_MOTE_COLOR: readonly [number, number, number] = [200, 224, 232];
+/** Fainter even than a wind mote — the whole point is a weak, barely-there trickle, not a visible vortex. */
+const SUCTION_MOTE_ALPHA = 0.12;
 
 /**
  * Background color anchors, coldest to hottest — [temperature, [r,g,b]].
@@ -464,10 +468,36 @@ export class PixiStage {
         // Dead copper unpowered; a live, glowing orange the instant current
         // reaches it.
         if ((meta[i] & CIRCUIT_ON_META) !== 0) { r = 235; g = 140; b = 40; }
-      } else if (id === MaterialId.Door) {
-        // Doesn't animate open — this lighter cast is the only visual sign
-        // it's currently passable.
-        if ((meta[i] & CIRCUIT_ON_META) !== 0) { r += 70; g += 55; b += 45; }
+      } else if (
+        id === MaterialId.GateGeneral || id === MaterialId.GateCreature
+        || id === MaterialId.GateLiquid || id === MaterialId.GatePowder
+      ) {
+        // Each Portão variant gets its own distinct pattern on top of its
+        // own base color, so the four read as different fixtures at a
+        // glance instead of just differently-tinted blocks — then, same
+        // "on = brighter" convention as every other circuit fixture here
+        // (Fio, Alavanca, Bloco de Calor/Frio…), it dims while unpowered
+        // (open, passable) and brightens the instant it activates (closed,
+        // blocking).
+        const glx = i % width;
+        const gly = (i / width) | 0;
+        if (id === MaterialId.GateGeneral) {
+          // A portcullis: tight vertical iron bars.
+          if (glx % 3 === 0) { r *= 0.72; g *= 0.74; b *= 0.78; } else { r += 8; g += 10; b += 14; }
+        } else if (id === MaterialId.GateCreature) {
+          // A woven wicker fence: crossed diagonal lattice.
+          const d1 = ((glx + gly) % 6 + 6) % 6 === 0;
+          const d2 = ((glx - gly) % 6 + 6) % 6 === 0;
+          if (d1 || d2) { r *= 0.7; g *= 0.72; b *= 0.78; } else { r += 10; g += 6; b -= 4; }
+        } else if (id === MaterialId.GateLiquid) {
+          // Horizontal ripple bands, like a water gauge.
+          if (((gly * 2 + (glx >> 2)) % 6) < 2) { r *= 0.75; g *= 0.85; b += 12; } else { r += 6; g += 12; b += 16; }
+        } else {
+          // Fine sandy stipple.
+          const grain = ((glx * 7 + gly * 13) % 11) === 0;
+          if (grain) { r *= 0.7; g *= 0.72; b *= 0.76; } else { r += 8; g += 6; b -= 2; }
+        }
+        if ((meta[i] & CIRCUIT_ON_META) !== 0) { r += 55; g += 45; b += 35; } else { r *= 0.55; g *= 0.55; b *= 0.6; }
       } else if (id === MaterialId.HeatBlock || id === MaterialId.ColdBlock) {
         // Standalone (never touched a Fio/Alavanca) it renders exactly as
         // it always has — full-strength, no tell needed since it's simply
@@ -516,6 +546,23 @@ export class PixiStage {
         // Inert gunmetal until wired up — like Porta, only powered does it
         // actually watch for a Esqueleto, so the glow is the only tell.
         if ((meta[i] & CIRCUIT_ON_META) !== 0) { r += 45; g += 55; b += 35; } else { r *= 0.6; g *= 0.6; b *= 0.6; }
+      } else if (id === MaterialId.Drain) {
+        // A grate: sparse round holes over the housing, reading as an
+        // actual drain cover rather than a flat block.
+        const dlx = i % width, dly = (i / width) | 0;
+        if (dlx % 4 === 0 && dly % 4 === 0) { r *= 0.4; g *= 0.45; b *= 0.5; } else { r *= 0.92; g *= 0.95; b *= 0.97; }
+        // Same idea as Bloco de Calor/Frio: standalone it just always runs
+        // (no tell needed), wired up it dims dead while off and brightens,
+        // cool-toned, while on.
+        if ((meta[i] & CIRCUIT_LINKED_META) !== 0) {
+          if ((meta[i] & CIRCUIT_ON_META) !== 0) { r += 20; g += 45; b += 55; } else { r *= 0.4; g *= 0.4; b *= 0.4; }
+        }
+      } else if (id === MaterialId.Pipe) {
+        // Banded tube segments — periodic darker rings suggesting pipe
+        // joints, reading as a real conduit instead of a flat block. No
+        // on/off state of its own; only a connected Ralo's own tell matters.
+        const plx = i % width, ply = (i / width) | 0;
+        if ((plx + ply) % 5 === 0) { r *= 0.65; g *= 0.68; b *= 0.72; } else { r *= 1.03; g *= 1.03; b *= 1.03; }
       }
       // Liquids and moving creatures constantly swap cells, so grain keyed
       // on grid position (not particle identity) would flicker as they
@@ -654,6 +701,40 @@ export class PixiStage {
       this.pixels[p] = clamp8(this.pixels[p] + (wr - this.pixels[p]) * t);
       this.pixels[p + 1] = clamp8(this.pixels[p + 1] + (wg - this.pixels[p + 1]) * t);
       this.pixels[p + 2] = clamp8(this.pixels[p + 2] + (wb - this.pixels[p + 2]) * t);
+      this.pixels[p + 3] = 255;
+    }
+
+    // Líquido in transit through a Cano — drawn with the real material's
+    // own color, solid rather than blended, since it's genuine matter that
+    // just happens to be mid-flight through a pipe rather than sitting in
+    // the grid this instant — the whole point is to actually see it moving
+    // through the tube, not just imply it.
+    for (const f of this.grid.activePipeFlows) {
+      const [ax, ay] = f.path[f.index];
+      const [bx, by] = f.path[Math.min(f.index + 1, f.path.length - 1)];
+      const gx = Math.round(ax + (bx - ax) * f.t);
+      const gy = Math.round(ay + (by - ay) * f.t);
+      if (!this.grid.inBounds(gx, gy)) continue;
+      const p = this.grid.index(gx, gy) * 4;
+      const [lr, lg, lb] = MATERIALS[f.material].color;
+      this.pixels[p] = lr;
+      this.pixels[p + 1] = lg;
+      this.pixels[p + 2] = lb;
+      this.pixels[p + 3] = 255;
+    }
+
+    // A Ralo's decorative suction motes — same translucent-overlay idea as
+    // the wind motes, fainter still ("bem pouca e fraca").
+    const [smr, smg, smb] = SUCTION_MOTE_COLOR;
+    for (const m of this.grid.activeSuctionMotes) {
+      const gx = Math.round(m.x);
+      const gy = Math.round(m.y);
+      if (!this.grid.inBounds(gx, gy)) continue;
+      const p = this.grid.index(gx, gy) * 4;
+      const t = SUCTION_MOTE_ALPHA * (m.life / m.maxLife);
+      this.pixels[p] = clamp8(this.pixels[p] + (smr - this.pixels[p]) * t);
+      this.pixels[p + 1] = clamp8(this.pixels[p + 1] + (smg - this.pixels[p + 1]) * t);
+      this.pixels[p + 2] = clamp8(this.pixels[p + 2] + (smb - this.pixels[p + 2]) * t);
       this.pixels[p + 3] = 255;
     }
 

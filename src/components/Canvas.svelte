@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { SimGrid } from "../sim/grid";
+  import { SimGrid, FIXED_SHAPES } from "../sim/grid";
   import { PixiStage } from "../render/PixiStage";
   import { BrushShape, MaterialId, type DragBlob } from "../sim/types";
   import { SINGLE_DROP_MATERIALS } from "../sim/materials";
@@ -57,6 +57,7 @@
   const cursorRing = $derived.by(() => {
     void frameTick;
     if (!hoverCell || !stage || (pointerDown && showsPreview)) return null;
+    if (FIXED_SHAPES[selectedMaterial]) return null; // shapeOutline below takes over for these
     const cs = stage.cellSize;
     const box = stage.spriteBox;
     return {
@@ -64,6 +65,37 @@
       cy: box.y + (hoverCell[1] + 0.5) * cs,
       r: Math.max(cs * 0.6, (singleDrop ? 0.5 : brushSize / 2) * cs),
     };
+  });
+
+  /**
+   * For a material that stamps a fixed multi-cell footprint (Alavanca, Torre
+   * de defesa) — the exact silhouette it'll actually land as, traced as a
+   * clean outline (not a grid of individual cell borders) so the player can
+   * see the real size and position before committing, the same anchor
+   * `grid.findShapeAnchor` would actually place at. Turns red instead of the
+   * usual paint-white when nothing in range is clear enough to fit it.
+   */
+  const shapeOutline = $derived.by(() => {
+    void frameTick;
+    if (!hoverCell || !stage || !grid) return null;
+    const shape = FIXED_SHAPES[selectedMaterial];
+    if (!shape) return null;
+    const anchor = grid.findShapeAnchor(selectedMaterial, hoverCell[0], hoverCell[1]);
+    const [originX, originY] = anchor ?? hoverCell;
+    const cs = stage.cellSize;
+    const box = stage.spriteBox;
+    const px = (gx: number, gy: number) => `${box.x + gx * cs} ${box.y + gy * cs}`;
+    const cellSet = new Set(shape.map(([x, y]) => `${x},${y}`));
+    let d = "";
+    for (const [x, y] of shape) {
+      // One boundary edge per side that's NOT shared with another cell of
+      // the same shape — collectively, exactly the silhouette's contour.
+      if (!cellSet.has(`${x},${y - 1}`)) d += `M${px(originX + x, originY + y)} L${px(originX + x + 1, originY + y)} `;
+      if (!cellSet.has(`${x},${y + 1}`)) d += `M${px(originX + x, originY + y + 1)} L${px(originX + x + 1, originY + y + 1)} `;
+      if (!cellSet.has(`${x - 1},${y}`)) d += `M${px(originX + x, originY + y)} L${px(originX + x, originY + y + 1)} `;
+      if (!cellSet.has(`${x + 1},${y}`)) d += `M${px(originX + x + 1, originY + y)} L${px(originX + x + 1, originY + y + 1)} `;
+    }
+    return { d, blocked: !anchor };
   });
 
   // Switching away from a two-click shape tool drops any pending anchor.
@@ -300,8 +332,11 @@
     if (brushShape === BrushShape.Line || onToggleable) e.preventDefault();
   }}
 >
-  {#if cursorRing || (showsPreview && previewStart && previewCurrent)}
+  {#if cursorRing || shapeOutline || (showsPreview && previewStart && previewCurrent)}
     <svg class="preview-overlay">
+      {#if shapeOutline}
+        <path class="cursor shape {shapeOutline.blocked ? 'blocked' : 'paint'}" d={shapeOutline.d} />
+      {/if}
       {#if cursorRing}
         {@const kind = brushShape === BrushShape.Drag ? "drag" : selectedMaterial === 0 ? "erase" : "paint"}
         <circle class="cursor {kind}" cx={cursorRing.cx} cy={cursorRing.cy} r={cursorRing.r} />
@@ -380,6 +415,22 @@
     stroke: rgba(120, 190, 255, 0.95);
     fill: rgba(120, 190, 255, 0.1);
   }
+  /* The traced silhouette of a fixed-shape piece (Alavanca, Torre de
+     defesa) — a solid outline, not dashed, so it reads as "this exact shape
+     lands here" rather than just a rough area like the plain cursor ring. */
+  .preview-overlay path.cursor.shape {
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    opacity: 0.95;
+  }
+  .preview-overlay path.cursor.shape.paint {
+    stroke: rgba(255, 255, 255, 0.9);
+  }
+  .preview-overlay path.cursor.shape.blocked {
+    stroke: rgba(255, 96, 96, 0.95);
+  }
+
   .preview-overlay circle.cursor-dot {
     stroke: none;
     fill: rgba(255, 255, 255, 0.9);

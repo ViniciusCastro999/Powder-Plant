@@ -80,8 +80,23 @@ const DEBRIS_MAX_LIFE = 140;
  * touch near the rim still only has a small chance.
  */
 const BLAST_IGNITE_FACTOR = 25;
-/** How much extra blast scale (decorative Shrapnel count, starting energy) each extra cell in the small local *pocket* a single detonation consumes adds — see `detonate`/`collectExplosivePocket`. The pocket is only ~1-9 cells, so this stays modest; a big pile's force comes from a long chain of these small pops, not one huge blast. */
+/** How much extra blast scale (decorative Shrapnel count, starting energy) each extra cell in the small local *pocket* a single detonation consumes adds — see `detonate`/`collectExplosivePocket`. The pocket is only ~1-9 cells, so this alone stays modest; see BODY_BONUS_COEFF for how the *rest* of a big connected charge also feeds in. */
 const CLUSTER_BONUS_PER_CHARGE = 0.2;
+/**
+ * How much of the connected explosive body a pop is part of (beyond its
+ * own small local pocket — see `explosiveBodySize`) also feeds into that
+ * pop's own power, by the SQUARE ROOT of the body's size rather than
+ * linearly — a real 17,000-cell block of C4 should visibly hit far harder
+ * than a lone 9-cell scatter, but scaling every single pop in a chain of
+ * hundreds of them directly by the full body size would make each one
+ * individually enormous (and enormously expensive to sweep — see
+ * BLAST_RADIUS_MAX). The square root keeps a huge charge dramatically more
+ * powerful throughout its whole chain reaction without either running away
+ * or melting the frame rate.
+ */
+const BODY_BONUS_COEFF = 1.4;
+/** Hard ceiling on a single pop's blast radius, however large the body it's part of is — without this, a truly massive charge's `Math.sqrt(power)` growth would eventually turn one pop's own blast scan (already O(radius²)) into the same runaway cost floodFuseConnected used to have. */
+const BLAST_RADIUS_MAX = 60;
 /**
  * When an explosive first goes off, the detonation floods the whole
  * *connected* body of explosive it's part of and lights a fuse on every
@@ -95,6 +110,8 @@ const CHAIN_BASE_DELAY = 1;
 const CHAIN_RINGS_PER_TICK = 4;
 /** Cap on how many connected cells one detonation floods and fuses in a single pass — a rendering/perf budget; anything past it is picked up by the next detonation's own flood. */
 const CHAIN_FLOOD_CAP = 1600;
+/** Cap on how many connected cells `explosiveBodySize` counts — generous well past any charge a player would actually paint, so a genuinely huge block's true size is still what feeds the blast power, not an artificially truncated one. Separate from CHAIN_FLOOD_CAP (which bounds *lighting new fuses*, a much cheaper per-call operation this can safely afford to budget more for, memoized once per body per tick — see `explosiveBodySize`). */
+const EXPLOSIVE_BODY_FLOOD_CAP = 60000;
 /** Ticks a *separate* Pólvora/C4 pile (one the blast reached across a gap, not touching the charge that went off) waits before detonating — a scattered minefield ripples outward over several frames instead of flashing to nothing at once. */
 const CHAIN_DELAY_SEPARATE = 5;
 /** Decorative Shrapnel sparks spawned per individual detonation, scaled by its small pocket size. Low on purpose: a big pile now produces a long chain of these small pops rather than one massive burst. */
@@ -264,6 +281,11 @@ export function igniteAt(grid: SimGrid, x: number, y: number): void {
    * shares the same mechanism for consistency).
    */
 export function detonate(grid: SimGrid, cx: number, cy: number): void {
+    // Measured before the pocket below clears any of it away — how much
+    // explosive is connected here right now is what this specific pop's
+    // own force is proportional to (see BODY_BONUS_COEFF), not just its own
+    // tiny immediate pocket.
+    const bodySize = grid.explosiveBodySize(cx, cy);
     const pocket = grid.collectExplosivePocket(cx, cy);
 
     // Only this small pocket is consumed directly — the rest of a connected
@@ -288,8 +310,12 @@ export function detonate(grid: SimGrid, cx: number, cy: number): void {
     // cheap.
     grid.floodFuseConnected(pocket);
 
-    const power = 1 + (pocket.length - 1) * CLUSTER_BONUS_PER_CHARGE;
-    const radius = BLAST_BASE_RADIUS * Math.sqrt(power);
+    // The rest of the connected body (beyond this pop's own small pocket)
+    // contributes too, by its square root rather than linearly — see
+    // BODY_BONUS_COEFF.
+    const bodyBonus = Math.sqrt(Math.max(0, bodySize - pocket.length)) * BODY_BONUS_COEFF;
+    const power = 1 + (pocket.length - 1) * CLUSTER_BONUS_PER_CHARGE + bodyBonus;
+    const radius = Math.min(BLAST_RADIUS_MAX, BLAST_BASE_RADIUS * Math.sqrt(power));
     grid.applyBlastImpulse(cx, cy, ex, ey, radius);
 
     // Decorative heat-sparks, radiating from the epicentre.
@@ -409,6 +435,45 @@ export function collectExplosivePocket(grid: SimGrid, cx: number, cy: number): [
     return cells;
   }
 
+  /**
+   * How many cells of connected explosive (x, y) is currently part of —
+   * what a single pop's own blast force scales up by, on top of its small
+   * immediate pocket (see `detonate`/BODY_BONUS_COEFF), so a genuinely
+   * massive painted charge hits proportionally harder than a scattered
+   * handful of loose grains. A real BFS over the whole body, not just the
+   * ~9-cell pocket `collectExplosivePocket` consumes — but settled once per
+   * connected body per tick (`grid.explosiveBodyCache`), the same "memoize
+   * the flood" pattern every other body-union check in this codebase uses
+   * (fanBody, gateBodyActive, bodyCircuitState…), so a long chain reaction's
+   * many pops within the same tick share one flood instead of each redoing
+   * it. The cache clears every tick, so as the body is actually consumed
+   * pop by pop, the next tick's fresh flood naturally measures whatever's
+   * genuinely still connected — the blast doesn't keep hitting as hard as
+   * the original charge once most of it is already gone.
+   */
+export function explosiveBodySize(grid: SimGrid, x: number, y: number): number {
+    const startI = grid.index(x, y);
+    const cached = grid.explosiveBodyCache.get(startI);
+    if (cached !== undefined) return cached;
+    const visited = new Set<number>([startI]);
+    const stack = [startI];
+    let budget = EXPLOSIVE_BODY_FLOOD_CAP;
+    while (stack.length > 0 && budget-- > 0) {
+      const i = stack.pop()!;
+      const cx = i % grid.width, cy = (i / grid.width) | 0;
+      for (const [dx, dy] of NEIGHBORS_8) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!grid.inBounds(nx, ny)) continue;
+        const j = grid.index(nx, ny);
+        if (visited.has(j) || !grid.isFusableExplosive(grid.material[j] as MaterialId)) continue;
+        visited.add(j);
+        stack.push(j);
+      }
+    }
+    for (const v of visited) grid.explosiveBodyCache.set(v, visited.size);
+    return visited.size;
+  }
+
   /** Spends one pop of this tick's DETONATIONS_PER_TICK_CAP budget, if there's any left. */
 export function canDetonate(grid: SimGrid): boolean {
     if (grid.detonationBudget <= 0) return false;
@@ -455,10 +520,19 @@ export function floodFuseConnected(grid: SimGrid, seeds: readonly [number, numbe
           if (seen.has(ni)) continue;
           if (!grid.isFusableExplosive(grid.material[ni] as MaterialId)) continue;
           seen.add(ni);
-          if (grid.meta[ni] === 0) {
-            grid.meta[ni] = Math.min(250, delay + Math.floor(Math.random() * 2));
-            budget--;
-          }
+          // Already ticking down (lit by an earlier ring this same call, or
+          // by a previous detonation's own flood entirely) — nothing new to
+          // light here, and the branch really does end here: this cell's
+          // own eventual detonation will re-run this same flood from its
+          // position, so there's no need for THIS call to keep walking
+          // outward through it too. Only cells this call actually just lit
+          // get added to the next ring — without that, every detonation in
+          // a big block would re-walk the whole already-lit remainder on
+          // every single pop, since `seen` starts fresh each call and had
+          // nothing to stop it doing so.
+          if (grid.meta[ni] !== 0) continue;
+          grid.meta[ni] = Math.min(250, delay + Math.floor(Math.random() * 2));
+          budget--;
           nextRing.push(ni);
           if (budget <= 0) break;
         }

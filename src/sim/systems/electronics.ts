@@ -6,6 +6,7 @@ import { FAN_DIR_MASK, FAN_DIR_VECTORS, FAN_LINKED_META, FAN_ON_META, CIRCUIT_ON
 import { NEIGHBORS_8 } from "../neighbors";
 import { circuitConnected, circuitPowered } from "./electricity";
 import { nearestOf, strike, strikeClock } from "../folk/combat";
+import { isGateMaterial, gateBlocksWind } from "./gates";
 
 /*
  * ── Elementos eletrônicos: Para-raio, Ventilador, Torre de defesa ───────────
@@ -303,6 +304,22 @@ function windCarries(id: MaterialId): boolean {
 }
 
 /**
+ * Whether the wind (the real push, or one of its visible motes) is
+ * actually stopped dead at (x, y) — true for an ordinary Sólido same as
+ * always, but a Portão is the one exception: it only blocks the draft
+ * while it's actively closed, regardless of which category it targets —
+ * an open Portão Líquidos lets the wind sail straight through it exactly
+ * like it lets Água and Areia through, even though its whole job is
+ * normally about liquids, not air.
+ */
+function windBlocked(grid: SimGrid, x: number, y: number): boolean {
+  const id = grid.get(x, y);
+  if (id === MaterialId.Empty || windCarries(id)) return false;
+  if (isGateMaterial(id)) return gateBlocksWind(grid, x, y);
+  return true;
+}
+
+/**
  * Ventilador: a normal paintable Sólido, like Vidro or Metal — paint a
  * single cell or a whole wall of it, whichever, and every connected clump
  * is one fixture (see `fanBody`): untouched by any circuit it just always
@@ -377,7 +394,8 @@ export function stepFan(grid: SimGrid, x: number, y: number, i: number): void {
         if (!grid.inBounds(fx, fy)) break;
         const here = grid.get(fx, fy);
         if (here === MaterialId.Empty) continue;
-        if (!windCarries(here)) break; // a solid (or anything else the wind can't move) blocks the rest of this ray
+        if (windBlocked(grid, fx, fy)) break; // a solid (or a currently-closed Portão) blocks the rest of this ray
+        if (!windCarries(here)) continue; // an open Portão itself isn't pushable, but doesn't stop the ray either
         const tx = fx + dx, ty = fy + dy;
         if (!grid.inBounds(tx, ty) || grid.get(tx, ty) !== MaterialId.Empty) continue;
         if (Math.random() >= pushChance) continue;
@@ -513,11 +531,13 @@ export function advanceWindPuffs(grid: SimGrid): void {
     w.y += w.vy;
     const gx = Math.round(w.x), gy = Math.round(w.y);
     if (!grid.inBounds(gx, gy)) continue;
-    // A Sólido stops the real wind dead (see the push scan's break-on-
-    // obstruction above) — the decorative motes need to stop at the same
-    // wall too, or the visual would show dust drifting straight through a
-    // solid block the real draft can't actually get past.
-    if (!windCarries(grid.get(gx, gy)) && grid.get(gx, gy) !== MaterialId.Empty) continue;
+    // Whatever stops the real wind dead (see windBlocked/the push scan
+    // above) — an ordinary Sólido, or a currently-closed Portão — has to
+    // stop the decorative motes at the same spot too, or the visual would
+    // show dust drifting straight through a wall the real draft can't
+    // actually get past. An open Portão is the one thing that blocks
+    // neither: motes drift right on through it, same as the real draft.
+    if (windBlocked(grid, gx, gy)) continue;
     next.push(w);
   }
   grid.windPuffs = next;

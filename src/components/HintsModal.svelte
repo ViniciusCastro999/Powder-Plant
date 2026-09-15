@@ -8,8 +8,9 @@
   interface Props {
     open: boolean;
     onclose: () => void;
+    ontour: () => void;
   }
-  let { open, onclose }: Props = $props();
+  let { open, onclose, ontour }: Props = $props();
 
   let selected = $state<MaterialId | null>(null);
   const info = $derived(selected !== null ? materialInfo(selected) : undefined);
@@ -17,6 +18,11 @@
   function close(): void {
     selected = null;
     onclose();
+  }
+
+  function startTour(): void {
+    close();
+    ontour();
   }
 
   function swatchStyle(id: MaterialId): string {
@@ -35,7 +41,15 @@
     {:else}
       <span class="title">{t("materialHints")}</span>
     {/if}
-    <button class="close" onclick={close} aria-label={t("close")}>✕</button>
+    <div class="header-actions">
+      {#if selected === null}
+        <button class="tour" onclick={startTour} title={t("welcomeTour")} aria-label={t("welcomeTour")}>
+          <Icon name="sparkle" size={14} />
+          <span>{t("welcomeTour")}</span>
+        </button>
+      {/if}
+      <button class="close" onclick={close} aria-label={t("close")}>✕</button>
+    </div>
   </header>
 
   {#if selected === null}
@@ -116,6 +130,31 @@
 
   .back:hover {
     background: rgba(255, 255, 255, 0.07);
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .tour {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 5px 10px;
+    border-radius: 8px;
+  }
+
+  .tour:hover {
+    background: rgba(255, 255, 255, 0.07);
+    color: rgba(255, 255, 255, 0.9);
   }
 
   .close {
