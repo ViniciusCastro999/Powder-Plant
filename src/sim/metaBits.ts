@@ -67,3 +67,8 @@ export const FAN_DIR_VECTORS: readonly (readonly [number, number])[] = [
 export const FAN_LINKED_META = 0x08;
 /** Only meaningful once FAN_LINKED_META is set: whether the clump is currently powered. Same meaning as CIRCUIT_ON_META, moved up past FAN_DIR_MASK. */
 export const FAN_ON_META = 0x10;
+
+/** Set on a Cano cell while it's holding one stored unit of Líquido — see systems/drains.ts surveyPipeNetwork/advancePipeFlows. */
+export const PIPE_FILLED_META = 0x80;
+/** Only meaningful together with PIPE_FILLED_META: the stored Líquido's own MaterialId, packed into the rest of the byte. */
+export const PIPE_LIQUID_MASK = 0x7f;

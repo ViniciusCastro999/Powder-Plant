@@ -720,6 +720,20 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     conductive: false,
     spontaneousIgniteTemp: NEVER_SPONTANEOUS,
   },
+  [MaterialId.Torneira]: {
+    id: MaterialId.Torneira,
+    name: "Torneira",
+    category: MaterialCategory.Solid,
+    color: [176, 148, 88], // brass spout, distinct from the Cano's dull galvanized gray
+    density: 9,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    acidResistance: 0,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
   [MaterialId.LightningRod]: {
     id: MaterialId.LightningRod,
     name: "Para-raio",
@@ -857,7 +871,7 @@ export const PALETTE_CATEGORIES: PaletteCategory[] = [
     materials: [
       MaterialId.Electricity, MaterialId.Lever, MaterialId.Wire,
       MaterialId.LightningRod, MaterialId.Fan, MaterialId.DefenseTower,
-      MaterialId.Drain, MaterialId.Pipe,
+      MaterialId.Drain, MaterialId.Pipe, MaterialId.Torneira,
     ],
   },
   {
@@ -937,4 +951,5 @@ export const ICON_BY_MATERIAL: Record<MaterialId, string> = {
   [MaterialId.DefenseTower]: "defense-tower",
   [MaterialId.Drain]: "drain",
   [MaterialId.Pipe]: "pipe",
+  [MaterialId.Torneira]: "faucet",
 };

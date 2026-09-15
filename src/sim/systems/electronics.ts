@@ -4,7 +4,7 @@ import { MaterialCategory, MaterialId } from "../types";
 import { MATERIALS } from "../materials";
 import { FAN_DIR_MASK, FAN_DIR_VECTORS, FAN_LINKED_META, FAN_ON_META, CIRCUIT_ON_META } from "../metaBits";
 import { NEIGHBORS_8 } from "../neighbors";
-import { circuitConnected, circuitPowered } from "./electricity";
+import { circuitConnected, circuitPowered, conducts } from "./electricity";
 import { nearestOf, strike, strikeClock } from "../folk/combat";
 import { isGateMaterial, gateBlocksWind } from "./gates";
 
@@ -160,12 +160,6 @@ export function stepLightningRod(grid: SimGrid, x: number, y: number, i: number)
       grid.flashes.push({ x: nx, y: ny, life: FLASH_LIFE, maxLife: FLASH_LIFE });
       continue;
     }
-    // A free-falling charge normally fizzles out within a handful of ticks
-    // on its own (see PULSE_AIR_LIFE) — nowhere near enough time to show a
-    // multi-tick pull happening. Held in a rod's field, it doesn't get to
-    // just fade on schedule: its life is kept topped up for as long as
-    // it's actually in range, same as if it were still fresh.
-    p.life = PULSE_AIR_LIFE;
     // Steers toward the locked target along the true angle between them —
     // both axes move together, in proportion to how far off each one
     // actually is — rather than closing one axis at a time at full speed.
@@ -188,12 +182,66 @@ export function stepLightningRod(grid: SimGrid, x: number, y: number, i: number)
       if (Math.abs(dx) >= Math.abs(dy) && dy !== 0) moveY += Math.sign(dy);
       else if (dx !== 0) moveX += Math.sign(dx);
     }
-    p.x += moveX;
-    p.y += moveY;
-    // Claim it for this tick so the normal free-fall step (random drift,
-    // gravity down regardless of which way the rod is pulling) doesn't
-    // also run on top of this move — see the field's doc comment on Pulse.
-    p.rodPulled = true;
+
+    // Walked cell by cell instead of jumped straight to the target — a
+    // multi-cell pull used to just teleport across whatever sat in
+    // between, passing through walls and never triggering a conductor
+    // pickup, an ignition, or a shattered Vidro the way an ordinary
+    // falling charge would. Each sub-step reacts exactly like the
+    // free-fall path in advancePulses does: empty air lets it through,
+    // a real conductor hands it off to travel that instead (the rod's own
+    // pull stops there — see the `inConductor` guard at the top of this
+    // loop), Gunpowder/Óleo ignites and absorbs it, Vidro shatters and
+    // absorbs it, and anything else inert simply blocks the rest of the
+    // pull this tick, same as a wall stopping any other kind of movement.
+    const steps = Math.max(Math.abs(moveX), Math.abs(moveY));
+    const stepUx = steps > 0 ? moveX / steps : 0;
+    const stepUy = steps > 0 ? moveY / steps : 0;
+    let curX = p.x, curY = p.y;
+    let enteredConductor = false;
+    let absorbed = false;
+    for (let s = 1; s <= steps; s++) {
+      const stepX = p.x + Math.round(stepUx * s);
+      const stepY = p.y + Math.round(stepUy * s);
+      if (stepX === curX && stepY === curY) continue; // rounding produced no movement at this sub-step
+      if (!grid.inBounds(stepX, stepY)) break;
+      const id = grid.get(stepX, stepY);
+      if (id === MaterialId.Empty) { curX = stepX; curY = stepY; continue; }
+      const def = MATERIALS[id];
+      if (def.conductive && conducts(grid, stepX, stepY)) {
+        curX = stepX; curY = stepY;
+        enteredConductor = true;
+      } else if (def.flammable) {
+        grid.igniteAt(stepX, stepY);
+        absorbed = true;
+      } else if (id === MaterialId.Glass) {
+        grid.shatterGlass(stepX, stepY);
+        absorbed = true;
+      }
+      break; // whatever's here, the pull doesn't pass through it
+    }
+
+    if (absorbed) { p.life = 0; continue; }
+    if (curX === p.x && curY === p.y) continue; // blocked before moving at all this tick — let normal gravity/drift apply instead of pretending the field held it
+    p.x = curX;
+    p.y = curY;
+    // A free-falling charge normally fizzles out within a handful of ticks
+    // on its own (see PULSE_AIR_LIFE) — nowhere near enough time to show a
+    // multi-tick pull happening. Actually being moved by the rod's field
+    // this tick, it doesn't get to just fade on schedule: its life is kept
+    // topped up for as long as the pull is genuinely making progress, same
+    // as if it were still fresh.
+    p.life = PULSE_AIR_LIFE;
+    if (enteredConductor) {
+      p.inConductor = true;
+      p.dx = Math.sign(stepUx) || 0;
+      p.dy = Math.sign(stepUy) || 0;
+    } else {
+      // Claim it for this tick so the normal free-fall step (random drift,
+      // gravity down regardless of which way the rod is pulling) doesn't
+      // also run on top of this move — see the field's doc comment on Pulse.
+      p.rodPulled = true;
+    }
   }
 }
 

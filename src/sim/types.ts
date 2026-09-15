@@ -211,12 +211,14 @@ export const enum MaterialId {
   /**
    * A normal paintable Sólido — immune to Ácido, Lava and fire alike. Any
    * Líquido touching it has a small, weak chance each tick of being sucked
-   * in and vanishing — unless it's also touching a connected Cano network
-   * with an actual opening to empty air, in which case the liquid instead
-   * flows visibly through the pipe (see systems/drains.ts) and reappears
-   * at the far end, rather than just disappearing. Also drifts a faint,
-   * purely decorative trickle of motes toward itself (no physical effect
-   * on anything) as a visual tell that it's actively drawing something in.
+   * in — if it's touching a connected Cano network, the liquid flows
+   * visibly through the pipe (see systems/drains.ts) toward an open
+   * Torneira if one is reachable and on, or, failing that, is simply
+   * stored inside the Cano itself (the network fills up cell by cell,
+   * emptying back out once a Torneira does open); with no Cano at all
+   * touching it, the liquid just vanishes. Also drifts a faint, purely
+   * decorative trickle of motes toward itself (no physical effect on
+   * anything) as a visual tell that it's actively drawing something in.
    * Switches on/off exactly like Ventilador: a connected clump is one
    * fixture, running unconditionally unless wired to a Fio/Alavanca, in
    * which case the whole clump switches together.
@@ -224,12 +226,26 @@ export const enum MaterialId {
   Drain = 49,
   /**
    * A normal paintable Sólido — the same Ácido/Lava/fire immunity as Ralo.
-   * Carries no charge or current of its own; it only matters as the
-   * conduit a connected Ralo routes sucked-up Líquido through on its way
-   * back out into the open, cell by connected cell, instead of just
-   * consuming it. See systems/drains.ts.
+   * Carries no charge or current of its own; it's the conduit a connected
+   * Ralo routes sucked-up Líquido through, and doubles as a reservoir when
+   * no open Torneira is reachable — the network holds whatever Líquido
+   * flows into it, cell by connected cell, until one opens up. See
+   * systems/drains.ts.
    */
   Pipe = 50,
+  /**
+   * A normal paintable Sólido, same Ácido/Lava/fire immunity as Ralo and
+   * Cano — the actual outlet of a Cano network. Switches on/off exactly
+   * like Ventilador (a connected clump is one fixture, running
+   * unconditionally unless wired to a Fio/Alavanca): while on, it's the
+   * only place a connected network's Líquido — freshly arriving, or
+   * already stored inside the Cano — actually flows back out into the
+   * open; while off it's sealed, same as a Cano dead end. Several
+   * reachable Torneiras open at once split the flow between them evenly,
+   * chance by chance, rather than one draining the network dry first. See
+   * systems/drains.ts.
+   */
+  Torneira = 51,
 }
 
 export const enum BrushShape {

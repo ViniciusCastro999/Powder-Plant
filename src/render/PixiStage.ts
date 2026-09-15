@@ -1,11 +1,12 @@
 import { Application, BufferImageSource, Sprite, Texture } from "pixi.js";
-import type { SimGrid } from "../sim/grid";
+import type { SimGrid, PipeFlow } from "../sim/grid";
 import { MaterialCategory, MaterialId } from "../sim/types";
 import { MATERIALS } from "../sim/materials";
 import { EXTREME_COLD, EXTREME_HOT, COLD_1, COLD_3, PROSPEROUS_LOW, PROSPEROUS_TEMP, PROSPEROUS_HIGH, HOT_2, HOT_3, isProsperous } from "../sim/temperature";
 import {
   GLASS_SHATTER_HITS, MAGIC_LIFE, WHEAT_RIPE, CIRCUIT_ON_META, LEVER_ARM_META,
   CIRCUIT_LINKED_META, CLONE_LINKED_META, CLONE_ON_META, FAN_LINKED_META, FAN_ON_META,
+  PIPE_FILLED_META, PIPE_LIQUID_MASK,
 } from "../sim/metaBits";
 import {
   HOUSE_WALL_META, HOUSE_ANCHOR_META, HOUSE_KIND_MASK, HOUSE_WALL, HOUSE_WINDOW,
@@ -559,10 +560,29 @@ export class PixiStage {
         }
       } else if (id === MaterialId.Pipe) {
         // Banded tube segments — periodic darker rings suggesting pipe
-        // joints, reading as a real conduit instead of a flat block. No
-        // on/off state of its own; only a connected Ralo's own tell matters.
+        // joints, reading as a real conduit instead of a flat block.
         const plx = i % width, ply = (i / width) | 0;
         if ((plx + ply) % 5 === 0) { r *= 0.65; g *= 0.68; b *= 0.72; } else { r *= 1.03; g *= 1.03; b *= 1.03; }
+        // Holding a stored unit of Líquido — tint toward that liquid's own
+        // color so a backed-up network visibly reads as full rather than
+        // looking identical to an empty run of Cano.
+        if ((meta[i] & PIPE_FILLED_META) !== 0) {
+          const stored = meta[i] & PIPE_LIQUID_MASK;
+          const [lr, lg, lb] = MATERIALS[stored as MaterialId]?.color ?? [r, g, b];
+          r = r * 0.35 + lr * 0.65;
+          g = g * 0.35 + lg * 0.65;
+          b = b * 0.35 + lb * 0.65;
+        }
+      } else if (id === MaterialId.Torneira) {
+        // A brass spout: warmer and smoother than the Cano's dull banded
+        // tube, with a small darker valve-wheel mark so it reads as a
+        // fixture rather than another stretch of pipe.
+        const tlx = i % width, tly = (i / width) | 0;
+        const onWheel = tlx % 6 === 0 && tly % 6 === 0;
+        if (onWheel) { r *= 0.55; g *= 0.55; b *= 0.6; } else { r *= 1.05; g *= 1.0; b *= 0.9; }
+        if ((meta[i] & CIRCUIT_LINKED_META) !== 0) {
+          if ((meta[i] & CIRCUIT_ON_META) !== 0) { r += 35; g += 22; b -= 10; } else { r *= 0.5; g *= 0.5; b *= 0.5; }
+        }
       }
       // Liquids and moving creatures constantly swap cells, so grain keyed
       // on grid position (not particle identity) would flicker as they
@@ -708,19 +728,68 @@ export class PixiStage {
     // own color, solid rather than blended, since it's genuine matter that
     // just happens to be mid-flight through a pipe rather than sitting in
     // the grid this instant — the whole point is to actually see it moving
-    // through the tube, not just imply it.
-    for (const f of this.grid.activePipeFlows) {
-      const [ax, ay] = f.path[f.index];
-      const [bx, by] = f.path[Math.min(f.index + 1, f.path.length - 1)];
-      const gx = Math.round(ax + (bx - ax) * f.t);
-      const gy = Math.round(ay + (by - ay) * f.t);
-      if (!this.grid.inBounds(gx, gy)) continue;
-      const p = this.grid.index(gx, gy) * 4;
-      const [lr, lg, lb] = MATERIALS[f.material].color;
-      this.pixels[p] = lr;
-      this.pixels[p + 1] = lg;
-      this.pixels[p + 2] = lb;
-      this.pixels[p + 3] = 255;
+    // through the tube, not just imply it. A pipe painted several cells
+    // wide has no single "correct" cell for the routing search to have
+    // traced, so it tends to hug one edge of the tube rather than its
+    // centerline — flows are grouped here by whichever raw path cell
+    // they're currently passing (their shared cross-section) and fanned
+    // out from that cross-section's true center instead, so a little water
+    // reads as centered in the tube and a lot of it visibly fills the tube
+    // outward, always leaving the outermost pixel of Cano on each side
+    // showing as pipe rather than water.
+    if (this.grid.activePipeFlows.length > 0) {
+      const crossSections = new Map<number, PipeFlow[]>();
+      for (const f of this.grid.activePipeFlows) {
+        const [ax, ay] = f.path[f.index];
+        const key = ax * 100000 + ay;
+        const group = crossSections.get(key);
+        if (group) group.push(f);
+        else crossSections.set(key, [f]);
+      }
+      for (const group of crossSections.values()) {
+        const [ax, ay] = group[0].path[group[0].index];
+        const [bx, by] = group[0].path[Math.min(group[0].index + 1, group[0].path.length - 1)];
+        const ddx = bx - ax || 1;
+        const ddy = by - ay;
+        const pdx = -Math.sign(ddy);
+        const pdy = Math.sign(ddx);
+        let nLeft = 0;
+        while (nLeft < 6) {
+          const nx = ax - pdx * (nLeft + 1), ny = ay - pdy * (nLeft + 1);
+          if (!this.grid.inBounds(nx, ny) || this.grid.material[this.grid.index(nx, ny)] !== MaterialId.Pipe) break;
+          nLeft++;
+        }
+        let nRight = 0;
+        while (nRight < 6) {
+          const nx = ax + pdx * (nRight + 1), ny = ay + pdy * (nRight + 1);
+          if (!this.grid.inBounds(nx, ny) || this.grid.material[this.grid.index(nx, ny)] !== MaterialId.Pipe) break;
+          nRight++;
+        }
+        const centerShift = (nRight - nLeft) / 2;
+        const half = Math.max(0, nLeft + nRight + 1 - 2) / 2;
+
+        for (let gi = 0; gi < group.length; gi++) {
+          const f = group[gi];
+          let slot = 0;
+          if (gi > 0) {
+            const k = Math.ceil(gi / 2);
+            slot = gi % 2 === 1 ? k : -k;
+          }
+          slot = Math.max(-half, Math.min(half, slot));
+          const perp = centerShift + slot;
+          const [fax, fay] = f.path[f.index];
+          const [fbx, fby] = f.path[Math.min(f.index + 1, f.path.length - 1)];
+          const gx = Math.round(fax + (fbx - fax) * f.t + pdx * perp);
+          const gy = Math.round(fay + (fby - fay) * f.t + pdy * perp);
+          if (!this.grid.inBounds(gx, gy)) continue;
+          const p = this.grid.index(gx, gy) * 4;
+          const [lr, lg, lb] = MATERIALS[f.material].color;
+          this.pixels[p] = lr;
+          this.pixels[p + 1] = lg;
+          this.pixels[p + 2] = lb;
+          this.pixels[p + 3] = 255;
+        }
+      }
     }
 
     // A Ralo's decorative suction motes — same translucent-overlay idea as

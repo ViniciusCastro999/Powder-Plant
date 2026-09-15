@@ -252,5 +252,11 @@
     <path d="M3 9 H15 A4 4 0 0 1 19 13 V19" stroke-width="2.2" />
     <path d="M3 6 H15 A7 7 0 0 1 22 13 V19" stroke-width="1" opacity="0.5" />
     <path d="M3 12 H15 A1 1 0 0 1 16 13 V19" stroke-width="1" opacity="0.5" />
+  {:else if name === "faucet"}
+    <path d="M4 10 H12" stroke-width="2.2" />
+    <path d="M12 10 A4 4 0 0 1 16 14 V19" stroke-width="2.2" />
+    <circle cx="9" cy="6" r="2.6" />
+    <path d="M9 3.6 V8.4 M6.8 6 H11.2" stroke-width="1.3" />
+    <path d="M16 20.6 V22" stroke-width="1.6" stroke-linecap="round" opacity="0.7" />
   {/if}
 </svg>

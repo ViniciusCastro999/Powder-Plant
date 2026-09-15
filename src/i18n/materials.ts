@@ -95,6 +95,7 @@ export const MATERIAL_NAMES: Record<Locale, Record<MaterialId, string>> = {
     [MaterialId.GatePowder]: "Powder Gate",
     [MaterialId.Drain]: "Drain",
     [MaterialId.Pipe]: "Pipe",
+    [MaterialId.Torneira]: "Faucet",
   },
   pt: {
     [MaterialId.Empty]: "Vazio",
@@ -148,6 +149,7 @@ export const MATERIAL_NAMES: Record<Locale, Record<MaterialId, string>> = {
     [MaterialId.GatePowder]: "Portão Pó",
     [MaterialId.Drain]: "Ralo",
     [MaterialId.Pipe]: "Cano",
+    [MaterialId.Torneira]: "Torneira",
   },
   ja: {
     [MaterialId.Empty]: "空",
@@ -201,5 +203,6 @@ export const MATERIAL_NAMES: Record<Locale, Record<MaterialId, string>> = {
     [MaterialId.GatePowder]: "粉体ゲート",
     [MaterialId.Drain]: "排水口",
     [MaterialId.Pipe]: "パイプ",
+    [MaterialId.Torneira]: "蛇口",
   },
 };

@@ -31,7 +31,7 @@ import {
   gateBlocksCategory as gateBlocksCategoryImpl, gateSkipLanding as gateSkipLandingImpl,
 } from "./systems/gates";
 import {
-  stepDrain as stepDrainImpl, advancePipeFlows as advancePipeFlowsImpl,
+  stepDrain as stepDrainImpl, stepFaucet as stepFaucetImpl, advancePipeFlows as advancePipeFlowsImpl,
   advanceSuctionMotes as advanceSuctionMotesImpl,
 } from "./systems/drains";
 import {
@@ -612,7 +612,7 @@ export interface WindPuff {
  * it's in transit, since Cano is a solid tube it travels *through*.
  */
 export interface PipeFlow {
-  /** The connected run of Cano cells from the entry (touching the Ralo) to the exit (touching open air), walked one cell at a time. */
+  /** The connected run of Cano cells from the entry (touching the Ralo) to where this flow is headed, walked one cell at a time. */
   path: readonly (readonly [number, number])[];
   /** Which segment of `path` this flow is currently crossing (path[index] → path[index + 1]). */
   index: number;
@@ -621,6 +621,17 @@ export interface PipeFlow {
   speed: number;
   material: MaterialId;
   meta: number;
+  /**
+   * What happens when this flow reaches the end of `path`: "release" exits
+   * back into the open through the Torneira `path` ends at, same as
+   * before; "store" instead parks inside the Cano cell `path` ends at,
+   * flagging it as holding this Líquido (see PIPE_FILLED_META in
+   * systems/drains.ts) rather than depositing anywhere in the world — the
+   * network filling up in place until some Torneira opens.
+   */
+  kind: "release" | "store";
+  /** Consecutive ticks spent unable to actually finish (no open cell to deposit into, or the Cano cell to store into already taken) — a safety valve, not the normal case: past `PIPE_FLOW_STUCK_LIMIT` the flow is just dropped rather than piling up forever. See advancePipeFlows. */
+  stuck: number;
 }
 
 /** A purely decorative mote drifting toward an active Ralo — no physical effect on anything, just the visual tell that it's drawing something in. See systems/drains.ts. */
@@ -737,6 +748,23 @@ export class SimGrid {
   towerCache = new Map<number, boolean>();
   /** This tick's shape (size, leader cell, bounding box) for every connected clump of Para-raio — see rodBody in systems/electronics.ts: more mass pulls in a charge from further out, and only the clump's leader cell actually performs the pull. Cleared at the top of every `step()`. */
   rodCache = new Map<number, { size: number; leaderIndex: number; cells: readonly (readonly [number, number])[]; minX: number; maxX: number; minY: number; maxY: number }>();
+  /**
+   * This tick's Cano touch-points for every connected Ralo/Torneira body
+   * cell that's already asked — see findNearbyPipeCells in
+   * systems/drains.ts. Every cell the body-flood actually visits gets the
+   * same array written for it (same idea as blockCache), so a fixture with
+   * dozens or hundreds of cells only ever floods its own network once a
+   * tick no matter how many of those cells separately try to suck or
+   * release Líquido — without this, each one repeated the whole search
+   * (up to thousands of cells) independently, which is what actually made
+   * a lot of Ralos/Torneiras placed together noticeably laggy. Cleared at
+   * the top of every `step()`; the deeper network survey keyed off this
+   * array's own identity (see drains.ts) needs no separate clearing, since
+   * a fresh tick's fresh arrays simply aren't in it yet.
+   */
+  drainPipeCache = new Map<number, number[]>();
+  /** This tick's leader index for every connected Torneira body cell that's already asked — see torneiraLeader in systems/drains.ts: pulling stored Líquido back out of a shared network can't safely happen once per cell the way sucking it in can (two cells of the same fixture could otherwise both claim the very same stored unit in one tick), so only the body's leader cell ever actually attempts it. Cleared at the top of every `step()`. */
+  torneiraLeaderCache = new Map<number, number>();
   /** Direction newly-painted Ventilador cells face (an index into FAN_DIR_VECTORS, 0-7), chosen from the brush before placing — see BottomPanel's direction picker and `metaFor`. Right-click still rotates a whole placed clump afterward (see `toggleFan`). */
   fanDirection = 2;
   tick = 0;
@@ -768,10 +796,12 @@ export class SimGrid {
   /**
    * Wipes the grid back to a blank slate for the player's "Limpar tudo"
    * button — every material cell, but also everything that lives outside
-   * `material`: in-flight Pulses and Shrapnel (neither would be touched by
-   * just clearing the arrays, since that's precisely why they're kept
-   * separate — "no physical form" — which without this made Eletricidade
-   * visibly survive a clear), and the temperature, reset immediately to
+   * `material`: in-flight Pulses, Shrapnel, and travelling PipeFlows (none
+   * of them would be touched by just clearing the arrays, since that's
+   * precisely why they're kept separate — "no physical form" — which
+   * without this made Eletricidade, and Líquido still crawling through a
+   * Cano, visibly survive a clear, redepositing itself a tick later as if
+   * nothing had happened), and the temperature, reset immediately to
    * neutral instead of just drifting back to it over the next several
    * seconds like it would from `updateTemperature`'s normal thermal-mass
    * smoothing.
@@ -792,6 +822,8 @@ export class SimGrid {
     this.flashes = [];
     this.hits = [];
     this.windPuffs = [];
+    this.pipeFlows = [];
+    this.suctionMotes = [];
     this.temp = NEUTRAL_TEMP;
     this.hotAccum = 0;
     this.coldAccum = 0;
@@ -1386,6 +1418,8 @@ export class SimGrid {
     if (this.fanCache.size > 0) this.fanCache.clear();
     if (this.towerCache.size > 0) this.towerCache.clear();
     if (this.rodCache.size > 0) this.rodCache.clear();
+    if (this.drainPipeCache.size > 0) this.drainPipeCache.clear();
+    if (this.torneiraLeaderCache.size > 0) this.torneiraLeaderCache.clear();
     if (this.tick % CENSUS_INTERVAL === 1) this.takeCensus();
 
     // Bottom-to-top so a cell that falls this tick isn't immediately
@@ -1475,6 +1509,7 @@ export class SimGrid {
         else if (id === MaterialId.Fan) this.stepFan(x, y, i);
         else if (id === MaterialId.DefenseTower) this.stepDefenseTower(x, y, i);
         else if (id === MaterialId.Drain) this.stepDrain(x, y, i);
+        else if (id === MaterialId.Torneira) this.stepFaucet(x, y, i);
 
         // Ambient temperature effects — only make sense once the cell has
         // survived whatever the reactions above just did to it.
@@ -2286,9 +2321,14 @@ export class SimGrid {
     stepDefenseTowerImpl(this, x, y, i);
   }
 
-  /** Sucks in touching Líquido, routing it through a connected Cano if one reaches an opening. See systems/drains.ts. */
+  /** Sucks in touching Líquido, routing it into a connected Cano network — toward an open Torneira if one's reachable, or stored in the Cano itself otherwise. See systems/drains.ts. */
   stepDrain(x: number, y: number, i: number): void {
     stepDrainImpl(this, x, y, i);
+  }
+
+  /** While powered, releases a connected Cano network's Líquido (freshly arriving or already stored) back out into the open. See systems/drains.ts. */
+  stepFaucet(x: number, y: number, i: number): void {
+    stepFaucetImpl(this, x, y, i);
   }
 
   /** Advances every in-transit PipeFlow one tick along its path. See systems/drains.ts. */

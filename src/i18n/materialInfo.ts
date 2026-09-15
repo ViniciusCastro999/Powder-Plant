@@ -190,12 +190,22 @@ const EN: InfoMap = {
     interactions: ["Only works while powered."],
   },
   [MaterialId.Drain]: {
-    description: "Sucks in touching Liquid and makes it vanish.",
-    interactions: ["Connect a Pipe to route the liquid out somewhere else instead."],
+    description: "Sucks in touching Liquid.",
+    interactions: [
+      "With no Pipe connected, the liquid just vanishes.",
+      "Connected to a Pipe, it flows out an open Faucet, or fills up the Pipe as storage until one opens.",
+    ],
   },
   [MaterialId.Pipe]: {
     description: "A conduit for a connected Drain's liquid.",
-    interactions: ["Ends where it touches open air."],
+    interactions: ["Fills up and stores liquid when no open Faucet is reachable."],
+  },
+  [MaterialId.Torneira]: {
+    description: "The outlet of a Pipe network.",
+    interactions: [
+      "Releases liquid, freshly arriving or already stored in the Pipe, while powered.",
+      "Several open Faucets on one network split the flow between them evenly.",
+    ],
   },
 };
 
@@ -377,12 +387,22 @@ const PT: InfoMap = {
     interactions: ["Só funciona enquanto energizada."],
   },
   [MaterialId.Drain]: {
-    description: "Suga Líquido que encoste nele e some com ele.",
-    interactions: ["Conecte um Cano para direcionar o líquido para outro lugar em vez de sumir."],
+    description: "Suga Líquido que encoste nele.",
+    interactions: [
+      "Sem Cano conectado, o líquido simplesmente some.",
+      "Conectado a um Cano, o líquido sai por uma Torneira aberta, ou fica armazenado dentro do Cano até que uma abra.",
+    ],
   },
   [MaterialId.Pipe]: {
     description: "Um conduto para o líquido de um Ralo conectado.",
-    interactions: ["Termina onde encosta em ar aberto."],
+    interactions: ["Enche e armazena líquido quando nenhuma Torneira aberta é alcançada."],
+  },
+  [MaterialId.Torneira]: {
+    description: "A saída de uma rede de Canos.",
+    interactions: [
+      "Libera o líquido, seja o que está chegando agora ou o que já estava armazenado no Cano, enquanto energizada.",
+      "Várias Torneiras abertas na mesma rede dividem o fluxo igualmente entre elas.",
+    ],
   },
 };
 
@@ -564,12 +584,22 @@ const JA: InfoMap = {
     interactions: ["通電中だけ動く。"],
   },
   [MaterialId.Drain]: {
-    description: "触れた液体を吸い込んで消す。",
-    interactions: ["パイプをつなぐと、消す代わりに別の場所へ液体を送れる。"],
+    description: "触れた液体を吸い込む。",
+    interactions: [
+      "パイプがつながっていないと、液体はそのまま消える。",
+      "パイプにつながっていると、開いた蛇口から流れ出るか、蛇口が開くまでパイプの中にたまる。",
+    ],
   },
   [MaterialId.Pipe]: {
     description: "つながった排水口の液体を通す管。",
-    interactions: ["開いた空間に触れた場所で終わる。"],
+    interactions: ["開いた蛇口がないと、液体がたまって貯蔵される。"],
+  },
+  [MaterialId.Torneira]: {
+    description: "パイプ網の出口。",
+    interactions: [
+      "通電中は、新しく届いた液体もパイプにたまっていた液体も外に流れ出る。",
+      "同じ網に開いた蛇口が複数あると、流れを均等に分け合う。",
+    ],
   },
 };
 
