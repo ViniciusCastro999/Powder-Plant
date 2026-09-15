@@ -796,12 +796,28 @@ export const SINGLE_DROP_MATERIALS: readonly MaterialId[] = [
   MaterialId.Lever, MaterialId.DefenseTower,
 ];
 
+/** One further split inside a crowded PaletteCategory — its own id (looked up in the same CATEGORY_LABELS map the category itself uses) and the slice of the category's materials it covers. */
+export interface PaletteSubcategory {
+  id: string;
+  materials: readonly MaterialId[];
+}
+
 export interface PaletteCategory {
   id: string;
   label: string;
   /** Icon.svelte glyph name representing the whole category on its tab. */
   icon: string;
   materials: readonly MaterialId[];
+  /**
+   * Present only for a category crowded enough to split further — picking
+   * the tab then asks which one first (see BottomPanel's subcategory
+   * popup) instead of dumping every material from every subcategory into
+   * one grid at once. `materials` above still lists the category's full
+   * set (every subcategory's materials combined), so anything that just
+   * wants "all of Elétricos" — the hints modal's own category browser,
+   * say — doesn't need to know subcategories exist at all.
+   */
+  subcategories?: readonly PaletteSubcategory[];
 }
 
 /**
@@ -827,15 +843,22 @@ export const PALETTE_CATEGORIES: PaletteCategory[] = [
     id: "po",
     label: "Pó",
     icon: "sand",
-    materials: [MaterialId.Sand, MaterialId.Dirt, MaterialId.Mud, MaterialId.Salt, MaterialId.Gunpowder],
+    // Pedra belongs here, not in Sólidos — it's simulated as a Powder (see
+    // MaterialCategory.Powder on its own MaterialDef), just a heavier,
+    // duller grain than Areia.
+    materials: [MaterialId.Sand, MaterialId.Dirt, MaterialId.Mud, MaterialId.Salt, MaterialId.Gunpowder, MaterialId.Stone],
   },
   {
     id: "solidos",
     label: "Sólidos",
     icon: "metal",
     materials: [
-      MaterialId.Stone, MaterialId.Wood, MaterialId.Metal, MaterialId.Glass, MaterialId.Brick,
+      MaterialId.Wood, MaterialId.Metal, MaterialId.Glass, MaterialId.Brick,
       MaterialId.Ice, MaterialId.C4, MaterialId.HeatBlock, MaterialId.ColdBlock,
+    ],
+    subcategories: [
+      { id: "solidos-construcao", materials: [MaterialId.Wood, MaterialId.Metal, MaterialId.Glass, MaterialId.Brick] },
+      { id: "solidos-especiais", materials: [MaterialId.Ice, MaterialId.C4, MaterialId.HeatBlock, MaterialId.ColdBlock] },
     ],
   },
   {
@@ -863,6 +886,10 @@ export const PALETTE_CATEGORIES: PaletteCategory[] = [
     materials: [
       MaterialId.Mason, MaterialId.Lumberjack, MaterialId.Farmer, MaterialId.Warrior, MaterialId.Skeleton,
     ],
+    subcategories: [
+      { id: "povo-trabalhadores", materials: [MaterialId.Mason, MaterialId.Lumberjack, MaterialId.Farmer] },
+      { id: "povo-combate", materials: [MaterialId.Warrior, MaterialId.Skeleton] },
+    ],
   },
   {
     id: "eletricos",
@@ -872,6 +899,11 @@ export const PALETTE_CATEGORIES: PaletteCategory[] = [
       MaterialId.Electricity, MaterialId.Lever, MaterialId.Wire,
       MaterialId.LightningRod, MaterialId.Fan, MaterialId.DefenseTower,
       MaterialId.Drain, MaterialId.Pipe, MaterialId.Torneira,
+    ],
+    subcategories: [
+      { id: "eletricos-basico", materials: [MaterialId.Electricity, MaterialId.Lever, MaterialId.Wire] },
+      { id: "eletricos-dispositivos", materials: [MaterialId.LightningRod, MaterialId.Fan, MaterialId.DefenseTower] },
+      { id: "eletricos-hidraulica", materials: [MaterialId.Drain, MaterialId.Pipe, MaterialId.Torneira] },
     ],
   },
   {

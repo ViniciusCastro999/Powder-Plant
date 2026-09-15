@@ -1,9 +1,10 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
   import { BrushShape, MaterialId } from "../sim/types";
-  import { MATERIALS, PALETTE_CATEGORIES, ICON_BY_MATERIAL } from "../sim/materials";
+  import { MATERIALS, PALETTE_CATEGORIES, ICON_BY_MATERIAL, type PaletteCategory } from "../sim/materials";
   import { COLD_1, COLD_2, COLD_3, PROSPEROUS_LOW, HOT_2, HOT_3, isProsperous } from "../sim/temperature";
-  import { t, materialName, categoryLabel, intlLocale, locale, setLocale, LOCALES } from "../i18n";
+  import { t, materialName, categoryLabel, intlLocale } from "../i18n";
+  import { displayTemperature, temperatureUnit } from "../settings.svelte";
   import type { UIStrings } from "../i18n/ui";
 
   const SHAPES: { id: BrushShape; icon: string; labelKey: keyof UIStrings }[] = [
@@ -15,35 +16,46 @@
 
   interface Props {
     selected: MaterialId;
+    secondarySelected: MaterialId;
+    secondaryIsDrag: boolean;
     brushSize: number;
     brushShape: BrushShape;
     paused: boolean;
     gravityOn: boolean;
     pixelCount: number;
     temperature: number;
+    fps: number;
     onclear: () => void;
-    onhints: () => void;
     onmaps: () => void;
+    onoptions: () => void;
   }
   let {
     selected = $bindable(),
+    secondarySelected = $bindable(),
+    secondaryIsDrag = $bindable(),
     brushSize = $bindable(),
     brushShape = $bindable(),
     paused = $bindable(),
     gravityOn = $bindable(),
     pixelCount,
     temperature,
+    fps,
     onclear,
-    onhints,
     onmaps,
+    onoptions,
   }: Props = $props();
 
-  /** Which category's tile grid is currently expanded — a single-open accordion (never fully collapsed, so the footer's height stays constant) starting on whichever category the initial selection belongs to. */
+  /** Which category owns a given material, so the tab bar can show it as the "current" one. */
   function categoryOf(id: MaterialId): string {
     return PALETTE_CATEGORIES.find((c) => c.materials.includes(id))?.id ?? PALETTE_CATEGORIES[0].id;
   }
-  let expandedCategory = $state(categoryOf(selected));
-  const expandedMaterials = $derived(PALETTE_CATEGORIES.find((c) => c.id === expandedCategory)?.materials ?? []);
+  let activeCategory = $state(categoryOf(selected));
+  /** The category currently showing its material picker popup — every tab opens one, closes itself the moment a tile is picked, no separate close button needed. */
+  let materialPopup = $state<{ cat: PaletteCategory; left: number } | null>(null);
+
+  function openCategory(cat: PaletteCategory, buttonEl: HTMLElement): void {
+    materialPopup = { cat, left: buttonEl.offsetLeft };
+  }
 
   // The three tools (erase / drag / gravity) and painting a material are all
   // one "what does a click do" choice — picking one drops the others, so the
@@ -52,10 +64,19 @@
 
   function pick(id: MaterialId): void {
     selected = id;
+    activeCategory = categoryOf(id);
+    materialPopup = null;
     if (id !== MaterialId.Empty) {
       lastMaterial = id;
       if (brushShape === BrushShape.Drag) brushShape = BrushShape.Point;
     }
+  }
+
+  /** Right-click on a tile sets the secondary (right mouse button) material instead — like a paint program's background color — without closing the popup, so both can be picked from the same open list. */
+  function pickSecondary(e: MouseEvent, id: MaterialId): void {
+    e.preventDefault();
+    secondarySelected = id;
+    secondaryIsDrag = false;
   }
 
   function selectErase(): void {
@@ -68,9 +89,57 @@
     if (selected === MaterialId.Empty) selected = lastMaterial;
   }
 
+  /** Right-click the Erase tool: the right mouse button erases on the canvas instead of whatever it was painting. */
+  function selectEraseSecondary(e: MouseEvent): void {
+    e.preventDefault();
+    secondarySelected = MaterialId.Empty;
+    secondaryIsDrag = false;
+  }
+
+  /** Right-click the Drag tool: the right mouse button picks up/moves a blob, independent of whatever the left button is set to do. */
+  function selectDragSecondary(e: MouseEvent): void {
+    e.preventDefault();
+    secondaryIsDrag = true;
+  }
+
+  /** How many 78px columns a material grid needs for `count` tiles, capped at 4 — an explicit count instead of `auto-fit` because an auto-fit grid inside a width:fit-content popup has no definite width to size against and collapses to a single column. Capped so a big category (the 6-material Pó group) wraps into more rows instead of stretching the popup wide. */
+  function cols(count: number): number {
+    return Math.min(4, Math.max(1, count));
+  }
+
   function swatchStyle(id: MaterialId): string {
     const [r, g, b] = MATERIALS[id].color;
     return `--swatch: rgb(${r}, ${g}, ${b})`;
+  }
+
+  /** Neutral (non-material) swatch background for the dual indicator when a tool — not a material — is what's actually active for that button. */
+  const TOOL_SWATCH = "--swatch: rgba(255, 255, 255, 0.14)";
+
+  function primaryIcon(): string {
+    if (brushShape === BrushShape.Drag) return "drag";
+    if (selected === MaterialId.Empty) return "eraser";
+    return ICON_BY_MATERIAL[selected];
+  }
+  function primaryStyle(): string {
+    return brushShape === BrushShape.Drag || selected === MaterialId.Empty ? TOOL_SWATCH : swatchStyle(selected);
+  }
+  function primaryLabel(): string {
+    if (brushShape === BrushShape.Drag) return t("shapeDrag");
+    if (selected === MaterialId.Empty) return t("erase");
+    return materialName(selected);
+  }
+  function secondaryIcon(): string {
+    if (secondaryIsDrag) return "drag";
+    if (secondarySelected === MaterialId.Empty) return "eraser";
+    return ICON_BY_MATERIAL[secondarySelected];
+  }
+  function secondaryStyle(): string {
+    return secondaryIsDrag || secondarySelected === MaterialId.Empty ? TOOL_SWATCH : swatchStyle(secondarySelected);
+  }
+  function secondaryLabel(): string {
+    if (secondaryIsDrag) return t("shapeDrag");
+    if (secondarySelected === MaterialId.Empty) return t("erase");
+    return materialName(secondarySelected);
   }
 
   /** Text/icon color for the temperature readout — blue when cold, green right at the prosperous band, warm/red the hotter it gets. */
@@ -104,42 +173,80 @@
     <span class="counter">{pixelCount.toLocaleString(intlLocale())} px</span>
     <span class="counter temp" style="color: {temperatureColor(temperature)}">
       <Icon name={temperatureIcon(temperature)} size={12} />
-      {Math.round(temperature)}°C
+      {Math.round(displayTemperature(temperature))}°{temperatureUnit() === "f" ? "F" : "C"}
     </span>
-    <div class="lang" role="group" aria-label={t("languageLabel")}>
-      <Icon name="globe" size={12} />
-      {#each LOCALES as l (l.id)}
-        <button
-          class="lang-btn"
-          class:active={locale() === l.id}
-          onclick={() => setLocale(l.id)}
-          aria-pressed={locale() === l.id}
-          title={l.label}
-        >
-          {l.short}
-        </button>
-      {/each}
-    </div>
+    <span class="counter fps">
+      <Icon name="fps" size={12} />
+      {fps} FPS
+    </span>
   </div>
 
   <div class="material-panel">
     <div class="category-bar">
+      <div class="dual-swatch" title="{primaryLabel()} / {secondaryLabel()}">
+        <span class="swatch-primary" style={primaryStyle()} aria-label="{t('selectedMaterial')}: {primaryLabel()}">
+          <Icon name={primaryIcon()} size={12} />
+        </span>
+        <span class="swatch-secondary" style={secondaryStyle()} aria-label={secondaryLabel()}>
+          <Icon name={secondaryIcon()} size={10} />
+        </span>
+      </div>
+      <span class="bar-divider"></span>
       {#each PALETTE_CATEGORIES as cat (cat.id)}
-        <button class="category-tab" class:active={expandedCategory === cat.id} onclick={() => (expandedCategory = cat.id)}>
+        <button
+          class="category-tab"
+          class:active={activeCategory === cat.id}
+          onclick={(e) => openCategory(cat, e.currentTarget)}
+        >
           <Icon name={cat.icon} size={13} />
           {categoryLabel(cat.id)}
         </button>
       {/each}
-    </div>
-    <div class="material-grid">
-      {#each expandedMaterials as id (id)}
-        <button class="tile" class:active={selected === id} onclick={() => pick(id)}>
-          <span class="icon-badge" style={swatchStyle(id)}>
-            <Icon name={ICON_BY_MATERIAL[id]} size={16} />
-          </span>
-          <span class="name">{materialName(id)}</span>
-        </button>
-      {/each}
+      {#if materialPopup}
+        {@const popup = materialPopup}
+        <button class="popup-backdrop" aria-label={t("close")} onclick={() => (materialPopup = null)}></button>
+        <div class="material-popup" style="left: {popup.left}px">
+          <span class="popup-title">{categoryLabel(popup.cat.id)}</span>
+          {#if popup.cat.subcategories}
+            {#each popup.cat.subcategories as sub (sub.id)}
+              <span class="popup-group-title">{categoryLabel(sub.id)}</span>
+              <div class="material-grid" style="grid-template-columns: repeat({cols(sub.materials.length)}, 78px)">
+                {#each sub.materials as id (id)}
+                  <button
+                    class="tile"
+                    class:active={selected === id}
+                    class:secondary={secondarySelected === id}
+                    onclick={() => pick(id)}
+                    oncontextmenu={(e) => pickSecondary(e, id)}
+                  >
+                    <span class="icon-badge" style={swatchStyle(id)}>
+                      <Icon name={ICON_BY_MATERIAL[id]} size={16} />
+                    </span>
+                    <span class="name">{materialName(id)}</span>
+                  </button>
+                {/each}
+              </div>
+            {/each}
+          {:else}
+            <div class="material-grid" style="grid-template-columns: repeat({cols(popup.cat.materials.length)}, 78px)">
+              {#each popup.cat.materials as id (id)}
+                <button
+                  class="tile"
+                  class:active={selected === id}
+                  class:secondary={secondarySelected === id}
+                  onclick={() => pick(id)}
+                  oncontextmenu={(e) => pickSecondary(e, id)}
+                >
+                  <span class="icon-badge" style={swatchStyle(id)}>
+                    <Icon name={ICON_BY_MATERIAL[id]} size={16} />
+                  </span>
+                  <span class="name">{materialName(id)}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
     </div>
   </div>
 
@@ -147,11 +254,23 @@
        entre os elementos e os pincéis. -->
   <div class="tools-col">
     <div class="tools" role="group" aria-label={t("tools")}>
-      <button class="tool" class:active={selected === MaterialId.Empty} onclick={selectErase}>
+      <button
+        class="tool"
+        class:active={selected === MaterialId.Empty}
+        class:secondary={!secondaryIsDrag && secondarySelected === MaterialId.Empty}
+        onclick={selectErase}
+        oncontextmenu={selectEraseSecondary}
+      >
         <Icon name="eraser" size={15} />
         <span>{t("erase")}</span>
       </button>
-      <button class="tool" class:active={brushShape === BrushShape.Drag} onclick={selectDrag}>
+      <button
+        class="tool"
+        class:active={brushShape === BrushShape.Drag}
+        class:secondary={secondaryIsDrag}
+        onclick={selectDrag}
+        oncontextmenu={selectDragSecondary}
+      >
         <Icon name="drag" size={15} />
         <span>{t("shapeDrag")}</span>
       </button>
@@ -171,8 +290,8 @@
       >
         <Icon name={paused ? "play" : "pause"} size={15} />
       </button>
-      <button class="icon-btn" onclick={onhints} title={t("hints")} aria-label={t("hints")}>
-        <Icon name="help" size={15} />
+      <button class="icon-btn" onclick={onoptions} title={t("options")} aria-label={t("options")}>
+        <Icon name="settings" size={15} />
       </button>
       <button class="icon-btn" onclick={onmaps} title={t("maps")} aria-label={t("maps")}>
         <Icon name="save" size={15} />
@@ -247,36 +366,55 @@
     transition: color 0.4s ease;
   }
 
-  .lang {
+  .fps {
     display: flex;
     align-items: center;
-    gap: 3px;
-    margin-top: 2px;
+    gap: 4px;
     color: rgba(255, 255, 255, 0.4);
   }
 
-  .lang-btn {
-    padding: 2px 5px;
+  .dual-swatch {
+    position: relative;
+    width: 30px;
+    height: 30px;
+    flex: none;
+  }
+
+  .swatch-primary,
+  .swatch-secondary {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border-radius: 6px;
-    border: 1px solid transparent;
-    background: none;
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+    background: var(--swatch, #333);
+    color: rgba(0, 0, 0, 0.65);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
   }
 
-  .lang-btn:hover {
-    color: rgba(255, 255, 255, 0.85);
-    background: rgba(255, 255, 255, 0.06);
+  .swatch-primary {
+    top: 0;
+    left: 0;
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255, 255, 255, 0.55);
+    z-index: 2;
   }
 
-  .lang-btn.active {
-    color: #fff;
-    background: rgba(106, 160, 255, 0.18);
-    border-color: rgba(106, 160, 255, 0.5);
+  .swatch-secondary {
+    bottom: 0;
+    right: 0;
+    width: 17px;
+    height: 17px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    z-index: 1;
+  }
+
+  .bar-divider {
+    width: 1px;
+    align-self: stretch;
+    background: rgba(255, 255, 255, 0.1);
+    flex: none;
   }
 
   .material-panel {
@@ -289,9 +427,58 @@
   }
 
   .category-bar {
+    position: relative;
     display: flex;
+    align-items: center;
     flex-wrap: wrap;
     gap: 6px;
+  }
+
+  .popup-backdrop {
+    position: fixed;
+    inset: 0;
+    background: none;
+    border: none;
+    cursor: default;
+    z-index: 39;
+  }
+
+  .material-popup {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px;
+    width: fit-content;
+    min-width: 170px;
+    max-width: 352px;
+    max-height: 340px;
+    overflow-y: auto;
+    background: #1c202c;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+    z-index: 40;
+  }
+
+  .popup-title {
+    padding: 0 2px 4px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .popup-group-title {
+    padding: 4px 2px 0;
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(255, 255, 255, 0.35);
   }
 
   .category-tab {
@@ -322,11 +509,8 @@
 
   .material-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(66px, 1fr));
     gap: 6px;
     min-width: 0;
-    max-height: 128px;
-    overflow-y: auto;
     align-content: start;
   }
 
@@ -336,13 +520,13 @@
     align-items: center;
     justify-content: center;
     gap: 4px;
-    padding: 6px 2px;
+    padding: 6px 4px;
     border-radius: 9px;
     border: 1px solid transparent;
     background: rgba(255, 255, 255, 0.03);
     color: rgba(255, 255, 255, 0.78);
     cursor: pointer;
-    transition: background 0.12s ease, border-color 0.12s ease;
+    transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
   }
 
   .tile:hover {
@@ -352,6 +536,15 @@
   .tile.active {
     background: rgba(255, 255, 255, 0.12);
     border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .tile.secondary {
+    box-shadow: 0 0 0 2px rgba(106, 160, 255, 0.7);
+  }
+
+  .tile.active.secondary {
+    border-color: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 0 0 2px rgba(106, 160, 255, 0.7), 0 0 0 4px rgba(255, 255, 255, 0.2);
   }
 
   .icon-badge {
@@ -369,11 +562,10 @@
   .name {
     font-size: 10px;
     font-weight: 500;
-    line-height: 1.1;
+    line-height: 1.15;
     text-align: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    overflow-wrap: break-word;
     max-width: 100%;
   }
 
@@ -431,6 +623,14 @@
     background: rgba(106, 160, 255, 0.2);
     border-color: rgba(106, 160, 255, 0.5);
     color: #fff;
+  }
+
+  .tool.secondary {
+    box-shadow: 0 0 0 2px rgba(106, 160, 255, 0.7);
+  }
+
+  .tool.active.secondary {
+    box-shadow: 0 0 0 2px rgba(106, 160, 255, 0.7), 0 0 0 4px rgba(255, 255, 255, 0.2);
   }
 
   .shape-list {

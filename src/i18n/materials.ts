@@ -14,6 +14,14 @@ export const CATEGORY_LABELS: Record<Locale, Record<string, string>> = {
     portoes: "Gates",
     especiais: "Special",
     ferramentas: "Tools",
+
+    "solidos-construcao": "Building",
+    "solidos-especiais": "Special",
+    "povo-trabalhadores": "Workers",
+    "povo-combate": "Combat",
+    "eletricos-basico": "Basics",
+    "eletricos-dispositivos": "Devices",
+    "eletricos-hidraulica": "Plumbing",
   },
   pt: {
     po: "Pó",
@@ -26,6 +34,14 @@ export const CATEGORY_LABELS: Record<Locale, Record<string, string>> = {
     portoes: "Portões",
     especiais: "Especiais",
     ferramentas: "Ferramentas",
+
+    "solidos-construcao": "Construção",
+    "solidos-especiais": "Especiais",
+    "povo-trabalhadores": "Trabalhadores",
+    "povo-combate": "Combate",
+    "eletricos-basico": "Básico",
+    "eletricos-dispositivos": "Dispositivos",
+    "eletricos-hidraulica": "Hidráulica",
   },
   ja: {
     po: "粉",
@@ -38,6 +54,14 @@ export const CATEGORY_LABELS: Record<Locale, Record<string, string>> = {
     portoes: "ゲート",
     especiais: "特殊",
     ferramentas: "道具",
+
+    "solidos-construcao": "建材",
+    "solidos-especiais": "特殊",
+    "povo-trabalhadores": "労働者",
+    "povo-combate": "戦闘",
+    "eletricos-basico": "基本",
+    "eletricos-dispositivos": "装置",
+    "eletricos-hidraulica": "配管",
   },
 };
 

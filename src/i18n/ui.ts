@@ -69,6 +69,22 @@ export type UIStrings = {
   importFile: string;
   mapNumber: string; // {n}
   untitledMap: string;
+
+  // OptionsModal
+  options: string;
+  optionsDialogLabel: string;
+  temperatureUnit: string;
+  celsius: string;
+  fahrenheit: string;
+  showGrid: string;
+  snapToGrid: string;
+  gridSize: string;
+  gridSizeSmall: string;
+  gridSizeMedium: string;
+  gridSizeLarge: string;
+
+  // BottomPanel (selected-material swatch indicator)
+  selectedMaterial: string;
 };
 
 export const UI: Record<Locale, UIStrings> = {
@@ -128,6 +144,20 @@ export const UI: Record<Locale, UIStrings> = {
     importFile: "Import file",
     mapNumber: "Map {n}",
     untitledMap: "Untitled map",
+
+    options: "Options",
+    optionsDialogLabel: "Options",
+    temperatureUnit: "Temperature unit",
+    celsius: "Celsius",
+    fahrenheit: "Fahrenheit",
+    showGrid: "Show grid",
+    snapToGrid: "Snap to grid",
+    gridSize: "Grid size",
+    gridSizeSmall: "Small",
+    gridSizeMedium: "Medium",
+    gridSizeLarge: "Large",
+
+    selectedMaterial: "Selected",
   },
 
   pt: {
@@ -186,6 +216,20 @@ export const UI: Record<Locale, UIStrings> = {
     importFile: "Importar arquivo",
     mapNumber: "Mapa {n}",
     untitledMap: "Mapa sem nome",
+
+    options: "Opções",
+    optionsDialogLabel: "Opções",
+    temperatureUnit: "Unidade de temperatura",
+    celsius: "Celsius",
+    fahrenheit: "Fahrenheit",
+    showGrid: "Mostrar grade",
+    snapToGrid: "Alinhar à grade",
+    gridSize: "Tamanho da grade",
+    gridSizeSmall: "Pequena",
+    gridSizeMedium: "Média",
+    gridSizeLarge: "Grande",
+
+    selectedMaterial: "Selecionado",
   },
 
   ja: {
@@ -244,5 +288,19 @@ export const UI: Record<Locale, UIStrings> = {
     importFile: "ファイルを読み込む",
     mapNumber: "マップ{n}",
     untitledMap: "名称未設定マップ",
+
+    options: "設定",
+    optionsDialogLabel: "設定",
+    temperatureUnit: "温度の単位",
+    celsius: "摂氏",
+    fahrenheit: "華氏",
+    showGrid: "グリッドを表示",
+    snapToGrid: "グリッドに合わせる",
+    gridSize: "グリッドの大きさ",
+    gridSizeSmall: "小",
+    gridSizeMedium: "中",
+    gridSizeLarge: "大",
+
+    selectedMaterial: "選択中",
   },
 };

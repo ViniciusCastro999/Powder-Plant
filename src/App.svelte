@@ -4,6 +4,7 @@
   import HintsModal from "./components/HintsModal.svelte";
   import MapsModal from "./components/MapsModal.svelte";
   import OnboardingModal from "./components/OnboardingModal.svelte";
+  import OptionsModal from "./components/OptionsModal.svelte";
   import { BrushShape, MaterialId } from "./sim/types";
   import { NEUTRAL_TEMP } from "./sim/temperature";
   import { intlLocale } from "./i18n";
@@ -15,12 +16,16 @@
   });
 
   let selected = $state<MaterialId>(MaterialId.Sand);
+  let secondarySelected = $state<MaterialId>(MaterialId.Water);
+  let secondaryIsDrag = $state(false);
   let brushSize = $state(6);
   let brushShape = $state<BrushShape>(BrushShape.Point);
   let pixelCount = $state(0);
   let temperature = $state(NEUTRAL_TEMP);
+  let fps = $state(0);
   let hintsOpen = $state(false);
   let mapsOpen = $state(false);
+  let optionsOpen = $state(false);
   let onboardingOpen = $state(true);
   let paused = $state(false);
   let gravityOn = $state(true);
@@ -45,27 +50,33 @@
       <Canvas
         bind:this={canvasRef}
         selectedMaterial={selected}
+        secondaryMaterial={secondarySelected}
+        {secondaryIsDrag}
         {brushSize}
         {brushShape}
         {paused}
         {gravityOn}
         onCount={(n) => (pixelCount = n)}
         onTemperature={(c) => (temperature = c)}
+        onFps={(f) => (fps = f)}
       />
     </div>
   </div>
 
   <BottomPanel
     bind:selected
+    bind:secondarySelected
+    bind:secondaryIsDrag
     bind:brushSize
     bind:brushShape
     bind:paused
     bind:gravityOn
     {pixelCount}
     {temperature}
+    {fps}
     onclear={() => canvasRef?.clear()}
-    onhints={() => (hintsOpen = true)}
     onmaps={() => (mapsOpen = true)}
+    onoptions={() => (optionsOpen = true)}
   />
   <HintsModal open={hintsOpen} onclose={() => (hintsOpen = false)} ontour={() => (onboardingOpen = true)} />
   <MapsModal
@@ -75,6 +86,7 @@
     onload={(snap) => canvasRef?.loadMap(snap)}
   />
   <OnboardingModal open={onboardingOpen} onclose={() => (onboardingOpen = false)} />
+  <OptionsModal open={optionsOpen} onclose={() => (optionsOpen = false)} onhints={() => (hintsOpen = true)} />
 </main>
 
 <style>

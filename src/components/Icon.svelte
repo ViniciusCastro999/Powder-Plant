@@ -258,5 +258,18 @@
     <circle cx="9" cy="6" r="2.6" />
     <path d="M9 3.6 V8.4 M6.8 6 H11.2" stroke-width="1.3" />
     <path d="M16 20.6 V22" stroke-width="1.6" stroke-linecap="round" opacity="0.7" />
+  {:else if name === "settings"}
+    <!-- Three slider rows, the classic "options/preferences" glyph — reads clearly at small sizes, unlike a gear's fine teeth. -->
+    <path d="M3 6 H21 M3 12 H21 M3 18 H21" />
+    <circle cx="8" cy="6" r="2.1" fill="currentColor" stroke="none" />
+    <circle cx="16" cy="12" r="2.1" fill="currentColor" stroke="none" />
+    <circle cx="11" cy="18" r="2.1" fill="currentColor" stroke="none" />
+  {:else if name === "fps"}
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="M7 15 V9 H10 M7 12 H9.5" stroke-width="1.6" />
+    <path d="M12.5 15 V9 H15.5" stroke-width="1.6" />
+    <path d="M17 15 V9 H19.5 M17 12 H19" stroke-width="1.6" />
+  {:else if name === "chevron-right"}
+    <path d="M9 5 L16 12 L9 19" />
   {/if}
 </svg>

@@ -863,9 +863,9 @@ export function folkRetreat(grid: SimGrid, x: number, y: number, i: number, faci
     grid.meta[i] = packCreature(-facing, carry, fed);
   }
 
-  /** Whether a Pip takes its (slow, staggered) turn this tick — or is standing in water, in which case it acts every tick to get itself out. */
+  /** Whether a Pip takes its (slow, staggered) turn this tick — or is standing in water, in which case it acts every tick to get itself out. Staggered by both coordinates, not just `y`: a village's whole workforce walks the same ground floor, so keying this on height alone synced every Pip on that floor onto the exact same tick — each one's turn is cheap, but dozens all landing on one frame in lockstep was a visible periodic stutter. Adding `x` spreads them back across all `FOLK_ACT_INTERVAL` ticks. */
 export function folkActNow(grid: SimGrid, x: number, y: number): boolean {
-    if ((grid.tick + y) % FOLK_ACT_INTERVAL === 0) return true;
+    if ((grid.tick + x + y) % FOLK_ACT_INTERVAL === 0) return true;
     return grid.get(x, y) === MaterialId.Water ||
       (grid.inBounds(x, y + 1) && grid.get(x, y + 1) === MaterialId.Water);
   }
