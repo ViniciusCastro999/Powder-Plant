@@ -48,6 +48,14 @@ export const CLONE_ON_META = 0x80;
 export const MAGIC_LIFE = 200;
 
 /**
+ * A Vírus cell's starting lifespan (ticks) — set by the brush, and reset to
+ * full on every fresh cell an outbreak claims. The renderer fades a cell's
+ * color as this counts down toward 0, same idea as Magia's shimmer. See
+ * `stepVirus`.
+ */
+export const VIRUS_LIFE = 220;
+
+/**
  * A Ventilador's `meta` bits: unlike Fio/Porta/Bloco de Calor-Frio it needs
  * three things at once — which of 8 directions it blows (3 bits, an index
  * into FAN_DIR_VECTORS, set at paint time from SimGrid.fanDirection and

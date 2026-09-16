@@ -246,6 +246,33 @@ export const enum MaterialId {
    * systems/drains.ts.
    */
   Torneira = 51,
+  /**
+   * A slow-creeping infection, not a falling/flowing substance — it sits
+   * where it lands and, tick by tick, reaches into each of its 8 neighbors
+   * to claim it. A living host (Madeira/Planta/Broto/Flor/Trigo/Semente, or
+   * any Pip/animal except the already-dead Esqueleto) is consumed fast;
+   * everything else with a body — Sólido, Líquido, Gás, Fio, Cano,
+   * Torneira, Portão, whatever — can still be claimed too, just at a
+   * crawl. Vidro is the one true exception, immune outright. Each cell also
+   * carries its own fading lifespan — one that never finds a fresh host
+   * eventually dies out on its own — so an outbreak that runs out of
+   * things to infect burns itself out instead of turning the whole map
+   * purple forever. Fogo/Lava sterilizes it on contact; a Magia mote
+   * purifies it outright. See systems/virus.ts.
+   */
+  Virus = 52,
+  /**
+   * A second, rival strain of Vírus — identical in every way (same hosts,
+   * same speeds, same immunities, same fading lifespan) except its color
+   * and the one thing that makes it a rival at all: the two treat each
+   * other as hosts too, at the fast/living rate, each converting a
+   * touching cell of the other over to its own color. Wherever the two
+   * outbreaks meet, that's a real, ongoing battle line instead of either
+   * one just quietly claiming the other's territory. Only ever reached by
+   * right-clicking the Vírus tile (it has no palette tile of its own) — see
+   * BottomPanel's pickSecondary. See systems/virus.ts.
+   */
+  VirusPink = 53,
 }
 
 export const enum BrushShape {
@@ -283,6 +310,8 @@ export const enum MaterialCategory {
   Creature,
   /** Enchantment: drifts and transmutes its surroundings rather than obeying ordinary physics — see grid.ts stepMagic. */
   Magic,
+  /** A stationary infection that spreads by claiming one random neighbor per tick instead of falling or flowing — see systems/virus.ts stepVirus. */
+  Virus,
 }
 
 export interface MaterialDef {

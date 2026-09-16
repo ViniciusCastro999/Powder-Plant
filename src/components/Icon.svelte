@@ -175,6 +175,20 @@
     <path d="M6 20 L15 11 M13 9 L17 5 M17 5 L16 7 M17 5 L19 6" />
     <path d="M8 4 L8.7 6 L10.7 6.7 L8.7 7.4 L8 9.4 L7.3 7.4 L5.3 6.7 L7.3 6 Z" fill="currentColor" stroke="none" />
     <path d="M17.5 13 L18 14.5 L19.5 15 L18 15.5 L17.5 17 L17 15.5 L15.5 15 L17 14.5 Z" fill="currentColor" stroke="none" />
+  {:else if name === "virus"}
+    <circle cx="12" cy="12" r="4.3" />
+    <path
+      d="M12 4 V6.6 M12 17.4 V20 M4 12 H6.6 M17.4 12 H20 M6.3 6.3 L8.1 8.1 M15.9 15.9 L17.7 17.7 M17.7 6.3 L15.9 8.1 M8.1 15.9 L6.3 17.7"
+      stroke-width="1.6"
+    />
+    <circle cx="12" cy="4" r="1.2" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="20" r="1.2" fill="currentColor" stroke="none" />
+    <circle cx="4" cy="12" r="1.2" fill="currentColor" stroke="none" />
+    <circle cx="20" cy="12" r="1.2" fill="currentColor" stroke="none" />
+    <circle cx="6.3" cy="6.3" r="1" fill="currentColor" stroke="none" />
+    <circle cx="17.7" cy="17.7" r="1" fill="currentColor" stroke="none" />
+    <circle cx="17.7" cy="6.3" r="1" fill="currentColor" stroke="none" />
+    <circle cx="6.3" cy="17.7" r="1" fill="currentColor" stroke="none" />
   {:else if name === "folk"}
     <circle cx="12" cy="5.5" r="2.4" />
     <path d="M12 8 V15 M12 10 L7.5 13 M12 10 L16.5 13 M12 15 L8.5 21 M12 15 L15.5 21" />

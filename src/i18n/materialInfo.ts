@@ -207,6 +207,23 @@ const EN: InfoMap = {
       "Several open Faucets on one network split the flow between them evenly.",
     ],
   },
+  [MaterialId.Virus]: {
+    description: "A slow, stationary infection.",
+    interactions: [
+      "Quickly claims a touching Wood/Plant/Sprout/Flower/Wheat/Seed, or a touching animal/Pip (Skeleton is immune), turning it into more Virus.",
+      "Can also claim anything else it touches — Solids, Liquids, Gases, Wire, Pipe, Faucet, Gates, all of it — just at a crawl. Glass is the one true exception, immune outright.",
+      "Fire/Lava sterilizes it on contact. Magic purifies it outright.",
+      "Fades away on its own if it goes too long without a fresh host.",
+      "Right-click the tile to pick its rival, Pink Virus, for the right mouse button — the two convert each other on contact, fast, wherever they meet.",
+    ],
+  },
+  [MaterialId.VirusPink]: {
+    description: "A rival strain of Virus.",
+    interactions: [
+      "Identical to Virus in every way, except it fights the purple strain: the two convert each other, fast, wherever they touch.",
+      "Only reachable by right-clicking the Virus tile — it has no palette tile of its own.",
+    ],
+  },
 };
 
 const PT: InfoMap = {
@@ -404,6 +421,23 @@ const PT: InfoMap = {
       "Várias Torneiras abertas na mesma rede dividem o fluxo igualmente entre elas.",
     ],
   },
+  [MaterialId.Virus]: {
+    description: "Uma infecção lenta e parada no lugar.",
+    interactions: [
+      "Toma conta rápido de Madeira/Planta/Broto/Flor/Trigo/Semente ou de um bicho/Pip tocando (Esqueleto é imune), virando mais Vírus.",
+      "Também pode tomar conta de qualquer outra coisa que tocar — Sólidos, Líquidos, Gases, Fio, Cano, Torneira, Portão, tudo — só que bem devagar. Vidro é a única exceção, imune de verdade.",
+      "Fogo/Lava esteriliza no contato. Magia purifica na hora.",
+      "Some sozinho se passar tempo demais sem achar um hospedeiro novo.",
+      "Clique com o botão direito no quadradinho pra escolher o rival, o Vírus Rosa, pro botão direito do mouse — os dois se convertem, rápido, onde quer que se encontrem.",
+    ],
+  },
+  [MaterialId.VirusPink]: {
+    description: "Uma cepa rival do Vírus.",
+    interactions: [
+      "Igual ao Vírus em tudo, só que rival da cepa roxa: os dois se convertem, rápido, onde quer que se toquem.",
+      "Só se chega a ele clicando com o botão direito no quadradinho do Vírus — ele não tem quadradinho próprio.",
+    ],
+  },
 };
 
 const JA: InfoMap = {
@@ -599,6 +633,23 @@ const JA: InfoMap = {
     interactions: [
       "通電中は、新しく届いた液体もパイプにたまっていた液体も外に流れ出る。",
       "同じ網に開いた蛇口が複数あると、流れを均等に分け合う。",
+    ],
+  },
+  [MaterialId.Virus]: {
+    description: "ゆっくり広がる、その場から動かない感染体。",
+    interactions: [
+      "触れた木・植物・芽・花・小麦・種、または動物・住民（骸骨は免疫）を素早く乗っ取り、ウイルスに変える。",
+      "触れた他の何か（固体、液体、気体、ワイヤー、パイプ、蛇口、ゲートなど）も乗っ取れるが、ものすごく遅い。ガラスだけは本当に免疫。",
+      "火や溶岩に触れると滅菌される。魔法は完全に浄化する。",
+      "新しい宿主が長く見つからないと自然に消える。",
+      "アイコンを右クリックすると、右クリック用にライバルのピンクウイルスを選べる。二つは触れ合うと素早く互いを変換し合う。",
+    ],
+  },
+  [MaterialId.VirusPink]: {
+    description: "ウイルスのライバル株。",
+    interactions: [
+      "ウイルスと全く同じだが、紫の株のライバル。二つは触れ合うと素早く互いを変換し合う。",
+      "ウイルスのアイコンを右クリックすることでしか選べない。専用のアイコンは無い。",
     ],
   },
 };

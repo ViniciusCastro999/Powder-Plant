@@ -114,6 +114,15 @@ export function transmute(grid: SimGrid, x: number, y: number): boolean {
     case MaterialId.C4:
       grid.set(x, y, MaterialId.Sand);
       return true;
+    case MaterialId.Virus:
+    case MaterialId.VirusPink:
+      // The one cure: Magia purifies an infected cell outright, no roll
+      // needed — unlike Fogo's sterilization, this doesn't need a host to
+      // also die for the cell to be saved. Purple or pink, it's cured the
+      // same way — Magia doesn't take sides in the strains' own rivalry.
+      grid.set(x, y, MaterialId.Empty);
+      grid.flashes.push({ x, y, life: FLASH_LIFE, maxLife: FLASH_LIFE });
+      return true;
     case MaterialId.CombustibleGas:
       if (Math.random() < 0.5) {
         grid.set(x, y, MaterialId.Empty);

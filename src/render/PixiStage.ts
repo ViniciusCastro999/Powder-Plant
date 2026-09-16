@@ -4,7 +4,7 @@ import { MaterialCategory, MaterialId } from "../sim/types";
 import { MATERIALS } from "../sim/materials";
 import { EXTREME_COLD, EXTREME_HOT, COLD_1, COLD_3, PROSPEROUS_LOW, PROSPEROUS_TEMP, PROSPEROUS_HIGH, HOT_2, HOT_3, isProsperous } from "../sim/temperature";
 import {
-  GLASS_SHATTER_HITS, MAGIC_LIFE, WHEAT_RIPE, CIRCUIT_ON_META, LEVER_ARM_META,
+  GLASS_SHATTER_HITS, MAGIC_LIFE, VIRUS_LIFE, WHEAT_RIPE, CIRCUIT_ON_META, LEVER_ARM_META,
   CIRCUIT_LINKED_META, CLONE_LINKED_META, CLONE_ON_META, FAN_LINKED_META, FAN_ON_META,
   PIPE_FILLED_META, PIPE_LIQUID_MASK,
 } from "../sim/metaBits";
@@ -422,6 +422,27 @@ export class PixiStage {
           b = 255;
         }
         const fade = 0.45 + 0.55 * lifeT;
+        r *= fade;
+        g *= fade;
+        b *= fade;
+      } else if (id === MaterialId.Virus || id === MaterialId.VirusPink) {
+        // A sickly, slow pulse instead of Magia's bright shimmer — a much
+        // slower beat (divided frame) and darker sparse flecks, like
+        // pustules, instead of near-white sparkle. Darkens toward black as
+        // its lifespan runs out, reading as the infection dying off. Same
+        // treatment for both strains — it's additive on top of whichever
+        // base color (purple or pink) already came from MATERIALS above.
+        const lifeT = Math.min(1, meta[i] / VIRUS_LIFE);
+        const pulse = Math.sin(this.frame * 0.05 + hash(i) * 0.001) * 22;
+        r += pulse * 0.8;
+        g += pulse * 0.3;
+        b += pulse * 0.9;
+        if (hash(i) % 23 === 0) {
+          r *= 0.55;
+          g *= 0.55;
+          b *= 0.6;
+        }
+        const fade = 0.4 + 0.6 * lifeT;
         r *= fade;
         g *= fade;
         b *= fade;

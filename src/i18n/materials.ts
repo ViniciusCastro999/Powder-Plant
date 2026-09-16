@@ -120,6 +120,8 @@ export const MATERIAL_NAMES: Record<Locale, Record<MaterialId, string>> = {
     [MaterialId.Drain]: "Drain",
     [MaterialId.Pipe]: "Pipe",
     [MaterialId.Torneira]: "Faucet",
+    [MaterialId.Virus]: "Virus",
+    [MaterialId.VirusPink]: "Pink Virus",
   },
   pt: {
     [MaterialId.Empty]: "Vazio",
@@ -174,6 +176,8 @@ export const MATERIAL_NAMES: Record<Locale, Record<MaterialId, string>> = {
     [MaterialId.Drain]: "Ralo",
     [MaterialId.Pipe]: "Cano",
     [MaterialId.Torneira]: "Torneira",
+    [MaterialId.Virus]: "Vírus",
+    [MaterialId.VirusPink]: "Vírus Rosa",
   },
   ja: {
     [MaterialId.Empty]: "空",
@@ -228,5 +232,7 @@ export const MATERIAL_NAMES: Record<Locale, Record<MaterialId, string>> = {
     [MaterialId.Drain]: "排水口",
     [MaterialId.Pipe]: "パイプ",
     [MaterialId.Torneira]: "蛇口",
+    [MaterialId.Virus]: "ウイルス",
+    [MaterialId.VirusPink]: "ピンクウイルス",
   },
 };

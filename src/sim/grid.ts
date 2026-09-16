@@ -3,7 +3,7 @@ import { MATERIALS, SINGLE_DROP_MATERIALS } from "./materials";
 import { NEUTRAL_TEMP, EXTREME_COLD, EXTREME_HOT, COLD_1, COLD_2, COLD_3 } from "./temperature";
 import { rleEncode, rleDecode, SCHEMA_VERSION, type MapSnapshot } from "./storage";
 import type { HousePlan } from "./houseBlueprints";
-import { CIRCUIT_ON_META, LEVER_ARM_META, MAGIC_LIFE, FAN_DIR_MASK } from "./metaBits";
+import { CIRCUIT_ON_META, LEVER_ARM_META, MAGIC_LIFE, VIRUS_LIFE, FAN_DIR_MASK } from "./metaBits";
 import { NEIGHBORS_8 } from "./neighbors";
 import { stepLifeGeneration as stepLifeGenerationImpl } from "./systems/life";
 import {
@@ -15,6 +15,7 @@ import { CREATURE_FED_MAX, packCreature } from "./creatureMeta";
 import {
   stepMagic as stepMagicImpl, transmute as transmuteImpl,
 } from "./systems/magic";
+import { stepVirus as stepVirusImpl } from "./systems/virus";
 import {
   stepClone as stepCloneImpl, advancePulses as advancePulsesImpl, conducts as conductsImpl,
   pulseDirCandidates as pulseDirCandidatesImpl, circuitConnected as circuitConnectedImpl,
@@ -459,6 +460,9 @@ export const WHEAT_PER_FARMER = 70;
 
 // Magia's tuning constants (MAGIC_CAST_COST, MAGIC_BLOOM_ON_DEATH) live in
 // systems/magic.ts. MAGIC_LIFE lives in metaBits.ts — the renderer needs it too.
+// Vírus's tuning constants (VIRUS_SPREAD_CHANCE, VIRUS_AIRBORNE_CHANCE, its
+// host lists) live in systems/virus.ts. VIRUS_LIFE lives in metaBits.ts, same
+// reason as MAGIC_LIFE.
 
 // NEIGHBORS_8 / NEIGHBORS_4 live in neighbors.ts — every system module needs them.
 /** [dx, dy, weight] a Sprout can grow into — biased upward, never downward, so it reads as a little plant instead of a blob. */
@@ -1079,6 +1083,7 @@ export class SimGrid {
       return packCreature(Math.random() < 0.5 ? 1 : -1, 0, CREATURE_FED_MAX);
     }
     if (id === MaterialId.Magic) return MAGIC_LIFE;
+    if (id === MaterialId.Virus || id === MaterialId.VirusPink) return VIRUS_LIFE;
     if (id === MaterialId.Fan) return this.fanDirection & FAN_DIR_MASK;
     return 0;
   }
@@ -1481,6 +1486,9 @@ export class SimGrid {
             break;
           case MaterialCategory.Magic:
             this.stepMagic(x, y, i);
+            break;
+          case MaterialCategory.Virus:
+            this.stepVirus(x, y, i);
             break;
           default:
             break;
@@ -1972,6 +1980,11 @@ export class SimGrid {
   /** One enchantment nudging a cell toward life/order. See systems/magic.ts. */
   transmute(x: number, y: number): boolean {
     return transmuteImpl(this, x, y);
+  }
+
+  /** Vírus: a stationary infection that claims one random neighbor per tick. See systems/virus.ts. */
+  stepVirus(x: number, y: number, i: number): void {
+    stepVirusImpl(this, x, y, i);
   }
 
   // ── O povo: Construtor, Lenhador, Plantador, Guerreiro ─────────────────────

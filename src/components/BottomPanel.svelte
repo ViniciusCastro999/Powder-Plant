@@ -72,11 +72,17 @@
     }
   }
 
-  /** Right-click on a tile sets the secondary (right mouse button) material instead — like a paint program's background color — without closing the popup, so both can be picked from the same open list. */
+  /** Right-click on a tile sets the secondary (right mouse button) material instead — like a paint program's background color — without closing the popup, so both can be picked from the same open list. Right-clicking Vírus specifically gives its rival, Vírus Rosa, instead of the same purple strain — that tile is the only way to ever reach the pink one. */
   function pickSecondary(e: MouseEvent, id: MaterialId): void {
     e.preventDefault();
-    secondarySelected = id;
+    secondarySelected = id === MaterialId.Virus ? MaterialId.VirusPink : id;
     secondaryIsDrag = false;
+  }
+
+  /** Whether a tile's own right-click ring should light up — Vírus's tile lights up for its rival Vírus Rosa too, since that's the only place the pink strain is ever reached from. */
+  function tileIsSecondary(id: MaterialId): boolean {
+    if (secondarySelected === id) return true;
+    return id === MaterialId.Virus && secondarySelected === MaterialId.VirusPink;
   }
 
   function selectErase(): void {
@@ -215,7 +221,7 @@
                   <button
                     class="tile"
                     class:active={selected === id}
-                    class:secondary={secondarySelected === id}
+                    class:secondary={tileIsSecondary(id)}
                     onclick={() => pick(id)}
                     oncontextmenu={(e) => pickSecondary(e, id)}
                   >
@@ -233,7 +239,7 @@
                 <button
                   class="tile"
                   class:active={selected === id}
-                  class:secondary={secondarySelected === id}
+                  class:secondary={tileIsSecondary(id)}
                   onclick={() => pick(id)}
                   oncontextmenu={(e) => pickSecondary(e, id)}
                 >

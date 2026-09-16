@@ -496,6 +496,41 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     conductive: false,
     spontaneousIgniteTemp: NEVER_SPONTANEOUS,
   },
+  [MaterialId.Virus]: {
+    id: MaterialId.Virus,
+    name: "Vírus",
+    category: MaterialCategory.Virus,
+    // A duller, sicklier purple than Magia's bright violet, so the two
+    // never get mixed up on sight.
+    color: [126, 34, 146],
+    density: 1,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    // Immune to Ácido — it's not matter to dissolve, it's an infection.
+    // Fogo/Lava sterilizes it instead (see stepVirus), a different check
+    // entirely from the usual acid-charge one.
+    acidResistance: 0,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
+  [MaterialId.VirusPink]: {
+    id: MaterialId.VirusPink,
+    name: "Vírus Rosa",
+    category: MaterialCategory.Virus,
+    // A hot, unmistakable pink — the two strains have to read as clearly
+    // different colors at a glance, right where they're fighting.
+    color: [230, 60, 150],
+    density: 1,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    acidResistance: 0,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
   [MaterialId.Mason]: {
     id: MaterialId.Mason,
     name: "Construtor",
@@ -921,7 +956,7 @@ export const PALETTE_CATEGORIES: PaletteCategory[] = [
     id: "especiais",
     label: "Especiais",
     icon: "fire",
-    materials: [MaterialId.Fire, MaterialId.Clone, MaterialId.Magic, MaterialId.CombustibleGas],
+    materials: [MaterialId.Fire, MaterialId.Clone, MaterialId.Magic, MaterialId.CombustibleGas, MaterialId.Virus],
   },
 ];
 
@@ -984,4 +1019,6 @@ export const ICON_BY_MATERIAL: Record<MaterialId, string> = {
   [MaterialId.Drain]: "drain",
   [MaterialId.Pipe]: "pipe",
   [MaterialId.Torneira]: "faucet",
+  [MaterialId.Virus]: "virus",
+  [MaterialId.VirusPink]: "virus",
 };
