@@ -13,7 +13,7 @@ import {
 } from "./systems/wildlife";
 import { CREATURE_FED_MAX, packCreature } from "./creatureMeta";
 import {
-  stepMagic as stepMagicImpl, transmute as transmuteImpl, conjureCreature as conjureCreatureImpl,
+  stepMagic as stepMagicImpl, transmute as transmuteImpl,
 } from "./systems/magic";
 import {
   stepClone as stepCloneImpl, advancePulses as advancePulsesImpl, conducts as conductsImpl,
@@ -457,9 +457,8 @@ export const WHEAT_PER_FARMER = 70;
 // FOLK_GIVEUP_COOLDOWN / FOLK_COMFORT_MIN / FOLK_COMFORT_MAX /
 // FOLK_EXPOSURE_PER_DEGREE / FOLK_EXPOSURE_CAP live in folk/engine.ts.
 
-// Magia's tuning constants (MAGIC_CAST_COST, MAGIC_CONJURE_CHANCE,
-// MAGIC_BLOOM_ON_DEATH) live in systems/magic.ts. MAGIC_LIFE lives in
-// metaBits.ts — the renderer needs it too.
+// Magia's tuning constants (MAGIC_CAST_COST, MAGIC_BLOOM_ON_DEATH) live in
+// systems/magic.ts. MAGIC_LIFE lives in metaBits.ts — the renderer needs it too.
 
 // NEIGHBORS_8 / NEIGHBORS_4 live in neighbors.ts — every system module needs them.
 /** [dx, dy, weight] a Sprout can grow into — biased upward, never downward, so it reads as a little plant instead of a blob. */
@@ -1965,7 +1964,7 @@ export class SimGrid {
     stepFishImpl(this, x, y, i);
   }
 
-  /** Magia: a mote that transmutes and conjures. See systems/magic.ts. */
+  /** Magia: a mote that wanders and transmutes. See systems/magic.ts. */
   stepMagic(x: number, y: number, i: number): void {
     stepMagicImpl(this, x, y, i);
   }
@@ -1973,11 +1972,6 @@ export class SimGrid {
   /** One enchantment nudging a cell toward life/order. See systems/magic.ts. */
   transmute(x: number, y: number): boolean {
     return transmuteImpl(this, x, y);
-  }
-
-  /** Rarely conjures a creature fitting its surroundings. See systems/magic.ts. */
-  conjureCreature(x: number, y: number): void {
-    conjureCreatureImpl(this, x, y);
   }
 
   // ── O povo: Construtor, Lenhador, Plantador, Guerreiro ─────────────────────
