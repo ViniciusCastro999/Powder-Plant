@@ -224,6 +224,26 @@ const EN: InfoMap = {
       "Only reachable by right-clicking the Virus tile — it has no palette tile of its own.",
     ],
   },
+  [MaterialId.Fungus]: {
+    description: "A mycelium network that spreads through several materials.",
+    interactions: [
+      "Spreads slowly into any touching Wood, Plant, Brick, Sand, Dirt, Mud, Stone or Gunpowder — each infection keeps that material's own color and texture instead of one flat look.",
+      "Immune to Virus outright; the two don't compete.",
+      "Flammable, like any organic matter — Fire burns through it.",
+      "Occasionally sprouts a Spore Puff on open ground right above it. Never decays on its own.",
+    ],
+  },
+  [MaterialId.Spore]: {
+    description: "A drifting cloud of spores, a real gas.",
+    interactions: [
+      "Painted just like Fire or Gas — fills the open air the brush passes over immediately, no solid core underneath, just the cloud itself.",
+      "Carried by a Fan's draft, same as Steam.",
+      "Settles against one of Fungus's eight hosts (Wood, Plant, Brick, Sand, Dirt, Mud, Stone, Gunpowder), or against a Virus cell, with a chance to claim it as a fresh Fungus cell — a Virus cell claimed this way stops reproducing for good.",
+      "Killed outright by touching Fire or Lava, same as they sterilize Virus.",
+      "Drifts and thins out on its own over time.",
+      "A Fungus patch also puffs this out on its own every so often.",
+    ],
+  },
 };
 
 const PT: InfoMap = {
@@ -438,6 +458,26 @@ const PT: InfoMap = {
       "Só se chega a ele clicando com o botão direito no quadradinho do Vírus — ele não tem quadradinho próprio.",
     ],
   },
+  [MaterialId.Fungus]: {
+    description: "Uma rede de micélio que se espalha por vários materiais.",
+    interactions: [
+      "Se espalha devagar por Madeira, Planta, Tijolo, Areia, Terra, Barro, Pedra ou Pólvora tocando — cada infecção mantém a cor e a textura do material original em vez de um visual único.",
+      "Imune ao Vírus de verdade; os dois não competem.",
+      "Inflamável, que nem qualquer matéria orgânica — o Fogo queima ele.",
+      "De vez em quando brota um Esporos no chão aberto bem em cima dele. Nunca some sozinho.",
+    ],
+  },
+  [MaterialId.Spore]: {
+    description: "Uma nuvem de esporos à deriva, um gás de verdade.",
+    interactions: [
+      "Pintado igual Fogo ou Gás, preenche o ar aberto por onde o pincel passa na hora, sem nenhum bloco sólido embaixo, só a nuvem mesmo.",
+      "Levado pela corrente de um Ventilador, que nem o Vapor.",
+      "Encostando em um dos oito hospedeiros do Fungo (Madeira, Planta, Tijolo, Areia, Terra, Barro, Pedra, Pólvora), ou num Vírus, tem chance de tomar aquela célula como Fungo novo, um Vírus contaminado assim para de se reproduzir de vez.",
+      "Morre na hora se encostar em Fogo ou Lava, que nem esteriliza o Vírus.",
+      "Vai à deriva e se dissipando sozinho com o tempo.",
+      "Uma rede de Fungo também solta isso sozinha de vez em quando.",
+    ],
+  },
 };
 
 const JA: InfoMap = {
@@ -650,6 +690,26 @@ const JA: InfoMap = {
     interactions: [
       "ウイルスと全く同じだが、紫の株のライバル。二つは触れ合うと素早く互いを変換し合う。",
       "ウイルスのアイコンを右クリックすることでしか選べない。専用のアイコンは無い。",
+    ],
+  },
+  [MaterialId.Fungus]: {
+    description: "いくつもの素材に広がる菌糸ネットワーク。",
+    interactions: [
+      "触れた木・植物・レンガ・砂・土・泥・石・火薬にゆっくり広がる。感染した素材はそれぞれ元の色と質感を保つ。",
+      "ウイルスには完全に免疫。二つは競合しない。",
+      "有機物なので燃える — 火で焼ける。",
+      "たまに真上の開いた地面に胞子雲を生やす。自然には消えない。",
+    ],
+  },
+  [MaterialId.Spore]: {
+    description: "漂う胞子の雲、本物の気体。",
+    interactions: [
+      "火やガスと同じく、筆が通った空いた場所にすぐ広がる — 下に固体の塊はなく、雲そのものだけ。",
+      "扇風機の風で運ばれる、蒸気と同じように。",
+      "菌類の8つの宿主(木材、植物、レンガ、砂、土、泥、石、火薬)、またはウイルスに触れると、そこを新しい菌類として乗っ取ることがある — こうして乗っ取られたウイルスは二度と増殖しない。",
+      "火や溶岩に触れると、ウイルスを滅菌するのと同じようにその場で消える。",
+      "時間とともに漂い、薄れて消えていく。",
+      "菌類のネットワークも時々これを自分で放つ。",
     ],
   },
 };

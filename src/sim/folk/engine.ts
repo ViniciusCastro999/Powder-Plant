@@ -450,10 +450,13 @@ export function folkWalk(
     // Houses are intangible to folk — they walk through the walls as if the
     // building were on a plane behind them. Standing on a roof/wall cell (the
     // sim put one under the folk) just means dropping straight through it to
-    // the first real footing below.
-    if (grid.isGhost(x, y + 1)) {
+    // the first real footing below. Uses isFloorGhost, not the general
+    // isGhost — a wild Cogumelo is walked through sideways but stays solid
+    // underfoot, same as any other ground; only a house wall/roof, a tree
+    // trunk or a blocked-open Portão actually give way here.
+    if (grid.isFloorGhost(x, y + 1)) {
       for (let d = 1; d <= 24; d++) {
-        if (grid.isGhost(x, y + d)) continue;
+        if (grid.isFloorGhost(x, y + d)) continue;
         const t = grid.inBounds(x, y + d) ? grid.get(x, y + d) : MaterialId.Stone;
         if (t === MaterialId.Empty) {
           grid.moveCreature(x, y, x, y + d, packCreature(facing, carry, fed));
@@ -634,14 +637,22 @@ export function folkWalk(
           }
         }
       }
-      // Falling back here with a real want and nothing to show for it:
-      // count it. Past FOLK_STUCK_LIMIT of these in a row, give up on the
-      // want outright — retreat clear of the spot and sit out the next
+      // Falling back here *braced against a wall* with nothing to show for
+      // it: count it. Past FOLK_STUCK_LIMIT of these in a row, give up on
+      // the want outright — retreat clear of the spot and sit out the next
       // FOLK_GIVEUP_COOLDOWN real actions idle (see the check at the top of
       // this function) — rather than keep climbing and falling in place
-      // forever. An idle folk was never "trying" in the first place, so
-      // this never counts against one just ambling off a ledge.
-      if (!idle && !nearWater) {
+      // forever. Gated on `braced`, not just `!idle`: a Pip with a real want
+      // that's simply plummeting through open air (nothing beside it to
+      // climb at all) is making perfectly good downward progress every one
+      // of these ticks, not failing — counting it here used to trip the
+      // give-up limit after any fall taller than FOLK_STUCK_LIMIT rows, and
+      // `folkRetreat`'s only fallback with no wall nearby to sidestep to is
+      // "hop up one cell", so a tall fall turned into forever bouncing
+      // between two rows instead of ever reaching the ground. An idle folk
+      // was never "trying" in the first place, so this never counts against
+      // one just ambling off a ledge either.
+      if (!idle && !nearWater && braced) {
         const stuck = Math.min(255, grid.stuckTicks[si] + 1);
         if (stuck >= FOLK_STUCK_LIMIT) {
           // Set the give-up sentinel *before* retreating — `folkRetreat`
@@ -653,6 +664,9 @@ export function folkWalk(
           return;
         }
         grid.stuckTicks[si] = stuck;
+      } else if (!nearWater) {
+        // A real, unobstructed fall — undeniable progress, not a stall.
+        grid.stuckTicks[si] = 0;
       }
       // An idle folk falling back off a wall it had no reason to climb (open
       // air above, so the haul-up above didn't fire) lands facing away from

@@ -7,6 +7,7 @@ import { NEIGHBORS_8 } from "../neighbors";
 import { WHEAT_RIPE } from "../metaBits";
 import { HOUSE_PLANS, PLAN_GRANARY } from "../houseBlueprints";
 import { CREATURE_FED_MAX, packCreature, creatureFacing, creatureFed, creatureTimer } from "../creatureMeta";
+import { INFECTED_HARVEST_WORK } from "./infection";
 
 /** Stray mature growth a Plantador harvests alongside its ripe Trigo. */
 const FARMER_CROPS: readonly MaterialId[] = [MaterialId.Plant, MaterialId.Flor];
@@ -31,7 +32,9 @@ export function stepFarmer(grid: SimGrid, x: number, y: number, i: number): void
     let carrying = creatureTimer(grid.meta[i]) === 1;
     let fed = grid.folkUpkeep(x, y, creatureFed(grid.meta[i]));
     if (fed < 0) return;
-    if (!grid.folkActNow(x, y)) { // slow, deliberate labour (but act every tick to swim clear of water)
+    grid.tickPipInfection(x, y, i);
+    const infected = grid.isPipInfected(i);
+    if (!infected && !grid.folkActNow(x, y)) { // slow, deliberate labour (but act every tick to swim clear of water) — an infected Fazendeiro skips this entirely, it never slows down
       grid.meta[i] = packCreature(facing, carrying ? 1 : 0, fed);
       return;
     }
@@ -70,7 +73,7 @@ export function stepFarmer(grid: SimGrid, x: number, y: number, i: number): void
       // Once the field's got going, spare ripe heads go into the celeiro.
       const store = hungry || grid.cropCensus < 30 ? null : grid.nearestStore(x, y, PLAN_GRANARY, STORE_REACH);
       if (hungry || store) {
-        if (grid.harvestReady(i, HARVEST_WORK)) {
+        if (grid.harvestReady(i, infected ? INFECTED_HARVEST_WORK : HARVEST_WORK)) {
           if (hungry) { grid.set(ripeAt[0], ripeAt[1], MaterialId.Empty); fed = CREATURE_FED_MAX; }
           else if (store && grid.stashInStore(store[0], store[1], PLAN_GRANARY, MaterialId.Wheat)) {
             grid.set(ripeAt[0], ripeAt[1], MaterialId.Empty);
@@ -94,9 +97,12 @@ export function stepFarmer(grid: SimGrid, x: number, y: number, i: number): void
     if (carrying && below === MaterialId.Dirt && Math.random() < FARMER_WORK_CHANCE) {
       grid.set(x, y + 1, MaterialId.Mud);
       carrying = false;
-    } else if (!carrying && (below === MaterialId.Dirt || below === MaterialId.Mud)) {
+    } else if (!carrying && (below === MaterialId.Dirt || below === MaterialId.Mud || below === MaterialId.Fungus)) {
       // Grade the furrow flat, then sow one shoot on it. Standing to grade is
-      // the "level first" beat; Trigo only takes on level ground.
+      // the "level first" beat; Trigo only takes on level ground. Fungus
+      // ground has no bumps for gradeStrip to find (it only looks for rough
+      // Areia/Terra/Barro), so it's already effectively "graded" — the
+      // Fazendeiro just moves straight on to sowing there.
       if (grid.gradeStrip(x, y, WHEAT_FURROW + 1) && Math.random() < 0.7) {
         grid.meta[i] = packCreature(facing, 0, fed);
         return;
@@ -105,7 +111,7 @@ export function stepFarmer(grid: SimGrid, x: number, y: number, i: number): void
       const belowF = grid.get(f, y + 1);
       if (
         grid.get(f, y) === MaterialId.Empty &&
-        (belowF === MaterialId.Dirt || belowF === MaterialId.Mud) &&
+        (belowF === MaterialId.Dirt || belowF === MaterialId.Mud || belowF === MaterialId.Fungus) &&
         grid.groundLevel(x, y, WHEAT_FURROW) &&
         grid.fieldWantsMoreWheat() &&
         !grid.roofedOver(f, y) && !grid.roofedOver(x, y) && // never sow indoors

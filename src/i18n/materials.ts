@@ -122,6 +122,9 @@ export const MATERIAL_NAMES: Record<Locale, Record<MaterialId, string>> = {
     [MaterialId.Torneira]: "Faucet",
     [MaterialId.Virus]: "Virus",
     [MaterialId.VirusPink]: "Pink Virus",
+    [MaterialId.Fungus]: "Fungus",
+    [MaterialId.Mushroom]: "Mushroom",
+    [MaterialId.Spore]: "Spore Puff",
   },
   pt: {
     [MaterialId.Empty]: "Vazio",
@@ -178,6 +181,9 @@ export const MATERIAL_NAMES: Record<Locale, Record<MaterialId, string>> = {
     [MaterialId.Torneira]: "Torneira",
     [MaterialId.Virus]: "Vírus",
     [MaterialId.VirusPink]: "Vírus Rosa",
+    [MaterialId.Fungus]: "Fungo",
+    [MaterialId.Mushroom]: "Cogumelo",
+    [MaterialId.Spore]: "Esporos",
   },
   ja: {
     [MaterialId.Empty]: "空",
@@ -234,5 +240,8 @@ export const MATERIAL_NAMES: Record<Locale, Record<MaterialId, string>> = {
     [MaterialId.Torneira]: "蛇口",
     [MaterialId.Virus]: "ウイルス",
     [MaterialId.VirusPink]: "ピンクウイルス",
+    [MaterialId.Fungus]: "菌類",
+    [MaterialId.Mushroom]: "キノコ",
+    [MaterialId.Spore]: "胞子雲",
   },
 };

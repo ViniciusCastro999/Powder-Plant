@@ -531,6 +531,61 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     conductive: false,
     spontaneousIgniteTemp: NEVER_SPONTANEOUS,
   },
+  [MaterialId.Fungus]: {
+    id: MaterialId.Fungus,
+    name: "Fungo",
+    category: MaterialCategory.Fungus,
+    // A muted, mossy olive — reads as organic growth, not a hazard the way
+    // Vírus's purple does.
+    color: [104, 96, 58],
+    density: 1,
+    flammable: true,
+    burnTicks: 70,
+    ignitionChance: 0.08,
+    explosive: false,
+    acidResistance: 1,
+    conductive: false,
+    spontaneousIgniteTemp: 70,
+  },
+  // Not in any PALETTE_CATEGORIES — a Cogumelo only ever grows on its own
+  // out of an infected patch of Fungus (see systems/fungus.ts), it's never
+  // something the player paints directly. `color` here is just the
+  // fallback the renderer's generic tail would use if it ever fell through
+  // — in practice every Cogumelo cell's real color/texture comes from its
+  // origin (see FUNGUS_ORIGIN_COLORS in PixiStage.ts), same as Fungus
+  // itself.
+  [MaterialId.Mushroom]: {
+    id: MaterialId.Mushroom,
+    name: "Cogumelo",
+    category: MaterialCategory.Fungus,
+    color: [104, 96, 58],
+    density: 1,
+    flammable: true,
+    burnTicks: 70,
+    ignitionChance: 0.08,
+    explosive: false,
+    acidResistance: 1,
+    conductive: false,
+    spontaneousIgniteTemp: 70,
+  },
+  [MaterialId.Spore]: {
+    id: MaterialId.Spore,
+    name: "Esporos",
+    category: MaterialCategory.Gas,
+    // A hazy sage green — the renderer blends this toward the ambient
+    // background and adds heavy roiling grain (see PixiStage) so it reads
+    // as a puff of drifting spores, not a solid body. Also where the
+    // bioluminescent glow starts from, brighter at night/in the cold.
+    color: [176, 190, 148],
+    density: 1,
+    flammable: false,
+    burnTicks: 0,
+    ignitionChance: 0,
+    explosive: false,
+    acidResistance: 0,
+    conductive: false,
+    spontaneousIgniteTemp: NEVER_SPONTANEOUS,
+  },
   [MaterialId.Mason]: {
     id: MaterialId.Mason,
     name: "Construtor",
@@ -906,7 +961,7 @@ export const PALETTE_CATEGORIES: PaletteCategory[] = [
     id: "plantas",
     label: "Plantas",
     icon: "plant",
-    materials: [MaterialId.Plant, MaterialId.Seed, MaterialId.Vida],
+    materials: [MaterialId.Plant, MaterialId.Seed, MaterialId.Vida, MaterialId.Fungus, MaterialId.Spore],
   },
   {
     id: "fauna",
@@ -1021,4 +1076,7 @@ export const ICON_BY_MATERIAL: Record<MaterialId, string> = {
   [MaterialId.Torneira]: "faucet",
   [MaterialId.Virus]: "virus",
   [MaterialId.VirusPink]: "virus",
+  [MaterialId.Fungus]: "fungus",
+  [MaterialId.Mushroom]: "fungus",
+  [MaterialId.Spore]: "spore-puff",
 };

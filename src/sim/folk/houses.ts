@@ -8,7 +8,7 @@ import { MATERIALS } from "../materials";
 import { isGateMaterial } from "../systems/gates";
 import {
   HOUSE_WALL_META, HOUSE_ANCHOR_META, HOUSE_KIND_MASK, HOUSE_FLOOR, HOUSE_DECK, HOUSE_STAIR,
-  HOUSE_WALL, HOUSE_WALLS, HOUSE_WALL_MATERIAL, HOUSE_WALL_ICE, HOUSE_WALL_WOOD, HOUSE_WALL_BRICK,
+  HOUSE_WALL, HOUSE_WALLS, HOUSE_WALL_MATERIAL, HOUSE_WALL_ICE, HOUSE_WALL_WOOD, HOUSE_WALL_BRICK, HOUSE_WALL_MUSHROOM,
   HOUSE_PLANS, HOUSE_HEIGHTS, HOUSE_BLUEPRINTS, HOUSE_MAX_DWELLING_SPAN, MASON_MAX_PLAN,
   houseCellMaterial, houseStyle, houseType, packHouseAnchor,
 } from "../houseBlueprints";
@@ -60,7 +60,8 @@ export function stepMason(grid: SimGrid, x: number, y: number, i: number): void 
     const facing = creatureFacing(grid.meta[i]);
     const fed = grid.folkUpkeep(x, y, creatureFed(grid.meta[i]));
     if (fed < 0) return;
-    if (!grid.folkActNow(x, y)) { // slow, deliberate labour (but act every tick to swim clear of water)
+    grid.tickPipInfection(x, y, i);
+    if (!grid.isPipInfected(i) && !grid.folkActNow(x, y)) { // slow, deliberate labour (but act every tick to swim clear of water) — an infected Construtor skips this entirely, it never slows down
       grid.meta[i] = packCreature(facing, 0, fed);
       return;
     }
@@ -612,6 +613,7 @@ export function masonSurvey(grid: SimGrid, x: number, y: number): { style: numbe
     let wood = 0;
     let ice = 0;
     let earth = 0; // loose Areia/Terra/Barro — fired or packed into Tijolo (not the Pedra bedrock underfoot, which is everywhere)
+    let mushroom = 0; // loose Cogumelo, felled by a Lenhador — see HOUSE_WALL_MUSHROOM
     for (let dy = -HOUSE_SURVEY_RANGE; dy <= HOUSE_SURVEY_RANGE; dy++) {
       for (let dx = -HOUSE_SURVEY_RANGE; dx <= HOUSE_SURVEY_RANGE; dx++) {
         const nx = ax + dx;
@@ -633,14 +635,19 @@ export function masonSurvey(grid: SimGrid, x: number, y: number): { style: numbe
         if (id === MaterialId.Wood) wood++;
         else if (id === MaterialId.Ice) ice++;
         else if (id === MaterialId.Sand || id === MaterialId.Dirt || id === MaterialId.Mud) earth++;
+        else if (id === MaterialId.Mushroom) mushroom++;
       }
     }
-    const supply = wood + ice + earth;
+    const supply = wood + ice + earth + mushroom;
     if (supply < HOUSE_PLANS[0].supply) return null;
     // A timber cabin or an ice hut only when that material is genuinely
     // plentiful right here; an ice hut also only where it's cold enough for
-    // the Gelo not to just melt away. Otherwise fired Tijolo.
+    // the Gelo not to just melt away. A Cogumelo house takes priority over
+    // either when the Lenhador's stockpiled enough loose Cogumelo — it's
+    // the "estranho" option, so it wins ties rather than losing out to the
+    // ordinary ones. Otherwise fired Tijolo.
     const style =
+      mushroom >= wood && mushroom >= ice && mushroom >= earth && mushroom >= 16 ? HOUSE_WALL_MUSHROOM :
       ice > wood && ice > earth && ice >= 16 && grid.temp < AMBIENT_ICE_MELT_TEMP ? HOUSE_WALL_ICE :
       wood > earth && wood >= 16 ? HOUSE_WALL_WOOD :
       HOUSE_WALL_BRICK;
@@ -810,11 +817,53 @@ export function isOpenGate(grid: SimGrid, x: number, y: number): boolean {
   }
 
   /**
-   * Whichever kind of "there, but not really" cell a folk simply walks
-   * through: a house wall/roof, a living tree trunk, or a Portão not
-   * currently blocking Povo/Fauna. Every obstacle check in folkWalk treats
-   * all three identically — this is the one place that says so.
+   * Whichever kind of "there, but not really" cell a folk simply walks (or
+   * climbs) through: a house wall/roof, a living tree trunk, a Portão not
+   * currently blocking Povo/Fauna, or a wild (not built into a house)
+   * Cogumelo. Every *sideways or upward* obstacle check in folkWalk treats
+   * all of these identically — this is the one place that says so. It is
+   * NOT what decides whether a folk has real footing to stand on below it
+   * — see `isFloorGhost` for that, a deliberately narrower check.
+   *
+   * A wild Cogumelo counts because it grows into whatever branching shape
+   * it wants (see systems/fungus.ts) with zero regard for whether it's
+   * blocking a path — without this, o povo would get boxed in and stuck
+   * the moment a cap grew across the one route between them and their
+   * work. But a house a mason actually built out of felled Cogumelo (see
+   * HOUSE_WALL_MUSHROOM) is checked through `houseGhost` instead, which
+   * already knows to keep a house's floor/deck/stair solid underfoot while
+   * still letting folk walk through its walls/roof — the isHouseCell guard
+   * here is what routes a house-flagged Cogumelo cell to that logic
+   * instead of the always-ghost wild-growth rule.
    */
 export function isGhost(grid: SimGrid, x: number, y: number): boolean {
+    if (!grid.inBounds(x, y)) return false;
+    if (grid.houseGhost(x, y) || grid.isTrunk(x, y) || grid.isOpenGate(x, y)) return true;
+    const i = grid.index(x, y);
+    return grid.material[i] === MaterialId.Mushroom && !grid.isHouseCell(i);
+  }
+
+  /**
+   * Whether the cell right below a folk's feet is real enough to stand on
+   * — used only by folkWalk's own "do I have footing, or do I fall
+   * through" check, never by the general walk-through-obstacles logic
+   * above. Deliberately narrower than `isGhost`: a house wall/roof, a
+   * living tree trunk and a Portão still give way underfoot exactly like
+   * they always did, but a wild Cogumelo does NOT — a mushroom growing
+   * under a folk's feet is solid ground to stand on, same as a rock would
+   * be, even though the *exact same cell* is still something the folk
+   * walks straight through if it's blocking a path sideways instead (see
+   * `isGhost`). Without this split, a folk standing on — or a Lenhador
+   * dropping loose Cogumelo lumber onto the ground beneath — a Cogumelo
+   * sank straight through it via the same "ghost floor" logic a house
+   * roof uses, reading as the folk floating/sinking through solid-looking
+   * ground for no reason. Fungus itself was never affected by that bug —
+   * it was never `isGhost` in the first place — but is included here too
+   * for the same reason `isGhost`'s own doc used to give it: a Fazendeiro
+   * sowing Trigo straight into infected ground (see systems/plants.ts)
+   * needs that to stay solid underfoot.
+   */
+export function isFloorGhost(grid: SimGrid, x: number, y: number): boolean {
+    if (!grid.inBounds(x, y)) return false;
     return grid.houseGhost(x, y) || grid.isTrunk(x, y) || grid.isOpenGate(x, y);
   }

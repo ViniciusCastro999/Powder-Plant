@@ -273,6 +273,56 @@ export const enum MaterialId {
    * BottomPanel's pickSecondary. See systems/virus.ts.
    */
   VirusPink = 53,
+  /**
+   * Mycelium: a slow-growing network spreading into a touching cell of
+   * eight materials (Madeira, Planta, Tijolo, Areia, Terra, Barro, Pedra,
+   * Pólvora — see FUNGUS_HOSTS in metaBits.ts), the same way Vírus claims a
+   * host, just gentler and with nowhere near its reach — plus one more
+   * target Vírus itself doesn't get any immunity from: a touching Vírus/
+   * Vírus Rosa cell is claimed outright too, converted straight into a
+   * special flagged Fungus cell that's stopped reproducing for good (see
+   * claimVirus in systems/fungus.ts), a genuine predator relationship
+   * rather than the two just ignoring each other. Vírus itself still can't
+   * claim Fungus back — the immunity only runs the other way. Each cell
+   * remembers which of those eight hosts it actually took root in (or that
+   * it came from an infected Vírus cell instead — packed into its own
+   * meta) so the renderer gives every origin its own color/texture instead
+   * of one flat look for the whole network. Flammable like any organic
+   * matter, so Fogo burns through it same as Madeira. Every so often a
+   * patch sprouts a Cogumelo on open ground above itself. Never decays on
+   * its own — once rooted, a network persists as long as there's something
+   * left to hold it. See systems/fungus.ts.
+   */
+  Fungus = 54,
+  /**
+   * A Cogumelo: what a Fungus patch occasionally sprouts on open ground
+   * above itself — not something you paint yourself (see Esporos, below,
+   * for the actual paintable gas cloud). Grows cell by cell like a Broto,
+   * up to a randomly chosen final size anywhere from a tiny single cap to a
+   * full tree's worth of cells, and which of Fungus's eight hosts it grew
+   * from decides both its color and its growth shape (a different weighted
+   * spread per origin), so different infections sprout visibly different
+   * mushrooms. Once grown it's permanent, same as the mycelium below it —
+   * it never decays or pops on its own — and every so often one of its cap
+   * tips puffs a short column of Esporo motes into the open air above it,
+   * reaching up to a random height each time. See systems/fungus.ts.
+   */
+  Mushroom = 55,
+  /**
+   * "Esporos" — a real Gás (so a Ventilador's draft actually carries it,
+   * same as Vapor or Gás Combustível), painted the same immediate way as
+   * Fogo/Gás: every open-air cell the brush passes over fills with it right
+   * away, a cloud with no solid core underneath, drifting and thinning out
+   * on its own like any other gas. Touch down against one of Fungus's eight
+   * hosts and it has a chance to take root there as a fresh Fungus cell —
+   * the "wind carries the outbreak somewhere new" part. Touching a Vírus
+   * cell instead, same chance, claims it outright the same way — converted
+   * straight into a special flagged Fungus cell that's stopped reproducing
+   * for good, not just gradually weakened. Fogo or Lava kills it outright
+   * on contact, same as they sterilize Vírus. Also what a Cogumelo's cap
+   * puffs out on its own now and then. See systems/fungus.ts.
+   */
+  Spore = 56,
 }
 
 export const enum BrushShape {
@@ -312,6 +362,8 @@ export const enum MaterialCategory {
   Magic,
   /** A stationary infection that spreads by claiming one random neighbor per tick instead of falling or flowing — see systems/virus.ts stepVirus. */
   Virus,
+  /** Fungus — the mycelium spreading through several materials — and Cogumelo, the mushroom it grows — see systems/fungus.ts. Esporos, the cloud a Cogumelo puffs out, is a real Gás instead (see MaterialCategory.Gas) so a Ventilador's draft actually carries it. */
+  Fungus,
 }
 
 export interface MaterialDef {

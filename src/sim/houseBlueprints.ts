@@ -35,11 +35,13 @@ export const HOUSE_WALL_META = 0x40;
 export const HOUSE_WALL_BRICK = 0;
 export const HOUSE_WALL_WOOD = 1;
 export const HOUSE_WALL_ICE = 2;
-/** Style code → the material the walls are built of. All must be true Solids — a Pedra/Areia "roof" would just cave in, since those are Powders here. */
-export const HOUSE_WALL_MATERIAL = [MaterialId.Brick, MaterialId.Wood, MaterialId.Ice] as const;
-/** Any of these overhead + on both sides counts as shelter — the structural solids a roof can actually be made of. */
+/** A Cogumelo-built house — the "estranho" style a mason raises out of loose felled Cogumelo instead of Tijolo/Madeira/Gelo (see the Lenhador's own felling in folk/lumberjack.ts). Not a true Solid like the other three, but it never falls or moves either, so it holds up a wall/roof just as well. */
+export const HOUSE_WALL_MUSHROOM = 3;
+/** Style code → the material the walls are built of. The first three must be true Solids — a Pedra/Areia "roof" would just cave in, since those are Powders here — Cogumelo is the one exception (see HOUSE_WALL_MUSHROOM). */
+export const HOUSE_WALL_MATERIAL = [MaterialId.Brick, MaterialId.Wood, MaterialId.Ice, MaterialId.Mushroom] as const;
+/** Any of these overhead + on both sides counts as shelter — the structural solids (or Cogumelo) a roof can actually be made of. */
 export const HOUSE_WALLS: readonly MaterialId[] = [
-  MaterialId.Brick, MaterialId.Wood, MaterialId.Ice, MaterialId.Metal, MaterialId.Glass,
+  MaterialId.Brick, MaterialId.Wood, MaterialId.Ice, MaterialId.Metal, MaterialId.Glass, MaterialId.Mushroom,
 ];
 
 /**

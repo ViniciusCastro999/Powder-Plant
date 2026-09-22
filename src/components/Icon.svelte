@@ -189,6 +189,23 @@
     <circle cx="17.7" cy="17.7" r="1" fill="currentColor" stroke="none" />
     <circle cx="17.7" cy="6.3" r="1" fill="currentColor" stroke="none" />
     <circle cx="6.3" cy="17.7" r="1" fill="currentColor" stroke="none" />
+  {:else if name === "fungus"}
+    <path
+      d="M12 20 V13 M12 16 L8 13 M8 13 L6 10 M8 13 L6 15 M12 13 L15 10 M15 10 L17 8 M15 10 L18 11 M12 16 L15 18"
+      stroke-width="1.4"
+    />
+    <circle cx="12" cy="20" r="1.3" fill="currentColor" stroke="none" />
+    <circle cx="6" cy="10" r="1" fill="currentColor" stroke="none" />
+    <circle cx="17" cy="8" r="1" fill="currentColor" stroke="none" />
+    <circle cx="18" cy="11" r="1" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="18" r="1" fill="currentColor" stroke="none" />
+    <circle cx="6" cy="15" r="1" fill="currentColor" stroke="none" />
+  {:else if name === "spore-puff"}
+    <path d="M6.5 16 A3.3 3.3 0 0 1 7.2 9.4 A4.3 4.3 0 0 1 15.6 9.2 A3.3 3.3 0 0 1 16.3 16 Z" />
+    <circle cx="18.5" cy="5.5" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="20.3" cy="7.8" r="0.6" fill="currentColor" stroke="none" />
+    <circle cx="4" cy="18.6" r="0.7" fill="currentColor" stroke="none" />
+    <circle cx="2" cy="16.5" r="0.5" fill="currentColor" stroke="none" />
   {:else if name === "folk"}
     <circle cx="12" cy="5.5" r="2.4" />
     <path d="M12 8 V15 M12 10 L7.5 13 M12 10 L16.5 13 M12 15 L8.5 21 M12 15 L15.5 21" />

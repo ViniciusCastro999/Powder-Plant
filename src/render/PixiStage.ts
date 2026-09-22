@@ -6,7 +6,7 @@ import { EXTREME_COLD, EXTREME_HOT, COLD_1, COLD_3, PROSPEROUS_LOW, PROSPEROUS_T
 import {
   GLASS_SHATTER_HITS, MAGIC_LIFE, VIRUS_LIFE, WHEAT_RIPE, CIRCUIT_ON_META, LEVER_ARM_META,
   CIRCUIT_LINKED_META, CLONE_LINKED_META, CLONE_ON_META, FAN_LINKED_META, FAN_ON_META,
-  PIPE_FILLED_META, PIPE_LIQUID_MASK,
+  PIPE_FILLED_META, PIPE_LIQUID_MASK, FUNGUS_HOSTS, FUNGUS_ORIGIN_MASK, FUNGUS_VIRUS_FLAG,
 } from "../sim/metaBits";
 import {
   HOUSE_WALL_META, HOUSE_ANCHOR_META, HOUSE_KIND_MASK, HOUSE_WALL, HOUSE_WINDOW,
@@ -23,6 +23,23 @@ const HOUSE_INTERIOR: readonly [number, number, number] = [58, 44, 38];
 const GLASS_TINT: readonly [number, number, number] = [198, 224, 232];
 /** Bright edge color a Vidro cell on the border of a pane picks up, so the sheet reads as a pane with a rim rather than a flat fill. */
 const GLASS_EDGE: readonly [number, number, number] = [226, 245, 255];
+/** Per-origin infected look for Fungus — indexed the same as FUNGUS_HOSTS (Madeira, Planta, Tijolo, Areia, Terra, Barro, Pedra, Pólvora) — so each of the eight things it can take root in reads as a visibly different infection instead of one flat color. */
+const FUNGUS_ORIGIN_COLORS: readonly (readonly [number, number, number])[] = [
+  [130, 138, 62], // Madeira — sickly yellow-green mold over brown
+  [58, 92, 54], // Planta — deep, blackish rot
+  [120, 100, 64], // Tijolo — lichen creeping over fired clay
+  [150, 148, 96], // Areia — clumped tan-green
+  [104, 96, 58], // Terra — mossy olive
+  [70, 86, 56], // Barro — damp, darker moss
+  [110, 122, 104], // Pedra — gray-green lichen
+  [168, 178, 90], // Pólvora — a sickly, dangerous-looking pale yellow-green
+];
+const enum FungusTexture { Speckle, Diagonal, Mottle }
+/** Which of three simple per-cell patterns each origin uses — reusing three textures across the eight origins (instead of eight fully bespoke ones) still reads as visibly different shapes wherever two infections sit side by side. */
+const FUNGUS_ORIGIN_TEXTURE: readonly FungusTexture[] = [
+  FungusTexture.Speckle, FungusTexture.Diagonal, FungusTexture.Mottle, FungusTexture.Speckle,
+  FungusTexture.Diagonal, FungusTexture.Mottle, FungusTexture.Speckle, FungusTexture.Diagonal,
+];
 /**
  * O povo (and the Esqueletos) render as a little standing figure stamped into
  * the empty cells above the grid cell (their feet). For the working trades the
@@ -379,6 +396,29 @@ export class PixiStage {
         this.pixels[p + 3] = 255;
         continue;
       }
+      if (id === MaterialId.Spore) {
+        // Esporos: a soft, roiling puff rather than a solid body — blended
+        // toward the ambient background the same way Vidro fakes
+        // transparency above, plus heavy shifting grain on two independent
+        // cycles so it visibly churns instead of just sitting there. Also
+        // faintly bioluminescent, brighter the colder the climate gets,
+        // like real foxfire on a chilly night.
+        const swirl = (((hash(i) ^ (this.frame >> 2)) >>> 0) % 50) - 25;
+        const swirl2 = (((hash(i * 7 + 3) ^ (this.frame >> 3)) >>> 0) % 30) - 15;
+        let sr = br + (r - br) * 0.55 + swirl;
+        let sg = bg + (g - bg) * 0.55 + swirl * 0.9 + swirl2;
+        let sb = bb + (b - bb) * 0.55 + swirl * 0.85;
+        const cold = this.grid.temperature <= COLD_1;
+        const glow = 22 * (cold ? 1.8 : 1) * (0.6 + 0.4 * Math.sin(this.frame * 0.02 + hash(i) * 0.01));
+        sr += glow * 0.3;
+        sg += glow * 1.0;
+        sb += glow * 0.6;
+        this.pixels[p] = clamp8(sr);
+        this.pixels[p + 1] = clamp8(sg);
+        this.pixels[p + 2] = clamp8(sb);
+        this.pixels[p + 3] = 255;
+        continue;
+      }
       if (id === MaterialId.Water && meta[i] > 0) {
         // Salty water stays the same blue, just lighter — lerping each
         // channel toward white by a fraction, instead of toward a fixed
@@ -400,6 +440,18 @@ export class PixiStage {
         g = 150 + (176 - 150) * t;
         b = 74 + (96 - 74) * t;
         if (t >= 1) { r += 16; g += 14; }
+        // "Espórigo": a base segment actually rooted in Fungus instead of
+        // ordinary soil (see stepWheat) reads as sickly and faintly
+        // bioluminescent instead of the usual healthy green/gold — a mottled
+        // purple-green cast plus a slow pulse, marking it as fed by the
+        // mycelium rather than the ground.
+        if (i + width < material.length && material[i + width] === MaterialId.Fungus) {
+          const pulse = 18 * (0.6 + 0.4 * Math.sin(this.frame * 0.025 + hash(i) * 0.01));
+          r = r * 0.55 + 90 + pulse * 0.5;
+          g = g * 0.65 + 60 + pulse * 0.9;
+          b = b * 0.55 + 95 + pulse * 0.6;
+          if (hash(i * 3) % 6 === 0) { r *= 0.7; g *= 0.85; b *= 0.7; }
+        }
       } else if (id === MaterialId.Fire) {
         // Fades toward black over its last FIRE_FADE_TICKS of fuel instead
         // of burning at full brightness right up until it pops to Empty.
@@ -448,9 +500,22 @@ export class PixiStage {
         b *= fade;
       } else if (
         (meta[i] & HOUSE_WALL_META) !== 0 &&
-        (id === MaterialId.Brick || id === MaterialId.Wood || id === MaterialId.Ice)
+        (id === MaterialId.Brick || id === MaterialId.Wood || id === MaterialId.Ice || id === MaterialId.Mushroom)
       ) {
         const kind = (meta[i] & HOUSE_ANCHOR_META) !== 0 ? HOUSE_WALL : meta[i] & HOUSE_KIND_MASK;
+        // A Cogumelo-built house (HOUSE_WALL_MUSHROOM) starts from a
+        // bioluminescent organic base instead of Tijolo/Madeira/Gelo's own
+        // material color — note this cell's own meta is house-packed data
+        // now (HOUSE_KIND_MASK etc.), not the FUNGUS_ORIGIN_MASK/budget a
+        // wild Cogumelo cell would carry, so it's never read as either
+        // here. The window/chimney/floor/wall shaping below all still
+        // apply on top of it exactly like any other wall material.
+        if (id === MaterialId.Mushroom) {
+          const glow = 14 * (0.6 + 0.4 * Math.sin(this.frame * 0.02 + hash(i) * 0.01));
+          r = 78 + glow * 0.3;
+          g = 96 + glow * 1.0;
+          b = 84 + glow * 0.5;
+        }
         if (kind === HOUSE_WINDOW) {
           // A lit window: warm lamplight in the pane, cooler at night... just
           // warm, with a thin dark frame from the surrounding wall grain.
@@ -478,6 +543,23 @@ export class PixiStage {
           r += course + post;
           g += course + post;
           b += course + post;
+        }
+        // A wall (or roof, floor, whatever) actually touching Fungus reads
+        // as overgrown — the Pedreiro built with it right there, not
+        // hauling material in from somewhere clean, so the house itself
+        // looks half-consumed: a slow organic pulse bleeding through the
+        // masonry. Windows are left alone (the flicker above already reads
+        // as inhabited; piling this on top just muddies it).
+        if (
+          kind !== HOUSE_WINDOW && (
+            material[i - 1] === MaterialId.Fungus || material[i + 1] === MaterialId.Fungus ||
+            material[i - width] === MaterialId.Fungus || material[i + width] === MaterialId.Fungus
+          )
+        ) {
+          const pulse = 16 * (0.6 + 0.4 * Math.sin(this.frame * 0.02 + hash(i) * 0.015));
+          r = r * 0.75 + 30 + pulse * 0.3;
+          g = g * 0.85 + 55 + pulse * 0.9;
+          b = b * 0.75 + 35 + pulse * 0.4;
         }
       } else if (id === MaterialId.Lever) {
         // The base plate stays dull iron; the diagonal handle/knob (see
@@ -604,6 +686,67 @@ export class PixiStage {
         if ((meta[i] & CIRCUIT_LINKED_META) !== 0) {
           if ((meta[i] & CIRCUIT_ON_META) !== 0) { r += 35; g += 22; b -= 10; } else { r *= 0.5; g *= 0.5; b *= 0.5; }
         }
+      } else if (id === MaterialId.Fungus && (meta[i] & FUNGUS_VIRUS_FLAG) !== 0) {
+        // "Fungo especial" — a Vírus cell claimed outright (see claimVirus
+        // in systems/fungus.ts), not one of the eight ordinary hosts, so no
+        // origin index to look up. A bruised purple-green instead of any of
+        // FUNGUS_ORIGIN_COLORS, reading as "this used to be the plague, now
+        // gone quiet for good" rather than just another infected material.
+        r = 96; g = 74; b = 104;
+        const vx = i % width, vy = (i / width) | 0;
+        const mark = hash(i * 5 + 2) % 8 === 0 || (vx + vy) % 6 === 0;
+        if (mark) { r *= 0.65; g *= 0.75; b *= 0.7; } else { r *= 1.05; g *= 1.0; b *= 1.05; }
+        const cold = this.grid.temperature <= COLD_1;
+        const glow = 10 * (cold ? 1.8 : 1) * (0.6 + 0.4 * Math.sin(this.frame * 0.015 + hash(i) * 0.01));
+        r += glow * 0.6;
+        g += glow * 0.3;
+        b += glow * 0.7;
+      } else if (id === MaterialId.Fungus) {
+        // Which of the eight hosts this particular cell actually took over
+        // (see FUNGUS_HOSTS/FUNGUS_ORIGIN_MASK) decides both its color and
+        // which of three simple patterns marks it, so a network creeping
+        // across Madeira reads as visibly different from one eating
+        // through Pedra right next to it.
+        const origin = meta[i] & FUNGUS_ORIGIN_MASK;
+        const originColor = FUNGUS_ORIGIN_COLORS[origin] ?? FUNGUS_ORIGIN_COLORS[4];
+        r = originColor[0];
+        g = originColor[1];
+        b = originColor[2];
+        const flx = i % width, fly = (i / width) | 0;
+        const texture = FUNGUS_ORIGIN_TEXTURE[origin] ?? FungusTexture.Speckle;
+        const mark =
+          texture === FungusTexture.Speckle ? flx % 4 === 0 && fly % 4 === 0 :
+          texture === FungusTexture.Diagonal ? (flx + fly) % 5 === 0 :
+          hash(i) % 9 === 0;
+        if (mark) { r *= 0.7; g *= 0.78; b *= 0.72; } else { r *= 1.04; g *= 1.02; b *= 1.0; }
+        // A faint bioluminescent glow, same idea as Esporos above but much
+        // dimmer — the mycelium itself barely glows, the fruiting body is
+        // where it really shows.
+        const cold = this.grid.temperature <= COLD_1;
+        const glow = 8 * (cold ? 1.8 : 1) * (0.6 + 0.4 * Math.sin(this.frame * 0.02 + hash(i) * 0.01));
+        r += glow * 0.3;
+        g += glow * 1.0;
+        b += glow * 0.6;
+      } else if (id === MaterialId.Mushroom) {
+        // A Cogumelo cap — same per-origin color family as the Fungus it
+        // grew from (so a mushroom sprouting off Madeira still visibly
+        // matches its own mycelium), but brighter and with a bolder
+        // spotted-cap mark instead of the mycelium's subtler texture, plus
+        // a much stronger glow — this is the fruiting body, the part that's
+        // actually supposed to stand out.
+        const origin = meta[i] & FUNGUS_ORIGIN_MASK;
+        const originColor = FUNGUS_ORIGIN_COLORS[origin] ?? FUNGUS_ORIGIN_COLORS[4];
+        r = originColor[0] * 1.25;
+        g = originColor[1] * 1.2;
+        b = originColor[2] * 1.15;
+        const mx = i % width, my = (i / width) | 0;
+        const spot = (hash(i * 3 + 11) % 7 === 0) || (mx % 5 === 0 && my % 5 === 2);
+        if (spot) { r *= 0.6; g *= 0.62; b *= 0.58; } else { r *= 1.06; g *= 1.04; b *= 1.0; }
+        const cold = this.grid.temperature <= COLD_1;
+        const glow = 22 * (cold ? 1.8 : 1) * (0.6 + 0.4 * Math.sin(this.frame * 0.02 + hash(i) * 0.01));
+        r += glow * 0.3;
+        g += glow * 1.0;
+        b += glow * 0.6;
       }
       // Liquids and moving creatures constantly swap cells, so grain keyed
       // on grid position (not particle identity) would flicker as they
@@ -632,7 +775,35 @@ export class PixiStage {
         const fy = (i / width) | 0;
         const f = meta[i] & 1 ? 1 : -1;
         const big = (this.grid.hp[i] & 0x80) !== 0;
-        const px = (cx: number, cy: number, rr: number, gg: number, bb: number) => this.stampFolkPixel(cx, cy, rr, gg, bb);
+        // Standing right on Fungus (or a Cogumelo) — whatever o povo is
+        // doing there, they come out dusted in a faint spore-green, same
+        // idea as tracking mud through a house. Purely a live "you're in
+        // the fungal patch right now" tell: nothing is stored on the pip
+        // itself, so it clears the instant they step off — UNLESS the pip
+        // has actually been permanently taken over (see folk/infection.ts),
+        // in which case the tint never clears at all. An infected Guerreiro
+        // gets its own pulsing, bruised purple-red instead of the peaceful
+        // green the other three trades get — it's the one that's actually
+        // dangerous now, so it needs to read that way at a glance.
+        const infected = this.grid.isPipInfected(i);
+        const sporeDusted = !infected && (material[i + width] === MaterialId.Fungus || material[i + width] === MaterialId.Mushroom);
+        const px = (cx: number, cy: number, rr: number, gg: number, bb: number) => {
+          if (infected && id === MaterialId.Warrior) {
+            const pulse = 20 * (0.6 + 0.4 * Math.sin(this.frame * 0.04 + hash(i) * 0.02));
+            rr = rr * 0.4 + 70 + pulse * 0.6;
+            gg = gg * 0.35 + 30 + pulse * 0.1;
+            bb = bb * 0.45 + 80 + pulse * 0.5;
+          } else if (infected) {
+            rr = rr * 0.5 + 70;
+            gg = gg * 0.6 + 140;
+            bb = bb * 0.5 + 75;
+          } else if (sporeDusted) {
+            rr = rr * 0.65 + 90;
+            gg = gg * 0.7 + 150;
+            bb = bb * 0.65 + 95;
+          }
+          this.stampFolkPixel(cx, cy, rr, gg, bb);
+        };
 
         if (id === MaterialId.Skeleton) {
           if (big) {

@@ -32,8 +32,10 @@ const VIRUS_LIVING_SPREAD_CHANCE = 0.015;
 const VIRUS_INERT_SPREAD_CHANCE = 0.0003;
 /** Per-neighbor, per-tick chance it drifts into open air — spores crossing a gap are much less reliable than claiming something they're already touching. */
 const VIRUS_AIRBORNE_CHANCE = 0.003;
-/** The one material Vírus can never claim, at any speed — everything else on the grid is eventually fair game. */
-const VIRUS_IMMUNE: readonly MaterialId[] = [MaterialId.Glass];
+/** The materials Vírus can never claim, at any speed — everything else on the grid is eventually fair game. Fungus/Esporos are immune outright too, but only in this direction — Fungus/Esporos can still claim a touching Vírus cell right back (see claimVirus in systems/fungus.ts), converting it into a special Fungus cell that's stopped reproducing. A real predator relationship, not mutual avoidance. */
+const VIRUS_IMMUNE: readonly MaterialId[] = [
+  MaterialId.Glass, MaterialId.Fungus, MaterialId.Spore,
+];
 /** Living plant matter — claimed at the fast rate. */
 const VIRUS_ORGANIC_HOSTS: readonly MaterialId[] = [
   MaterialId.Wood, MaterialId.Plant, MaterialId.Sprout, MaterialId.Flor, MaterialId.Wheat, MaterialId.Seed,

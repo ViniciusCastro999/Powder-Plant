@@ -8,7 +8,9 @@ import { MaterialId, MaterialCategory } from "../types";
 import { MATERIALS } from "../materials";
 import { NEIGHBORS_8 } from "../neighbors";
 import { HOUSE_WALL_META, HOUSE_PLANS, PLAN_WOODSHED } from "../houseBlueprints";
+import { MUSHROOM_BUDGET_SHIFT, MUSHROOM_BUDGET_MASK } from "../metaBits";
 import { packCreature, creatureFacing, creatureFed } from "../creatureMeta";
+import { INFECTED_HARVEST_WORK } from "./infection";
 
 /** Per-tick chance a Lenhador sows a Semente on the bare soil ahead of it. */
 const LUMBERJACK_SOW_CHANCE = 0.32;
@@ -20,6 +22,10 @@ const LUMBERJACK_PLOT = 2;
 const LUMBERJACK_LOG_YIELD = 3;
 /** Madeira within 6 cells at or above which a Lenhador stops felling — the woodlot's stocked, don't carpet the ground with trunks. */
 const LUMBERJACK_STOCK = 10;
+/** A Cogumelo cluster needs at least this many cells nearby before a Lenhador bothers felling it — not worth the trip for one little cap. */
+const LUMBERJACK_MUSHROOM_MIN_CLUSTER = 6;
+/** How far out LUMBERJACK_MUSHROOM_MIN_CLUSTER's cluster check looks. */
+const LUMBERJACK_MUSHROOM_CLUSTER_RADIUS = 6;
 
   /** Loose (cut, not trunk / not structural) Madeira within `r` of (x, y). */
 export function looseWoodNear(grid: SimGrid, x: number, y: number, r: number): number {
@@ -50,13 +56,64 @@ export function stepLumberjack(grid: SimGrid, x: number, y: number, i: number): 
     const facing = creatureFacing(grid.meta[i]);
     const fed = grid.folkUpkeep(x, y, creatureFed(grid.meta[i]));
     if (fed < 0) return;
-    if (!grid.folkActNow(x, y)) { // slow, deliberate labour (but act every tick to swim clear of water)
+    grid.tickPipInfection(x, y, i);
+    const infected = grid.isPipInfected(i);
+    if (!infected && !grid.folkActNow(x, y)) { // slow, deliberate labour (but act every tick to swim clear of water) — an infected Lenhador skips this entirely, it never slows down
       grid.meta[i] = packCreature(facing, 0, fed);
       return;
     }
     const flee = grid.fleeSkeletonDir(x, y);
     if (flee !== 0) { grid.folkWalk(x, y, i, flee, fed, 0, flee); return; }
     if (grid.folkWeather(x, y, i, facing, fed, 0)) return;
+
+    // Fell a Cogumelo it's touching, one cell at a time, straight into loose
+    // lumber right there on the ground — same slow-work pacing as felling a
+    // tree, just no whole-structure-at-once clearing, since a Cogumelo has
+    // no single trunk/stump to fell it from. A little cap not worth the
+    // trip is left alone (LUMBERJACK_MUSHROOM_MIN_CLUSTER). Unlike Madeira,
+    // there's no LUMBERJACK_STOCK-style cap here: a felled, loose Cogumelo
+    // cell and one still standing wild are the exact same material with no
+    // way to tell them apart (a chopped log at least loses TREE_TRUNK_META;
+    // a Cogumelo has nothing equivalent), so counting "loose stock" would
+    // really just be counting the wild cluster's own mass and permanently
+    // block ever felling any of it.
+    let mushroomTarget: [number, number] | null = null;
+    for (const [dx, dy] of NEIGHBORS_8) {
+      const tx = x + dx, ty = y + dy;
+      if (!grid.inBounds(tx, ty) || grid.get(tx, ty) !== MaterialId.Mushroom) continue;
+      const j = grid.index(tx, ty);
+      const budget = (grid.meta[j] >> MUSHROOM_BUDGET_SHIFT) & MUSHROOM_BUDGET_MASK;
+      if (budget === 0) { mushroomTarget = [tx, ty]; break; } // only a mature cell — still-growing tips are left to finish
+    }
+    if (
+      mushroomTarget &&
+      grid.countNear(x, y, MaterialId.Mushroom, LUMBERJACK_MUSHROOM_CLUSTER_RADIUS) >= LUMBERJACK_MUSHROOM_MIN_CLUSTER
+    ) {
+      if (!grid.harvestReady(i, infected ? INFECTED_HARVEST_WORK : HARVEST_WORK)) {
+        grid.meta[i] = packCreature(facing, 0, fed);
+        return;
+      }
+      const [mx, my] = mushroomTarget;
+      grid.set(mx, my, MaterialId.Empty);
+      // Drop it as loose lumber right beside where it stood — the nearest
+      // open cell (r = 1, then 2) with real footing under it, same search a
+      // felled tree's logs use.
+      outer: for (let r = 1; r <= 2; r++) {
+        for (let ddy = -r; ddy <= r; ddy++) {
+          for (let ddx = -r; ddx <= r; ddx++) {
+            if (Math.max(Math.abs(ddx), Math.abs(ddy)) !== r) continue;
+            const cx = mx + ddx, cy = my + ddy;
+            if (!grid.inBounds(cx, cy) || grid.get(cx, cy) !== MaterialId.Empty) continue;
+            const floor = grid.get(cx, cy + 1);
+            if (floor === MaterialId.Empty || MATERIALS[floor].category === MaterialCategory.Liquid) continue;
+            grid.set(cx, cy, MaterialId.Mushroom, 0);
+            break outer;
+          }
+        }
+      }
+      grid.meta[i] = packCreature(facing, 0, fed);
+      return;
+    }
 
     // Fell a fully-grown tree it's touching — one with a lignified trunk under
     // a finished crown — while the woodlot still has room for the timber. A
@@ -75,7 +132,7 @@ export function stepLumberjack(grid: SimGrid, x: number, y: number, i: number): 
         if (grid.treeCrown(tx, by) < LUMBERJACK_MIN_TREE) continue; // still a seedling — let it grow
 
         // Felling is slow work — it stands and swings the axe for a while first.
-        if (!grid.harvestReady(i, HARVEST_WORK)) {
+        if (!grid.harvestReady(i, infected ? INFECTED_HARVEST_WORK : HARVEST_WORK)) {
           grid.meta[i] = packCreature(facing, 0, fed);
           return;
         }
@@ -171,6 +228,17 @@ export function stepLumberjack(grid: SimGrid, x: number, y: number, i: number): 
     // Lenhador stuck pacing the same seedling forever. With no tree actually
     // ready, folkWalk drifts it back to the woodlot (Madeira / houses) where
     // it plants and paces while the saplings fill out.
+    // Whichever is actually closer wins — a mature tree and a worthwhile
+    // Cogumelo cluster are scored on equal footing, not tree-first-always.
+    // The old code only ever looked for a cluster once the tree scan found
+    // *nothing at all* in range, so a Lenhador with even one distant tree
+    // still standing would beeline for it forever and never once detour
+    // for a much closer cluster — in a real village, the woodlot restocks
+    // itself (see the sowing below), so "no tree anywhere in range" nearly
+    // never happens and the cluster would just never get a deliberate
+    // visit. It could still get chopped opportunistically (see the
+    // touching-Cogumelo check above, which runs before any of this), just
+    // never sought out on its own.
     let wantDir = 0;
     let bestD = Infinity;
     for (let dy = -FOLK_SCAN_RANGE; dy <= FOLK_SCAN_RANGE; dy++) {
@@ -178,6 +246,30 @@ export function stepLumberjack(grid: SimGrid, x: number, y: number, i: number): 
         if (dx === 0 && dy === 0 || !grid.isTrunk(x + dx, y + dy)) continue;
         const d = dx * dx + dy * dy;
         if (d < bestD && grid.isMatureTree(x + dx, y + dy)) { bestD = d; wantDir = Math.sign(dx) || (Math.random() < 0.5 ? 1 : -1); }
+      }
+    }
+    // A Cogumelo cluster worth the walk, scored the same way — closer than
+    // whatever tree candidate won above (if any) wins instead. Only the
+    // closest candidate's cluster size gets the (pricier) countNear check,
+    // not every mature Cogumelo cell in range.
+    {
+      let bestMx = -1, bestMy = -1, bestMd = Infinity;
+      for (let dy = -FOLK_SCAN_RANGE; dy <= FOLK_SCAN_RANGE; dy++) {
+        for (let dx = -FOLK_SCAN_RANGE; dx <= FOLK_SCAN_RANGE; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const tx = x + dx, ty = y + dy;
+          if (grid.get(tx, ty) !== MaterialId.Mushroom) continue;
+          const j = grid.index(tx, ty);
+          if (((grid.meta[j] >> MUSHROOM_BUDGET_SHIFT) & MUSHROOM_BUDGET_MASK) !== 0) continue; // still growing
+          const d = dx * dx + dy * dy;
+          if (d < bestMd) { bestMd = d; bestMx = tx; bestMy = ty; }
+        }
+      }
+      if (
+        bestMx >= 0 && bestMd < bestD &&
+        grid.countNear(bestMx, bestMy, MaterialId.Mushroom, LUMBERJACK_MUSHROOM_CLUSTER_RADIUS) >= LUMBERJACK_MUSHROOM_MIN_CLUSTER
+      ) {
+        wantDir = Math.sign(bestMx - x) || (Math.random() < 0.5 ? 1 : -1);
       }
     }
     grid.folkWalk(x, y, i, facing, fed, 0, wantDir);

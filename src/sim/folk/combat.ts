@@ -4,13 +4,24 @@ import { MaterialId } from "../types";
 import { NEIGHBORS_8 } from "../neighbors";
 import { FOLK_IDS } from "../grid";
 import { CREATURE_FED_MAX, packCreature, creatureFacing, creatureFed } from "../creatureMeta";
+import { isPipInfected } from "./infection";
 
 /*
- * ── Combate: Guerreiro vs. Esqueleto ────────────────────────────────────────
+ * ── Combate: Guerreiro vs. Esqueleto (vs. Guerreiro infectado) ─────────────
  * The Guerreiro guards the village and charges any Esqueleto it spots; the
  * Esqueleto shambles toward the nearest Pip and strikes it. Both reuse the
  * shared `strike`/`strikeClock`/`nearestOf` primitives below, and `folkWalk`
  * itself (from folk/engine.ts) to actually close the distance.
+ *
+ * A Guerreiro that's been taken over by Fungus (see folk/infection.ts) is a
+ * third faction: it turns on everyone that isn't also infected — every
+ * ordinary trade (Pedreiro, Fazendeiro, Lenhador, an un-infected Guerreiro)
+ * and Esqueleto alike. It's still the exact same MaterialId.Warrior, so
+ * `nearestOf`'s plain material-list matching can't tell an infected one
+ * from an ordinary one — `nearestPreyForInfected`/`nearestInfectedWarrior`
+ * below do that filtering by hand. An Esqueleto needs no changes at all: it
+ * already hunts anything in FOLK_IDS (Warrior included), infected or not,
+ * since infection never changes what material a pip actually is.
  */
 /** The only material a fleeing/hunting Esqueleto search ever looks for. */
 const SKELETON_ONLY: readonly MaterialId[] = [MaterialId.Skeleton];
@@ -52,15 +63,64 @@ const SKELETON_ACT_INTERVAL = 8;
 const SKELETON_WANDER_CHANCE = 0.5;
 
   /**
-   * A working Pip that sees a Esqueleto close by drops what it's doing and
-   * backs off — it outpaces the undead, so running works. Returns the away
-   * direction (-1/1), or 0 if there's nothing to run from. The Guerreiro
-   * never calls this — it closes in.
+   * A working Pip that sees a Esqueleto — or an infected Guerreiro — close
+   * by drops what it's doing and backs off — it outpaces both, so running
+   * works. Returns the away direction (-1/1), or 0 if there's nothing to
+   * run from. An un-infected Guerreiro never calls this — it closes in on
+   * either kind of threat instead.
    */
 export function fleeSkeletonDir(grid: SimGrid, x: number, y: number): number {
-    const foe = grid.nearestOf(x, y, SKELETON_ONLY, SKELETON_FLEE_RANGE);
+    const foe = grid.nearestOf(x, y, SKELETON_ONLY, SKELETON_FLEE_RANGE) ||
+      nearestInfectedWarrior(grid, x, y, SKELETON_FLEE_RANGE);
     if (!foe) return 0;
     return foe[0] > 0 ? -1 : foe[0] < 0 ? 1 : (Math.random() < 0.5 ? 1 : -1);
+  }
+
+  /** Nearest infected Guerreiro within `range` — same shape as nearestOf, but has to filter by infection state by hand rather than by material, since an infected Guerreiro is still plain MaterialId.Warrior. */
+function nearestInfectedWarrior(grid: SimGrid, x: number, y: number, range: number): [number, number] | null {
+    let best: [number, number] | null = null;
+    let bestD = Infinity;
+    for (let dy = -range; dy <= range; dy++) {
+      const ny = y + dy;
+      if (ny < 0 || ny >= grid.height) continue;
+      for (let dx = -range; dx <= range; dx++) {
+        const nx = x + dx;
+        if (nx < 0 || nx >= grid.width) continue;
+        if (dx === 0 && dy === 0) continue;
+        const j = ny * grid.width + nx;
+        if (grid.material[j] !== MaterialId.Warrior || !isPipInfected(grid, j)) continue;
+        const d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; best = [dx, dy]; }
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Nearest hostile target for an infected Guerreiro: any ordinary trade
+   * that isn't itself infected, or a Esqueleto — everyone except its own
+   * kind. Infected pips never turn on each other.
+   */
+function nearestPreyForInfected(grid: SimGrid, x: number, y: number, range: number): [number, number] | null {
+    let best: [number, number] | null = null;
+    let bestD = Infinity;
+    for (let dy = -range; dy <= range; dy++) {
+      const ny = y + dy;
+      if (ny < 0 || ny >= grid.height) continue;
+      for (let dx = -range; dx <= range; dx++) {
+        const nx = x + dx;
+        if (nx < 0 || nx >= grid.width) continue;
+        if (dx === 0 && dy === 0) continue;
+        const j = ny * grid.width + nx;
+        const m = grid.material[j] as MaterialId;
+        const isFolk = FOLK_IDS.includes(m);
+        if (!isFolk && m !== MaterialId.Skeleton) continue;
+        if (isFolk && isPipInfected(grid, j)) continue; // never targets another infected pip
+        const d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; best = [dx, dy]; }
+      }
+    }
+    return best;
   }
 
   /** Nearest cell of any id in `ids` within `range` of (x, y) — returns its [dx, dy] offset, or null. */
@@ -132,20 +192,34 @@ export function strikeClock(grid: SimGrid, i: number, readyToHit: boolean): bool
    * *charges* — it drops the unhurried folk pace and takes a step every tick
    * to close the distance — and trades blows (one point a strike, about once
    * a second). It carries 10 hit points to a working Pip's 5.
+   *
+   * One taken over by Fungus (see folk/infection.ts) turns on everyone: it
+   * hunts the ordinary trades and Esqueletos alike (nearestPreyForInfected),
+   * never slows to the unhurried pace, and its full-range sight sweep runs
+   * every tick rather than only on the ordinary cadence — it's supposed to
+   * be relentless, that's the whole point of what it's become. An
+   * un-infected Guerreiro that spots an infected one treats it exactly like
+   * a Esqueleto: something to charge and fight.
    */
 export function stepWarrior(grid: SimGrid, x: number, y: number, i: number): void {
     grid.processed[i] = 1;
     const facing = creatureFacing(grid.meta[i]);
     const fed = grid.folkUpkeep(x, y, creatureFed(grid.meta[i]));
     if (fed < 0 || grid.material[i] !== MaterialId.Warrior) return;
+    grid.tickPipInfection(x, y, i);
+    const infected = grid.isPipInfected(i);
 
-    // Look for a fight first — a Guerreiro that's spotted a Esqueleto acts
-    // every tick (it's running), not on the slow labour cadence. The full
+    // Look for a fight first — a Guerreiro that's spotted a foe acts every
+    // tick (it's running), not on the slow labour cadence. The full
     // WARRIOR_SIGHT sweep for spotting a threat from afar only runs on the
-    // ordinary cadence (see COMBAT_MELEE_CHECK); a fight already underway is
-    // always caught by the cheap short-range check every tick regardless.
-    const foe = grid.nearestOf(x, y, SKELETON_ONLY, COMBAT_MELEE_CHECK) ||
-      (grid.folkActNow(x, y) ? grid.nearestOf(x, y, SKELETON_ONLY, WARRIOR_SIGHT) : null);
+    // ordinary cadence for an un-infected Guerreiro (see COMBAT_MELEE_CHECK)
+    // — a fight already underway is always caught by the cheap short-range
+    // check every tick regardless — but an infected one runs it every tick
+    // unconditionally, same as everything else it does.
+    const foe = infected
+      ? (nearestPreyForInfected(grid, x, y, COMBAT_MELEE_CHECK) || nearestPreyForInfected(grid, x, y, WARRIOR_SIGHT))
+      : (grid.nearestOf(x, y, SKELETON_ONLY, COMBAT_MELEE_CHECK) || nearestInfectedWarrior(grid, x, y, COMBAT_MELEE_CHECK) ||
+        (grid.folkActNow(x, y) ? (grid.nearestOf(x, y, SKELETON_ONLY, WARRIOR_SIGHT) || nearestInfectedWarrior(grid, x, y, WARRIOR_SIGHT)) : null));
     if (foe) {
       const [fdx, fdy] = foe;
       const nf = Math.sign(fdx) || facing;
@@ -162,8 +236,8 @@ export function stepWarrior(grid: SimGrid, x: number, y: number, i: number): voi
       return;
     }
 
-    // Nothing to fight: back to the unhurried pace.
-    if (!grid.folkActNow(x, y)) {
+    // Nothing to fight: back to the unhurried pace — unless infected, which never slows down.
+    if (!infected && !grid.folkActNow(x, y)) {
       grid.meta[i] = packCreature(facing, 0, fed);
       return;
     }

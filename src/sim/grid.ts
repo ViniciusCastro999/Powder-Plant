@@ -16,6 +16,7 @@ import {
   stepMagic as stepMagicImpl, transmute as transmuteImpl,
 } from "./systems/magic";
 import { stepVirus as stepVirusImpl } from "./systems/virus";
+import { stepFungus as stepFungusImpl, stepSpore as stepSporeImpl } from "./systems/fungus";
 import {
   stepClone as stepCloneImpl, advancePulses as advancePulsesImpl, conducts as conductsImpl,
   pulseDirCandidates as pulseDirCandidatesImpl, circuitConnected as circuitConnectedImpl,
@@ -75,6 +76,7 @@ import {
   fleeSkeletonDir as fleeSkeletonDirImpl, nearestOf as nearestOfImpl, strike as strikeImpl,
   strikeClock as strikeClockImpl, stepWarrior as stepWarriorImpl, stepSkeleton as stepSkeletonImpl,
 } from "./folk/combat";
+import { isPipInfected as isPipInfectedImpl, tickPipInfection as tickPipInfectionImpl } from "./folk/infection";
 import { stepFarmer as stepFarmerImpl } from "./folk/farmer";
 import {
   looseWoodNear as looseWoodNearImpl, stepLumberjack as stepLumberjackImpl,
@@ -89,7 +91,7 @@ import {
   masonSurvey as masonSurveyImpl, houseFootprintClear as houseFootprintClearImpl,
   gradeStrip as gradeStripImpl, groundLevel as groundLevelImpl, treeCrown as treeCrownImpl,
   isTrunk as isTrunkImpl, treeBase as treeBaseImpl, isMatureTree as isMatureTreeImpl,
-  isOpenGate as isOpenGateImpl, isGhost as isGhostImpl,
+  isOpenGate as isOpenGateImpl, isGhost as isGhostImpl, isFloorGhost as isFloorGhostImpl,
 } from "./folk/houses";
 
 /**
@@ -1149,6 +1151,7 @@ export class SimGrid {
    * no-op, and only the circular cutoff test uses the exact radius.
    */
   paint(cx: number, cy: number, radius: number, id: MaterialId): void {
+    cx = Math.round(cx); cy = Math.round(cy);
     if (SINGLE_DROP_MATERIALS.includes(id)) { this.dropOne(cx, cy, id); return; }
     const r2 = radius * radius;
     const rInt = Math.ceil(radius);
@@ -1207,8 +1210,17 @@ export class SimGrid {
     return findShapeAnchor(this, id, cx, cy);
   }
 
-  /** Stamps a filled circle of `radius` at every step along the segment, for the "line" brush. */
+  /**
+   * Stamps a filled circle of `radius` at every step along the segment, for
+   * the "line" brush. The endpoints are rounded to whole cells before the
+   * Bresenham walk starts: it advances `x`/`y` by exactly ±1 each step and
+   * stops on exact equality with `x1`/`y1`, so a non-integer endpoint (the
+   * real UI always floors pointer coordinates to a cell first, but a
+   * script driving `SimGrid` directly might not) would step past it every
+   * time and loop forever instead of ever landing on it.
+   */
   paintLine(x0: number, y0: number, x1: number, y1: number, radius: number, id: MaterialId): void {
+    x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
     if (SINGLE_DROP_MATERIALS.includes(id)) { this.dropOne(x0, y0, id); return; }
     const dx = Math.abs(x1 - x0);
     const dy = -Math.abs(y1 - y0);
@@ -1460,7 +1472,11 @@ export class SimGrid {
             }
             break;
           case MaterialCategory.Gas:
-            if (this.gravityEnabled && this.stillTicks[i] < SLEEP_THRESHOLD) {
+            // Esporos is a Gás for every other purpose (a Ventilador's draft
+            // still carries it, see windCarries in systems/electronics.ts)
+            // but skips this shared rise-biased movement entirely — it gets
+            // its own isotropic drift instead, see stepSpore below.
+            if (id !== MaterialId.Spore && this.gravityEnabled && this.stillTicks[i] < SLEEP_THRESHOLD) {
               if (this.stepGas(x, y, def.density)) this.stillTicks[i] = 0;
               else if (this.stillTicks[i] < 255) this.stillTicks[i]++;
             }
@@ -1489,6 +1505,9 @@ export class SimGrid {
             break;
           case MaterialCategory.Virus:
             this.stepVirus(x, y, i);
+            break;
+          case MaterialCategory.Fungus:
+            this.stepFungus(x, y, i);
             break;
           default:
             break;
@@ -1544,6 +1563,8 @@ export class SimGrid {
           if (Math.random() < ACID_BOIL_CHANCE) this.set(x, y, MaterialId.AcidVapor);
         } else if (id === MaterialId.AcidVapor && this.temp < ACID_BOIL_TEMP) {
           if (Math.random() < ACID_VAPOR_CONDENSE_CHANCE) this.set(x, y, MaterialId.Acid, ACID_START_CHARGES);
+        } else if (id === MaterialId.Spore) {
+          this.stepSpore(x, y);
         }
       }
     }
@@ -1987,6 +2008,16 @@ export class SimGrid {
     stepVirusImpl(this, x, y, i);
   }
 
+  /** Fungus mycelium or its Cogumelo cap — see systems/fungus.ts. */
+  stepFungus(x: number, y: number, i: number): void {
+    stepFungusImpl(this, x, y, i);
+  }
+
+  /** An Esporo cell's whole tick — landing on a host, killing a touching Vírus, fizzling out, or one step of isotropic drift. See systems/fungus.ts. */
+  stepSpore(x: number, y: number): void {
+    stepSporeImpl(this, x, y);
+  }
+
   // ── O povo: Construtor, Lenhador, Plantador, Guerreiro ─────────────────────
 
   /** Collects the 8-neighbours of (x, y) whose material is in `ids`. See folk/engine.ts. */
@@ -2263,9 +2294,14 @@ export class SimGrid {
     return isOpenGateImpl(this, x, y);
   }
 
-  /** A house wall/roof, a living tree trunk, or a Portão not currently blocking Povo/Fauna — folk pass straight through. See folk/houses.ts. */
+  /** A house wall/roof, a living tree trunk, a Portão not currently blocking Povo/Fauna, or a wild Cogumelo — folk pass/climb straight through sideways or overhead. See folk/houses.ts. */
   isGhost(x: number, y: number): boolean {
     return isGhostImpl(this, x, y);
+  }
+
+  /** Whether the cell right below a folk's feet is real footing or gives way — deliberately narrower than isGhost (a wild Cogumelo stays solid underfoot even though it's still walked through sideways). See folk/houses.ts. */
+  isFloorGhost(x: number, y: number): boolean {
+    return isFloorGhostImpl(this, x, y);
   }
 
   /** Whether (x, y) touches a Fio or Alavanca directly. See systems/electricity.ts. */
@@ -2374,9 +2410,19 @@ export class SimGrid {
   }
 
 
-  /** A working Pip that sees a Esqueleto close by drops what it's doing and backs off. See folk/combat.ts. */
+  /** A working Pip that sees a Esqueleto (or an infected Guerreiro) close by drops what it's doing and backs off. See folk/combat.ts. */
   fleeSkeletonDir(x: number, y: number): number {
     return fleeSkeletonDirImpl(this, x, y);
+  }
+
+  /** Whether the pip at cell `i` has been permanently taken over by Fungus/Cogumelo. See folk/infection.ts. */
+  isPipInfected(i: number): boolean {
+    return isPipInfectedImpl(this, i);
+  }
+
+  /** Climbs/decays a pip's infection exposure — call once a tick from every infectable trade. See folk/infection.ts. */
+  tickPipInfection(x: number, y: number, i: number): void {
+    tickPipInfectionImpl(this, x, y, i);
   }
 
   /** Nearest cell of any id in `ids` within `range` of (x, y). See folk/combat.ts. */

@@ -114,6 +114,8 @@ const WHEAT_GROW_CHANCE = 0.06;
 const WHEAT_SEED_CHANCE = 0.006;
 /** Per-tick chance an unrooted stalk withers away. */
 const WHEAT_WITHER_CHANCE = 0.05;
+/** Per-tick chance an Espórigo (Trigo rooted in Fungus instead of ordinary soil) puffs a stray Esporo mote above itself — rare, just a occasional tell that this particular head is feeding off the mycelium. */
+const ESPORIGO_PUFF_CHANCE = 0.0004;
 
   /**
    * How much temperature holds plant reproduction back or helps it along
@@ -449,25 +451,44 @@ export function stepSprout(grid: SimGrid, x: number, y: number, i: number): void
    * soil — the bottom cell must sit on Terra/Barro/another wheat cell, or it
    * withers. With enough ripeness and headroom it grows one cell taller, up
    * to WHEAT_MAX_HEIGHT. Ripe heads (meta ≥ WHEAT_RIPE) occasionally fling a
-   * shoot onto adjacent bare soil, so a sown row fills into a field.
+   * shoot onto adjacent bare soil, so a sown row fills into a field. Rooted
+   * straight in Fungus instead of ordinary soil, it's really an "Espórigo" —
+   * the exact same Trigo underneath, just fed by the mycelium instead of the
+   * ground, which the renderer marks with a mottled, faintly glowing look
+   * (see PixiStage) and which every so often puffs a stray Esporo mote of
+   * its own, same idea as a Cogumelo's own cap.
    */
 export function stepWheat(grid: SimGrid, x: number, y: number, i: number): void {
     grid.processed[i] = 1;
 
-    // Rooted? The cell directly below must be soil or more wheat (a taller
-    // segment standing on a lower one). Anything else underfoot — air, water,
-    // a wall it grew off the edge of — and the stalk withers.
+    // Rooted? The cell directly below must be soil, Fungus, or more wheat (a
+    // taller segment standing on a lower one). Anything else underfoot —
+    // air, water, a wall it grew off the edge of — and the stalk withers.
     const bi = grid.inBounds(x, y + 1) ? grid.index(x, y + 1) : -1;
     const below = bi >= 0 ? (grid.material[bi] as MaterialId) : MaterialId.Stone;
     const onStoreFloor = bi >= 0 &&
       (grid.meta[bi] & HOUSE_WALL_META) !== 0 && (grid.meta[bi] & HOUSE_KIND_MASK) === HOUSE_FLOOR;
+    const onFungus = below === MaterialId.Fungus;
     const rooted =
       below === MaterialId.Dirt || below === MaterialId.Mud || below === MaterialId.Wheat ||
       below === MaterialId.Sand || // takes to loose sand too, just poorly
-      onStoreFloor;                // grain stacked on a storehouse floor keeps
+      onFungus || onStoreFloor;    // grain stacked on a storehouse floor keeps
     if (!rooted) {
       if (Math.random() < WHEAT_WITHER_CHANCE) grid.set(x, y, MaterialId.Empty);
       return;
+    }
+
+    // An Espórigo head every so often puffs a single stray Esporo mote into
+    // open air beside it — a much smaller, quieter echo of what a full
+    // Cogumelo cap does, since it's borrowing the mycelium's fruiting habit
+    // rather than being one itself. Checked diagonally, not straight up:
+    // the cell directly above is exactly where the stalk grows its own next
+    // segment (below), so it fills in almost immediately and this would
+    // otherwise near-never get a real chance to roll before that headroom
+    // is gone for good.
+    if (onFungus && Math.random() < ESPORIGO_PUFF_CHANCE) {
+      const side = Math.random() < 0.5 ? -1 : 1;
+      if (grid.get(x + side, y - 1) === MaterialId.Empty) grid.set(x + side, y - 1, MaterialId.Spore);
     }
 
     let ripe = grid.meta[i];
@@ -501,7 +522,7 @@ export function stepWheat(grid: SimGrid, x: number, y: number, i: number): void 
         if (!grid.inBounds(nx, ny) || grid.get(nx, ny) !== MaterialId.Empty) continue;
         if (grid.roofedOver(nx, ny)) continue;
         const g = grid.inBounds(nx, ny + 1) ? grid.get(nx, ny + 1) : MaterialId.Stone;
-        if (g === MaterialId.Dirt || g === MaterialId.Mud) spots.push([nx, ny]);
+        if (g === MaterialId.Dirt || g === MaterialId.Mud || g === MaterialId.Fungus) spots.push([nx, ny]);
       }
       if (spots.length > 0) {
         const [sx, sy] = spots[Math.floor(Math.random() * spots.length)];
